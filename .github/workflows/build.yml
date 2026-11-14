@@ -21,6 +21,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: Snapshot source for diagnostics
+        run: git archive --format=zip HEAD -o diagnostics-source.zip
       - name: Compile and run configuration tests
         run: gradle --no-daemon clean build
       - name: Run NeoForge game tests
@@ -28,7 +31,7 @@ jobs:
       - name: Package source and checksums
         run: |
           sha256sum build/libs/*.jar > build/libs/SHA256SUMS.txt
-          git archive --format=zip HEAD -o build/libs/Anya-Storage-Plus-SOURCE.zip
+          cp diagnostics-source.zip build/libs/Anya-Storage-Plus-SOURCE.zip
       - name: Upload verified build
         uses: actions/upload-artifact@v4
         with:
@@ -41,6 +44,7 @@ jobs:
         with:
           name: diagnostics-${{ github.sha }}
           path: |
+            diagnostics-source.zip
             build/reports/
             build/test-results/
             runs/**/logs/

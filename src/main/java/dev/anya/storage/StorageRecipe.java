@@ -29,12 +29,22 @@ public final class StorageRecipe extends CustomRecipe {
         List<String> ingredients=new ArrayList<>();ingredients.add(center);for(int i=0;i<count;i++)ingredients.add(material);
         String blocked=!Boolean.TRUE.equals(c.recipes.get(group))?"Recipe group disabled: "+group:"";
         if((group.equals("hubs")||group.equals("terminals"))&&!c.network)blocked="Networks disabled";
-        if(group.equals("upgrades")&&(!c.upgrades||!Boolean.TRUE.equals(c.upgradeTypes.get(id.replace("_upgrade","")))))blocked="Upgrade disabled";
+        if(group.equals("upgrades")&&!c.upgrades)blocked="Upgrades disabled";
+        if(id.endsWith("_upgrade")&&!Boolean.TRUE.equals(c.upgradeTypes.get(id.substring(0,id.length()-8))))blocked="This upgrade type is disabled";
         return new Definition(id,name,group,output,"","",ingredients,blocked);
     }
     public static List<Definition> definitions(Rules.Config c){
         List<Definition> out=new ArrayList<>();
-        for(Rules.Tier t:c.tiers){List<String> ingredients=new ArrayList<>();ingredients.add(t.parent.isEmpty()?"minecraft:chest":"anyastorage:backpack");for(int i=0;i<t.cost;i++)ingredients.add(t.material);out.add(new Definition("tier_"+t.id,t.name+" Backpack","backpacks","anyastorage:backpack",t.id,t.parent,ingredients,Rules.unavailable(c,t)));}
+        for(Rules.Tier t:c.tiers){
+            List<String> ingredients=new ArrayList<>();ingredients.add(t.parent.isEmpty()?"minecraft:chest":"anyastorage:backpack");
+            // Drafts can be temporarily invalid. Never let an unvalidated cost allocate an unbounded preview.
+            for(int i=0;i<Math.clamp(t.cost,1,8);i++)ingredients.add(t.material);
+            String blocked=Rules.unavailable(c,t);
+            if(t.cost<1||t.cost>8)blocked="Invalid draft material count: choose 1 to 8";
+            if(t.material.equals("anyastorage:backpack"))blocked="A backpack cannot be a tier-upgrade material";
+            if(blocked.isEmpty())for(Rules.Tier other:c.tiers)if(other!=t&&other.enabled&&other.parent.equals(t.parent)&&other.material.equals(t.material)&&other.cost==t.cost&&Rules.unavailable(c,other).isEmpty()){blocked="Ambiguous tier recipe: same ingredients as "+other.name;break;}
+            out.add(new Definition("tier_"+t.id,t.name+" Backpack","backpacks","anyastorage:backpack",t.id,t.parent,ingredients,blocked));
+        }
         out.add(def(c,"storage_hub","Storage Hub","hubs","anyastorage:storage_hub","minecraft:lodestone","minecraft:redstone",8));
         out.add(def(c,"storage_chest","Storage Chest","containers","anyastorage:storage_chest","minecraft:chest","minecraft:iron_ingot",8));
         out.add(def(c,"storage_button","Storage Button","terminals","anyastorage:storage_button","minecraft:stone_button","minecraft:quartz",4));

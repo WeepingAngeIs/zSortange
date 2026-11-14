@@ -25,6 +25,7 @@ tasks.register('generateAssets', Exec) {
     outputs.dir 'build/generated/assets'
     commandLine 'python3', 'tools/generate_assets.py', 'build/generated/assets'
 }
+tasks.named('sourcesJar') { dependsOn tasks.named('generateAssets') }
 tasks.named('processResources', ProcessResources) {
     dependsOn tasks.named('generateAssets')
     inputs.property 'mod_version', project.mod_version
