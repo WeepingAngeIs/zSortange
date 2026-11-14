@@ -21,6 +21,11 @@ public final class CoreTests {
         for(int i=1;i<200;i++) { copy=Config.copy(d); copy.quickRadius=-i;invalid(copy,"negative radius"); }
         check(Config.validId("iceandfire:dragonsteel_fire_ingot"),"ID syntax only, not a claim this item is installed");
         check(!Config.validId("Minecraft:Diamond"),"lowercase registry paths");
+        copy=Config.copy(d); copy.categoryRules.put("#c:ores","ores"); Config.validate(copy);check(true,"tag category rules");
+        copy=Config.copy(d); copy.categoryRules.put("minecraft:diamond","materials"); Config.validate(copy);check(true,"item category rules");
+        copy=Config.copy(d); copy.categoryRules.put("#invalid","ores");invalid(copy,"category tag syntax");
+        copy=Config.copy(d); copy.categoryRules.put("minecraft:diamond","any");invalid(copy,"any is a route wildcard, not a category");
+        copy=Config.copy(d); copy.categoryRules.put("minecraft:diamond","invented");invalid(copy,"unknown category");
         System.out.println("PASS: "+checks+" configuration assertions");
     }
 }

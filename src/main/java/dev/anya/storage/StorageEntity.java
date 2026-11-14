@@ -70,6 +70,7 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup){CompoundTag tag=new CompoundTag();tag.putString("Symbol",symbol);tag.putBoolean("ShowLabels",level!=null&&!level.isClientSide?Config.get().labels:showLabels);return tag;}
     @Override public void handleUpdateTag(CompoundTag tag,HolderLookup.Provider lookup){symbol=tag.getString("Symbol");showLabels=!tag.contains("ShowLabels")||tag.getBoolean("ShowLabels");}
     @Override public ClientboundBlockEntityDataPacket getUpdatePacket(){return ClientboundBlockEntityDataPacket.create(this);}
+    @Override public void onDataPacket(net.minecraft.network.Connection connection,ClientboundBlockEntityDataPacket packet,HolderLookup.Provider lookup){if(packet.getTag()!=null)handleUpdateTag(packet.getTag(),lookup);}
     @Override public int getContainerSize(){return items.size();}
     @Override public boolean isEmpty(){return items.stream().allMatch(ItemStack::isEmpty);}
     @Override public ItemStack getItem(int slot){return items.get(slot);}

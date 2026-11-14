@@ -138,6 +138,28 @@ public final class Network {
         for(ItemStack stack:stacks){for(Container destination:destinations(plan,targets,hub,stack,Mode.MANUAL)){plan.insert(destination,stack);if(stack.isEmpty())break;}if(!stack.isEmpty())throw new IllegalArgumentException("Routing rules leave items without a destination. Allow an overflow chest before organizing.");}
         return plan;
     }
+    public static String explain(ServerPlayer p,StorageEntity requestedHub,int slot,boolean dump){
+        if(slot<0||slot>=36)return "Only main inventory slots participate.";
+        ItemStack item=p.getInventory().getItem(slot);if(item.isEmpty())return "That inventory slot is empty.";
+        if(!Config.get().quickStack)return "QuickStack and Dump are disabled by the server.";
+        if(Profiles.of(p).protectedSlot(slot))return "Slot "+(slot+1)+" is protected from automatic deposits.";
+        StorageEntity hub=requestedHub==null?nearest(p):requestedHub;List<Target> targets=targets(p,hub);
+        if(targets.isEmpty()){
+            if(hub!=null){Index index=INDEX.get(hub);if(index!=null)for(BlockPos pos:index.candidates){
+                if(!p.serverLevel().hasChunkAt(pos))return "No accessible targets; an indexed container at "+pos.toShortString()+" is unloaded. No chunk was loaded.";
+                BlockEntity be=p.serverLevel().getBlockEntity(pos);String reason=Safety.reason(p,be,hub);if(!reason.isEmpty())return "No accessible targets; container at "+pos.toShortString()+": "+reason;
+            }}
+            return "No eligible loaded containers in range or within the scan budget. Chest support="+Config.get().vanillaChests+", barrels="+Config.get().vanillaBarrels+", shulkers="+Config.get().vanillaShulkers+". "+Safety.status();
+        }
+        MainInventory main=new MainInventory(p);List<Container> all=new ArrayList<>();all.add(main);targets.forEach(t->all.add(t.inventory));Transactions.Plan plan=new Transactions.Plan(all,guard(p,hub,targets));
+        List<Container> eligible=destinations(plan,targets,hub,item,dump?Mode.DUMP:Mode.QUICK);
+        if(eligible.isEmpty()){
+            long filtered=targets.stream().filter(t->hub!=null&&!hub.route(t.pos).allows(item)).count();
+            return filtered==targets.size()?"All "+filtered+" accessible containers reject this item's category or exact-item filter.":(dump?"No existing item-type match or designated destination.":"No existing exact item-and-component match. Named, enchanted or damaged variants count separately.")+" Filtered targets: "+filtered+".";
+        }
+        int accepted=plan.move(main,slot,eligible,item.getCount());
+        return accepted==0?"Matching destinations are full or their slot filters reject the item.":"Preview only: "+accepted+" of "+item.getCount()+" items fit across "+eligible.size()+" matching destinations. Nothing moved.";
+    }
     public static String performance(StorageEntity hub){
         Index index=INDEX.get(hub);if(index==null)return "Index warming up; only loaded chunks are scanned";
         long age=hub.getLevel().getGameTime()-index.lastSweep;

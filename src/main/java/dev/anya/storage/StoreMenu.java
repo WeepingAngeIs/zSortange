@@ -166,6 +166,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private void inventoryClick(int slot,Click click){
         if(slot<0||slot>=36)return;
         if(page==Page.BASE){selectOre(slot,click);return;}
+        if(page==Page.DIAGNOSTICS||(page==Page.PREFS&&click.shift)){explainSlot(slot,click.button==1);return;}
         if(page==Page.PREFS){Profiles.of(owner).protectedSlots^=1L<<slot;Profiles.changed(owner);return;}
         if(page==Page.UPGRADES){ItemStack s=owner.getInventory().getItem(slot);if(!s.isEmpty()){input=Categories.id(s);AnyaStorage.tell(owner,"Selected filter item: "+input);}return;}
         if(!isStoragePage())return;
@@ -290,7 +291,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(45,Items.ARROW,"Back to draft",c->navigate(Page.ADMIN));button(53,Items.EMERALD_BLOCK,"Apply server settings",c->{if(Config.save(owner,draft))owner.closeContainer();},"Operator permission and revision are rechecked.","Previous config is backed up. Recipes reload on the server.");
     }
     private void prefs(){
-        for(int i=0;i<36;i++){int slot=i;ItemStack item=owner.getInventory().getItem(slot);if(item.isEmpty())item=new ItemStack(Items.GRAY_STAINED_GLASS_PANE);boolean locked=Profiles.of(owner).protectedSlot(slot);display.setItem(i,icon(item,"Slot "+(slot+1)+(locked?" [PROTECTED]":" [SWEEPABLE]"),List.of("Click to toggle automatic deposit protection.",slot<9?"Hotbar slot":"Main inventory slot")));buttons.put(i,c->{Profiles.of(owner).protectedSlots^=1L<<slot;Profiles.changed(owner);});}
+        for(int i=0;i<36;i++){int slot=i;ItemStack item=owner.getInventory().getItem(slot);if(item.isEmpty())item=new ItemStack(Items.GRAY_STAINED_GLASS_PANE);boolean locked=Profiles.of(owner).protectedSlot(slot);display.setItem(i,icon(item,"Slot "+(slot+1)+(locked?" [PROTECTED]":" [SWEEPABLE]"),List.of("Click: protection. Shift-click: explain QuickStack. Shift-right: explain Dump.",slot<9?"Hotbar slot":"Main inventory slot")));buttons.put(i,c->{if(c.shift){explainSlot(slot,c.button==1);return;}Profiles.of(owner).protectedSlots^=1L<<slot;Profiles.changed(owner);});}
         button(45,Items.ARROW,"Back",c->navigate(bag!=null?Page.BAG:hub!=null?Page.NETWORK:chest!=null?Page.CHEST:owner.hasPermissions(2)?Page.ADMIN:Page.PREFS));
         button(48,Items.IRON_DOOR,"Protect hotbar",c->{Profiles.of(owner).protectedSlots|=511;Profiles.changed(owner);});
         button(50,Items.PAPER,"Explain skipped items",null,Profiles.of(owner).lastReport,"Armor and offhand are always outside automatic sweeps.");button(53,Items.BARRIER,"Close",c->owner.closeContainer());
@@ -329,6 +330,23 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(51,Items.WATER_BUCKET,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");tag.remove("SmeltFilter");BagInventory.data(bag.stack,tag);owner.getInventory().setChanged();});
         button(53,Items.BARRIER,"Close",c->owner.closeContainer());
     }
+    private void explainSlot(int slot,boolean dump){
+        String report;
+        if(bag==null&&chest==null)report=Network.explain(owner,hub,slot,dump);
+        else if(Profiles.of(owner).protectedSlot(slot))report="Slot "+(slot+1)+" is protected from automatic deposits.";
+        else if(!Config.get().quickStack||(bag!=null&&!Config.get().backpacks))report="The relevant storage feature is disabled by the server.";
+        else{
+            MainInventory main=main();ItemStack item=main.getItem(slot);Container target=bag!=null?bag:chest;
+            if(item.isEmpty())report="That slot is empty or is the locked backpack host slot.";
+            else{
+                Transactions.Plan plan=new Transactions.Plan(List.of(main,target),()->stillValid(owner));boolean matches=plan.contains(target,item);
+                if(dump)for(ItemStack old:plan.work(target))if(!old.isEmpty()&&old.is(item.getItem()))matches=true;
+                if(!matches)report="No "+(dump?"item-type":"exact item-and-component")+" match already exists in this container.";
+                else{int count=plan.move(main,slot,List.of(target),item.getCount());report=count==0?"Destination is full or rejects nested/unsafe containers.":"Preview only: "+count+" of "+item.getCount()+" items fit. Nothing moved.";}
+            }
+        }
+        Profiles.of(owner).lastReport=report;AnyaStorage.tell(owner,report);
+    }
     private void selectOre(int slot,Click click){
         if(hub==null||!hub.ownedBy(owner))return;
         ItemStack item=owner.getInventory().getItem(slot);
@@ -365,7 +383,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private void diagnostics(){
         button(10,Items.PAPER,"Configuration",null,Config.lastStatus,"Revision: "+Config.get().revision,"Settings: /anya storage or /as");
         button(12,Items.IRON_DOOR,"Permissions",null,Safety.status(),"No unloaded chunks are force-loaded.","Only explicitly supported physical inventories are scanned.");
-        button(14,Items.HOPPER,"Why were items skipped?",null,Profiles.of(owner).lastReport);
+        button(14,Items.HOPPER,"Why were items skipped?",null,Profiles.of(owner).lastReport,"Click an inventory item below for a fresh preview.","Left checks QuickStack; right checks Dump. Nothing moves.");
         button(16,Items.CLOCK,"Performance",null,hub==null?"Last transfer: "+Network.lastOperationMicros+" us":Network.performance(hub));
         button(28,Items.BOOK,"Beta safety scope",null,"Server-thread snapshots and component conservation checks.","Permissions, range and inventory identity are rechecked.","Hard-crash durability across vanilla save files is not guaranteed.","Back up your test world; do not remove your existing mods yet.");
         footer(bag!=null?Page.BAG:hub!=null?Page.NETWORK:chest!=null?Page.CHEST:owner.hasPermissions(2)?Page.ADMIN:Page.PREFS);
