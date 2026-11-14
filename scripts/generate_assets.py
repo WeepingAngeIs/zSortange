@@ -37,8 +37,12 @@ for name in ['hub','chest','uwu_cube']:
     if name=='hub':
         rect(front,16,3,3,10,5,EDGE);rect(front,16,4,4,8,3,CYAN);rect(front,16,4,10,8,4,EDGE);rect(front,16,5,12,6,1,(255,178,83,255));rect(front,16,6,11,4,1,(242,109,85,255))
     elif name=='uwu_cube':
-        for x in [3,9]:rect(front,16,x,5,1,3,WHITE);rect(front,16,x+1,8,2,1,WHITE);rect(front,16,x+3,5,1,3,WHITE)
-        rect(front,16,7,10,2,1,PINK);rect(front,16,6,11,4,1,PINK);rect(front,16,7,12,2,1,PINK)
+        for x in (3,10):
+            rect(front,16,x,4,1,2,WHITE);rect(front,16,x+1,6,2,1,WHITE);rect(front,16,x+3,4,1,2,WHITE)
+        for x,y in ((6,7),(7,8),(8,7),(9,8),(10,7)):rect(front,16,x,y,1,1,WHITE)
+        for y,row in enumerate(('11011','11111','01110','00100')):
+            for x,bit in enumerate(row):
+                if bit=='1':rect(front,16,x+6,y+10,1,1,PINK)
     else:
         rect(front,16,1,5,14,1,EDGE)
         for yy,row in enumerate(shapes['heart']):
@@ -82,7 +86,6 @@ for u,ingredient in [('pickup','hopper'),('feeding','golden_carrot'),('refill','
 js(f'data/{MOD}/recipe/backpack_upgrade.json',{'type':f'{MOD}:backpack_upgrade','category':'misc'})
 js(f'data/{MOD}/recipe/uwu_cube.json',{'type':f'{MOD}:cube','category':'misc'})
 js('data/minecraft/tags/block/mineable/pickaxe.json',{'replace':False,'values':[f'{MOD}:hub',f'{MOD}:chest',f'{MOD}:uwu_cube']})
-# Minimal empty 7x7x7 GameTest structure.
 def utf(s):b=s.encode();return struct.pack('>H',len(b))+b
 def named(t,name,payload):return bytes([t])+utf(name)+payload
 nbt=b'\x0a\0\0'+named(3,'DataVersion',struct.pack('>i',3955))

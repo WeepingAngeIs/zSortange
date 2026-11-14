@@ -4,7 +4,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: storage-${{ github.ref }}
   cancel-in-progress: true
@@ -14,27 +14,12 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Apply reviewed source corrections
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/anya-storage-beta'
-        run: |
-          if test -f scripts/repair_beta.py; then
-            python3 scripts/repair_beta.py
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -A
-            git commit -m 'Apply reviewed beta safety and configuration corrections'
-            git push origin HEAD:refs/heads/feature/anya-storage-beta
-          fi
       - name: Export exact source snapshot
         run: |
           mkdir -p export
           git rev-parse HEAD > export/SOURCE_COMMIT.txt
           git archive --format=zip HEAD > export/anya-storage-plus-repository-source.zip
           echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: source-${{ env.SOURCE_COMMIT }}
-          path: export/
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,12 +30,19 @@ jobs:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
           cache-cleanup: always
       - name: Build and test core
-        run: gradle --no-daemon clean build
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon clean build 2>&1 | tee export/build-output.log
       - name: Run Minecraft game tests
-        run: gradle --no-daemon runGameTestServer
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon runGameTestServer 2>&1 | tee export/game-test-output.log
       - name: Checksums and exact source
         run: |
           cp export/* build/libs/
+          cp -r docs build/libs/docs
           sha256sum build/libs/*.jar > build/libs/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -64,4 +56,5 @@ jobs:
           path: |
             build/reports/
             run*/logs/
+            export/
           if-no-files-found: ignore

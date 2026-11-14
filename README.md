@@ -1,25 +1,35 @@
 # anya's strorage plus
 
-Minecraft 1.21.1 / NeoForge 21.1.249 / Java 21. Experimental beta implementation in progress. Do not replace existing storage mods until the compiled artifact and pack-level tests have passed.
+**0.2.0-beta.1** for Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. Install the same playable JAR on server and clients. This is an original storage beta, not a source-only configuration mock-up and not a claim of complete feature parity with other storage mods.
 
-This branch implements original backpacks, physical storage chests, a loaded-chunk hub index, a handheld remote, QuickStack, routing, server-authoritative configuration and optional material tiers. Both clients and server need the same JAR.
+## Included
 
-## Controls
+- Backpacks with saved-capacity progression, seven installable upgrade types and content-preserving tier recipes.
+- A physical-storage hub with search, favorites, a bound handheld remote, ore-fed radius upgrades and confirmation previews.
+- A 54-slot labelled chest with a hinged lid and split sticker; a 216-slot UwU cube with an optional endgame recipe.
+- Built-in QuickStack and broader matching Dump, protected inventory slots, per-item explanations and organization previews.
+- Named base profiles, trusted players, category/item routes, priorities and overflow rules.
+- Operator settings, private drafts, revision-safe Apply, recipe gates, tier editing, exact installed-material selection, compatibility diagnostics, item/tag category rules, presets, impact previews and performance limits.
 
-- `/anya storage` or the collision-safe `/as` alias opens settings. Operators see server configuration; other players see private protected-slot preferences.
-- Right-click a backpack to open it. Sneak-use to install/remove upgrades.
-- Sneak-use a remote on a hub to bind it; use it in that hub's radius to search storage. Sneak-use the bound remote on a supported chest to edit routing as its hub owner.
-- QuickStack, Dump and Open Backpack keys are initially unbound; assign them in Minecraft Controls. `/anya quickstack`, `/anya dump` and `/anya slots` are secondary conveniences.
-- Storage screens use server-checked buttons, not freely movable display items. Click an inventory slot to deposit; click a listed stack to withdraw; right-click transfers one. Middle-click a listed stack toggles a favorite.
+Open settings with `/anya storage` or the collision-safe `/as` alias. Normal players get their protected-slot preferences rather than server settings. The handheld remote is the primary storage interface. QuickStack, Dump and Open Backpack keys start unbound so they do not overwrite pack controls.
 
-## Beta safety limits
+Optional Dragonsteel/Witherite tiers consume actual installed material items; they never manufacture those ingots or require the material mods as hard dependencies. Newly added optional tiers start disabled. The endgame cube recipe also defaults to OFF until an operator chooses a route.
 
-All remote access is server-authoritative, component-aware, restricted to loaded chunks, and checked against inventory snapshots. Operations have a conservation check and attempt rollback on failed writes. This is NOT a distributed durable transaction across Minecraft's separate player/chunk save files. A process kill, disk failure or forced rollback of only part of a world can still cause inconsistency. Keep backups and use a disposable test world first.
+## Documentation
 
-Only exact vanilla chest/barrel/shulker classes and this mod's physical storage are supported. Player-specific inventories, arbitrary item handlers and unopened loot containers are excluded. Open Parties and Claims is an optional reflection adapter that fails closed if its API cannot be used; installed-pack integration still requires testing. Known unsupported claim mods block remote access rather than silently bypassing protection.
+- [Installation, controls and progression](docs/INSTALL.md)
+- [Inventory/permission safety and limits](docs/SAFETY.md)
+- [Automated tests and remaining manual acceptance](docs/TESTING.md)
+- [Verified pre-release build](docs/VERIFICATION.md)
 
-The endgame cube recipe defaults to OFF. Operators may explicitly select a four-Nether-Star/four-Dragon's-Breath route or a four-Nether-Star/four-dragon-victory-token route; both also require an expensive storage core. Dragon's Breath does not prove repeat kills. The tracked fight token route only rewards a survival player's final blow on the current tracked End fight dragon, once per dragon UUID.
+## Build and verification
 
-## Build
+The read-only GitHub Actions workflow builds the exact checked-out commit using Java 21 and Gradle 8.14.3, runs configuration assertions, launches a real NeoForge GameTest server, and uploads playable JARs only after required steps succeed. The artifact includes the exact source commit, source archive, logs, documentation and SHA-256 checksums. Install `anya-storage-plus-0.2.0-beta.1.jar`, not the `-sources.jar`.
 
-The GitHub Actions workflow uses Java 21 and Gradle 8.14.3. It builds, runs configuration checks, starts a NeoForge GameTest server, and uploads JARs, sources and checksums only if all required steps succeed. Current compilation and test status must be read from the actual workflow run; source being present does not establish a successful build.
+The core implementation passed 28 required GameTests, including 500 deterministic randomized transfers, on source `fb7d74494c7d9e3e30abdd5fda41b400b23aee81` in workflow run `43654812369`. Subsequent commits must be judged by their own workflow result.
+
+## Before replacing existing mods
+
+Use a backed-up test world and keep existing storage mods until the complete pack passes acceptance. No migration is provided. Only exact vanilla chests/barrels/optional shulkers and this mod's containers are supported; arbitrary external item-handler storage is intentionally excluded. The OPAC adapter fails closed on API errors but still needs testing with the actual installed claim configuration.
+
+Transfers are server-thread snapshot transactions with component conservation and rollback attempts. They are NOT a distributed durable transaction across Minecraft's separate player/chunk save files. Hard crashes, disk failures or partial backup restores are not guaranteed safe. Client appearance, real multiplayer/disconnect behavior and the full installed modpack still require testing. See the documentation for narrower upgrade behavior and other beta limits.

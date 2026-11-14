@@ -48,12 +48,16 @@ public final class Client {
         }
         @Override protected void slotClicked(Slot slot,int slotId,int mouseButton,ClickType type) {
             if(slotId<0) return;
-            // No vanilla predicted item movement: these slots are server-rendered buttons.
+            // Display slots are server-rendered buttons, never client-predicted inventory moves.
             if(type==ClickType.PICKUP || type==ClickType.QUICK_MOVE || type==ClickType.CLONE)
                 send("slot","",slotId | ((mouseButton&3)<<8) | (type==ClickType.QUICK_MOVE?65536:0));
         }
         @Override public boolean keyPressed(int key,int scan,int modifiers) {
-            if(input.isFocused() && key!=256) { if(input.keyPressed(key,scan,modifiers)) return true; if(key==69) return true; }
+            if(input.isFocused() && key!=256) {
+                if(key==257||key==335) { sent=input.getValue();debounce=0;send("text",sent,0);return true; }
+                input.keyPressed(key,scan,modifiers);
+                return true; // Typing must not trigger a rebound inventory-close key.
+            }
             return super.keyPressed(key,scan,modifiers);
         }
         @Override protected void renderBg(GuiGraphics g,float partial,int mx,int my) {
