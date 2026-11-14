@@ -1,0 +1,40 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+version = project.mod_version
+group = 'dev.anya.storage'
+base { archivesName = 'anya-storage-plus' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.withSourcesJar()
+neoForge {
+    version = project.neo_version
+    runs {
+        client { client() }
+        server { server(); programArgument '--nogui' }
+        gameTestServer {
+            type = 'gameTestServer'
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'anyastorage'
+        }
+    }
+    mods { anyastorage { sourceSet(sourceSets.main) } }
+}
+sourceSets.main.resources.srcDir 'build/generated/assets'
+tasks.register('generateAssets', Exec) {
+    inputs.file 'tools/generate_assets.py'
+    outputs.dir 'build/generated/assets'
+    commandLine 'python3', 'tools/generate_assets.py', 'build/generated/assets'
+}
+tasks.named('processResources', ProcessResources) {
+    dependsOn tasks.named('generateAssets')
+    inputs.property 'mod_version', project.mod_version
+    filesMatching('META-INF/neoforge.mods.toml') { expand mod_version: project.mod_version }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.register('coreTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'dev.anya.storage.CoreTests'
+}
+tasks.named('test') { enabled = false }
+tasks.named('check') { dependsOn tasks.named('coreTest') }

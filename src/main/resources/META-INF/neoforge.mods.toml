@@ -1,0 +1,21 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="anyastorage"
+version="${mod_version}"
+displayName="Anya's Storage Plus"
+authors="Anya"
+description='''Experimental storage, backpacks, base networks and an in-game settings workbench. Back up worlds before testing.'''
+[[dependencies.anyastorage]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.249,21.2)"
+ordering="NONE"
+side="BOTH"
+[[dependencies.anyastorage]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.21.2)"
+ordering="NONE"
+side="BOTH"
