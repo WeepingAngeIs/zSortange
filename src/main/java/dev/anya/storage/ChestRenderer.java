@@ -24,6 +24,7 @@ public final class ChestRenderer implements BlockEntityRenderer<StorageEntity> {
         pose.pushPose();pose.translate(.5,0,.5);pose.mulPose(Axis.YP.rotationDegrees(180-entity.getBlockState().getValue(StorageBlock.FACING).toYRot()));
         float angle=Mth.lerp(partial,entity.previousOpenness,entity.openness);angle=1-(1-angle)*(1-angle)*(1-angle);angle*=Mth.HALF_PI;
         VertexConsumer shell=buffers.getBuffer(RenderType.entityCutout(SHELL));base.render(pose,shell,light,overlay);lid.xRot=angle;lid.render(pose,shell,light,overlay);
+        if(!entity.showLabels){pose.popPose();return;}
         String symbol=Config.SYMBOLS.contains(entity.symbol)?entity.symbol:"heart";
         VertexConsumer sticker=buffers.getBuffer(RenderType.entityCutoutNoCull(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID,"textures/entity/label_"+symbol+".png")));
         quad(pose,sticker,-4/16f,6/16f,4/16f,10/16f,-7.02f/16f,.5f,1,light,overlay);

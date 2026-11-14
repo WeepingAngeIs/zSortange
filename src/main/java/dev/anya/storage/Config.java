@@ -46,6 +46,7 @@ public final class Config {
         public Map<String,Boolean> recipes=new LinkedHashMap<>();
         public Map<String,Boolean> upgrades=new LinkedHashMap<>();
         public Map<String,Integer> oreValues=new LinkedHashMap<>();
+        public Map<String,String> categoryRules=new LinkedHashMap<>();
         public List<Tier> tiers=new ArrayList<>();
         public Data() {
             GROUPS.forEach(k->recipes.put(k,!k.equals("endgame")));
@@ -93,6 +94,8 @@ public final class Config {
         require(d.cubeRecipe>=0 && d.cubeRecipe<=2,"Unknown cube recipe");
         require(d.recipes!=null && d.recipes.keySet().equals(new HashSet<>(GROUPS)) && !d.recipes.containsValue(null),"Invalid recipe groups");
         require(d.upgrades!=null && d.upgrades.keySet().equals(new HashSet<>(UPGRADE_IDS)) && !d.upgrades.containsValue(null),"Invalid upgrade switches");
+        require(d.categoryRules!=null && d.categoryRules.size()<=256,"At most 256 category rules");
+        d.categoryRules.forEach((key,category)->require(key!=null && validId(key.startsWith("#")?key.substring(1):key) && CATEGORIES.contains(category) && !category.equals("any"),"Invalid category rule "+key));
         require(d.oreValues!=null && d.oreValues.size()<=128,"At most 128 ore rules");
         d.oreValues.forEach((k,v)->require(validId(k)&&v!=null&&v>=1&&v<=100000,"Invalid ore rule "+k));
         require(d.tiers!=null && !d.tiers.isEmpty() && d.tiers.size()<=64,"Tier count must be 1..64");

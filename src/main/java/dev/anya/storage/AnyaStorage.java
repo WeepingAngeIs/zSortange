@@ -26,7 +26,7 @@ public final class AnyaStorage {
         NeoForge.EVENT_BUS.addListener(Upgrades::dragonDeath);
         NeoForge.EVENT_BUS.addListener(AnyaStorage::stopped);
     }
-    private static void stopped(ServerStoppedEvent e) { Network.clear(); Safety.clear(); }
+    private static void stopped(ServerStoppedEvent e) { Network.clear(); Safety.clear(); Transactions.clear(); }
     public static void tell(ServerPlayer player,String message) { player.sendSystemMessage(Component.literal("[Anya Storage] "+message)); }
     private static void commands(RegisterCommandsEvent event) {
         var storage=Commands.literal("storage").executes(c->{StoreMenu.settings(c.getSource().getPlayerOrException());return 1;})

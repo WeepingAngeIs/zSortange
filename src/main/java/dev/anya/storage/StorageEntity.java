@@ -19,6 +19,7 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public String baseName="My Base",symbol="heart";
     public int oreProgress,rangeUpgrades,viewers;
     public long profileRevision;
+    public boolean showLabels=true;
     public float openness,previousOpenness;
     public final Map<Long,Route> routes=new HashMap<>();
     public static final class Route {
@@ -41,7 +42,10 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public void openViewer(){viewers++;if(level!=null)level.blockEvent(worldPosition,getBlockState().getBlock(),1,viewers);}
     public void closeViewer(){viewers=Math.max(0,viewers-1);if(level!=null)level.blockEvent(worldPosition,getBlockState().getBlock(),1,viewers);}
     @Override public boolean triggerEvent(int id,int value){if(id==1){viewers=value;return true;}return super.triggerEvent(id,value);}
-    public static void tick(Level level,BlockPos pos,BlockState state,StorageEntity be){be.previousOpenness=be.openness;be.openness=Math.max(0,Math.min(1,be.openness+(be.viewers>0?0.12f:-0.12f)));}
+    public static void tick(Level level,BlockPos pos,BlockState state,StorageEntity be){
+        be.previousOpenness=be.openness;be.openness=Math.max(0,Math.min(1,be.openness+(be.viewers>0?0.12f:-0.12f)));
+        if(!level.isClientSide&&be.showLabels!=Config.get().labels){be.showLabels=Config.get().labels;level.sendBlockUpdated(pos,state,state,3);}
+    }
     @Override public void onLoad(){super.onLoad();if(level!=null&&!level.isClientSide&&kind().equals("hub"))Network.add(this);}
     @Override public void setRemoved(){Network.remove(this);super.setRemoved();}
     @Override protected void saveAdditional(CompoundTag tag,HolderLookup.Provider lookup){
@@ -63,8 +67,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
         routes.clear();ListTag rules=tag.getList("Routes",Tag.TAG_COMPOUND);
         for(int i=0;i<Math.min(512,rules.size());i++){CompoundTag r=rules.getCompound(i);Route route=new Route();route.category=r.getString("Category");if(!Config.CATEGORIES.contains(route.category))route.category="any";route.priority=Math.max(0,Math.min(9,r.getInt("Priority")));route.overflow=r.getBoolean("Overflow");ListTag ids=r.getList("Items",Tag.TAG_STRING);for(int j=0;j<Math.min(64,ids.size());j++)route.items.add(ids.getString(j));routes.put(r.getLong("Pos"),route);}
     }
-    @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup){CompoundTag tag=new CompoundTag();tag.putString("Symbol",symbol);return tag;}
-    @Override public void handleUpdateTag(CompoundTag tag,HolderLookup.Provider lookup){symbol=tag.getString("Symbol");}
+    @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup){CompoundTag tag=new CompoundTag();tag.putString("Symbol",symbol);tag.putBoolean("ShowLabels",level!=null&&!level.isClientSide?Config.get().labels:showLabels);return tag;}
+    @Override public void handleUpdateTag(CompoundTag tag,HolderLookup.Provider lookup){symbol=tag.getString("Symbol");showLabels=!tag.contains("ShowLabels")||tag.getBoolean("ShowLabels");}
     @Override public ClientboundBlockEntityDataPacket getUpdatePacket(){return ClientboundBlockEntityDataPacket.create(this);}
     @Override public int getContainerSize(){return items.size();}
     @Override public boolean isEmpty(){return items.stream().allMatch(ItemStack::isEmpty);}

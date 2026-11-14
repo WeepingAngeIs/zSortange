@@ -35,10 +35,10 @@ public final class Client {
     public static final class Screen extends AbstractContainerScreen<StoreMenu> {
         private EditBox input; private int debounce; private String sent="";
         public Screen(StoreMenu menu,Inventory inventory,Component title) {
-            super(menu,inventory,title);imageWidth=194;imageHeight=258;titleLabelX=12;titleLabelY=8;inventoryLabelX=12;inventoryLabelY=157;
+            super(menu,inventory,title);imageWidth=194;imageHeight=240;titleLabelX=12;titleLabelY=8;inventoryLabelX=12;inventoryLabelY=143;
         }
         @Override protected void init() {
-            super.init(); input=new EditBox(font,leftPos+12,topPos+23,170,16,Component.literal("Search or enter a setting"));
+            super.init(); input=new EditBox(font,leftPos+12,topPos+18,170,14,Component.literal("Search or enter a setting"));
             input.setMaxLength(128);input.setHint(Component.literal("Search / settings input"));input.setResponder(value->debounce=4);addRenderableWidget(input);
         }
         private void send(String action,String text,int value) { PacketDistributor.sendToServer(new Packets.Action(menu.containerId,menu.session(),menu.revision(),action,text,value)); }
@@ -63,7 +63,7 @@ public final class Client {
             for(Slot slot:menu.slots) { int sx=x+slot.x,sy=y+slot.y;g.fill(sx-1,sy-1,sx+17,sy+17,0xFF101623);g.fill(sx,sy,sx+16,sy+16,0xFF384359); }
         }
         @Override protected void renderLabels(GuiGraphics g,int mx,int my) {
-            g.drawString(font,title,12,8,0xFFEAD7E7,false);g.drawString(font,playerInventoryTitle,12,157,0xFFBDCCDD,false);
+            g.drawString(font,title,12,8,0xFFEAD7E7,false);g.drawString(font,playerInventoryTitle,12,143,0xFFBDCCDD,false);
         }
         @Override public void render(GuiGraphics g,int mx,int my,float partial) { super.render(g,mx,my,partial);renderTooltip(g,mx,my); }
     }

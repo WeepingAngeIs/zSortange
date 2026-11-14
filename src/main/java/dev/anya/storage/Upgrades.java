@@ -19,7 +19,7 @@ public final class Upgrades {
     private static final Map<Item,Item> COMPACT=Map.ofEntries(Map.entry(Items.IRON_NUGGET,Items.IRON_INGOT),Map.entry(Items.GOLD_NUGGET,Items.GOLD_INGOT),Map.entry(Items.IRON_INGOT,Items.IRON_BLOCK),Map.entry(Items.GOLD_INGOT,Items.GOLD_BLOCK),Map.entry(Items.DIAMOND,Items.DIAMOND_BLOCK),Map.entry(Items.EMERALD,Items.EMERALD_BLOCK),Map.entry(Items.COAL,Items.COAL_BLOCK),Map.entry(Items.LAPIS_LAZULI,Items.LAPIS_BLOCK),Map.entry(Items.REDSTONE,Items.REDSTONE_BLOCK),Map.entry(Items.NETHERITE_INGOT,Items.NETHERITE_BLOCK));
     public static ListTag installedItems(ItemStack bag){return BagInventory.data(bag).getList("InstalledUpgrades",Tag.TAG_COMPOUND);}
     public static boolean installed(BagInventory bag,String id){for(Tag entry:installedItems(bag.stack))if(((CompoundTag)entry).getString("Id").equals(id))return true;return false;}
-    public static boolean active(BagInventory bag,String id){return Boolean.TRUE.equals(Config.get().upgrades.get(id))&&installed(bag,id);}
+    public static boolean active(BagInventory bag,String id){return Config.get().backpacks&&Boolean.TRUE.equals(Config.get().upgrades.get(id))&&installed(bag,id);}
     public static boolean change(BagInventory bag,String id,boolean remove){
         ServerPlayer p=bag.player;if(!bag.valid()||bag.playerSlot>=36){AnyaStorage.tell(p,"Put the backpack in your main inventory to edit upgrades.");return false;}
         boolean present=installed(bag,id);if(remove!=present)return false;
@@ -33,7 +33,7 @@ public final class Upgrades {
             if(upgrade.isEmpty()){AnyaStorage.tell(p,"Stored upgrade is invalid; left unchanged for recovery.");return false;}
             ItemStack remaining=upgrade.copy();plan.insert(main,remaining);if(!remaining.isEmpty()){AnyaStorage.tell(p,"Make room in your inventory before removing this upgrade.");return false;}produced.add(upgrade.copy());
         }else{
-            if(!Boolean.TRUE.equals(Config.get().upgrades.get(id))){AnyaStorage.tell(p,"This upgrade is disabled by the server.");return false;}
+            if(!Config.get().backpacks||!Boolean.TRUE.equals(Config.get().upgrades.get(id))){AnyaStorage.tell(p,"This upgrade is disabled by the server.");return false;}
             for(int i=0;i<36;i++)if(i!=bag.playerSlot&&plan.work(main)[i].is(Content.UPGRADES.get(id).get())){upgrade=plan.work(main)[i].copyWithCount(1);plan.work(main)[i].shrink(1);break;}
             if(upgrade.isEmpty()){AnyaStorage.tell(p,"Craft and carry a "+id+" upgrade first.");return false;}
             CompoundTag entry=new CompoundTag();entry.putString("Id",id);entry.put("Stack",upgrade.save(p.registryAccess()));upgrades.add(entry);consumed.add(upgrade);
@@ -110,6 +110,10 @@ public final class Upgrades {
         }
         if(inputSlot<0)return;
         int fuel=data.getInt("FuelTicks"),progress=data.getInt("SmeltTicks");
+        String recipeId=recipe.id().toString();ItemStack currentInput=bag.getItem(inputSlot).copyWithCount(1);
+        ItemStack previousInput=ItemStack.parseOptional(bag.player.registryAccess(),data.getCompound("SmeltInput"));
+        if(!recipeId.equals(data.getString("SmeltRecipe"))||!ItemStack.isSameItemSameComponents(currentInput,previousInput))progress=0;
+        data.putString("SmeltRecipe",recipeId);data.put("SmeltInput",currentInput.save(bag.player.registryAccess()));
         if(fuel<=0){
             for(int i=0;i<bag.getContainerSize();i++)if(bag.getItem(i).is(Items.COAL)||bag.getItem(i).is(Items.CHARCOAL)){
                 ItemStack coal=bag.getItem(i);if(!ItemStack.isSameItemSameComponents(coal,new ItemStack(coal.getItem())))continue;
@@ -122,8 +126,12 @@ public final class Upgrades {
             Transactions.Plan plan=new Transactions.Plan(List.of(bag),bag::valid);ItemStack consumed=plan.work(bag)[inputSlot].copyWithCount(1);
             ItemStack output=recipe.value().assemble(new SingleRecipeInput(consumed),bag.player.registryAccess());
             if(output.isEmpty())return;plan.work(bag)[inputSlot].shrink(1);ItemStack remaining=output.copy();plan.insert(bag,remaining);
-            if(remaining.isEmpty()){
-                plan.authorizeRecipe(List.of(consumed),List.of(output));String error=plan.commit(bag.player.getServer());
+            boolean fits=remaining.isEmpty();List<ItemStack> outputs=new ArrayList<>();outputs.add(output.copy());
+            for(ItemStack remainder:recipe.value().getRemainingItems(new SingleRecipeInput(consumed)))if(!remainder.isEmpty()){
+                outputs.add(remainder.copy());ItemStack leftover=remainder.copy();plan.insert(bag,leftover);fits&=leftover.isEmpty();
+            }
+            if(fits){
+                plan.authorizeRecipe(List.of(consumed),outputs);String error=plan.commit(bag.player.getServer());
                 if(error.isEmpty()){
                     progress=0;float experience=data.getFloat("SmeltXP")+recipe.value().getExperience();int xp=(int)experience;if(xp>0)bag.player.giveExperiencePoints(xp);data.putFloat("SmeltXP",experience-xp);
                 } else {AnyaStorage.tell(bag.player,error);return;}

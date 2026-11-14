@@ -77,7 +77,7 @@ public final class Network {
         BlockPos center=hub==null?p.blockPosition():hub.getBlockPos();positions.sort(Comparator.comparingDouble((BlockPos pos)->pos.distSqr(center)).thenComparingLong(BlockPos::asLong));
         List<Target> result=new ArrayList<>();int slots=36;
         for(BlockPos pos:positions){
-            if(result.size()>=Config.get().maxContainers)break;if(!p.serverLevel().hasChunkAt(pos))continue;
+            if(result.size()>=Config.get().maxContainers)break;if(!p.serverLevel().hasChunkAt(pos)||!within(center,pos,hub==null?Config.get().quickRadius:hub.radius()))continue;
             BlockEntity be=p.serverLevel().getBlockEntity(pos);
             if(!supported(be)||!Safety.reason(p,be,hub).isEmpty())continue;
             Container container=(Container)be;if(Transactions.quarantined(container))continue;

@@ -28,8 +28,9 @@ tasks.register('generateAssets', Exec) { commandLine 'python3', 'scripts/generat
 tasks.named('processResources') { dependsOn 'generateAssets' }
 tasks.register('coreTest', JavaExec) {
     dependsOn tasks.named('testClasses')
-    classpath = sourceSets.test.runtimeClasspath
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
     mainClass = 'dev.anya.storage.CoreTests'
 }
 tasks.named('test') { enabled = false }
 tasks.named('check') { dependsOn tasks.named('coreTest') }
+tasks.named('sourcesJar') { dependsOn 'generateAssets' }

@@ -8,6 +8,8 @@ import java.util.*;
 public final class Categories {
     public static String id(ItemStack s) { return BuiltInRegistries.ITEM.getKey(s.getItem()).toString(); }
     public static String of(ItemStack s) {
+        String direct=Config.get().categoryRules.get(id(s));if(direct!=null)return direct;
+        for(var rule:Config.get().categoryRules.entrySet())if(rule.getKey().startsWith("#")&&s.getTags().anyMatch(tag->tag.location().toString().equals(rule.getKey().substring(1))))return rule.getValue();
         String path=BuiltInRegistries.ITEM.getKey(s.getItem()).getPath();
         if(s.has(DataComponents.FOOD))return "food";
         if(path.endsWith("_ore")||path.startsWith("raw_")||tag(s,"ores")||tag(s,"raw_materials"))return "ores";

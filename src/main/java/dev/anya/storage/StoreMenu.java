@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 
 /** Display-only slots. The only accepted input is a session/revision-checked intent packet. */
 public final class StoreMenu extends AbstractContainerMenu {
-    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM }
+    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
@@ -36,15 +36,18 @@ public final class StoreMenu extends AbstractContainerMenu {
     private String input="",selectedTier="netherite";
     private int offset;
     private boolean favoritesOnly;
+    private int feedSlot,feedCount,feedPoints,feedBefore;
+    private long feedRevision;
+    private ItemStack feedSnapshot=ItemStack.EMPTY;
     private long lastAction=-1,lastRefresh=-1;
     private Transactions.Plan pending;
     private List<Container> pendingContainers=List.of();
 
     public StoreMenu(int id,Inventory inventory){
         super(Content.MENU.get(),id);
-        for(int row=0;row<6;row++)for(int col=0;col<9;col++)addSlot(locked(display,row*9+col,17+col*18,44+row*18));
-        for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(locked(inventory,9+row*9+col,17+col*18,169+row*18));
-        for(int col=0;col<9;col++)addSlot(locked(inventory,col,17+col*18,227));
+        for(int row=0;row<6;row++)for(int col=0;col<9;col++)addSlot(locked(display,row*9+col,17+col*18,34+row*18));
+        for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(locked(inventory,9+row*9+col,17+col*18,155+row*18));
+        for(int col=0;col<9;col++)addSlot(locked(inventory,col,17+col*18,213));
         addDataSlots(sync);
     }
     private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos){
@@ -66,14 +69,14 @@ public final class StoreMenu extends AbstractContainerMenu {
     public int session(){return (sync.get(0)&65535)|((sync.get(1)&65535)<<16);}
     public int revision(){return (sync.get(2)&65535)|((sync.get(3)&65535)<<16);}
     private void bump(){int value=revision()+1;sync.set(2,value&65535);sync.set(3,value>>>16);}
-    private boolean adminPage(){return switch(page){case ADMIN,LIMITS,TIERS,TIER,ORES,RECIPES,UPGRADE_GATES,PRESETS,CONFIG_CONFIRM->true;default->false;};}
+    private boolean adminPage(){return switch(page){case ADMIN,LIMITS,TIERS,TIER,ORES,RECIPES,UPGRADE_GATES,PRESETS,CONFIG_CONFIRM,CATEGORIES->true;default->false;};}
     @Override public boolean stillValid(Player player){
         if(owner==null)return true;if(player!=owner||!owner.isAlive()||owner.isSpectator())return false;
         if(adminPage()&&!owner.hasPermissions(2))return false;
         if(bag!=null&&!bag.valid())return false;
         if(hub!=null&&!Network.hubReason(owner,hub).isEmpty())return false;
         if(chest!=null&&(!chest.stillValid(owner)||!Safety.reason(owner,chest,null).isEmpty()))return false;
-        if((page==Page.BASE||page==Page.ROUTE)&&hub!=null&&!hub.ownedBy(owner))return false;
+        if((page==Page.BASE||page==Page.ROUTE||page==Page.FEED_CONFIRM)&&hub!=null&&!hub.ownedBy(owner))return false;
         return true;
     }
     @Override public ItemStack quickMoveStack(Player p,int slot){return ItemStack.EMPTY;}
@@ -104,14 +107,14 @@ public final class StoreMenu extends AbstractContainerMenu {
         buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,icon(new ItemStack(Items.GRAY_STAINED_GLASS_PANE)," ",List.of()));
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
-            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();
+            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();
         }
     }
     private void navigate(Page next){page=next;offset=0;pending=null;}
     private void button(int slot,Item item,String name,Consumer<Click> action,String... lore){display.setItem(slot,icon(new ItemStack(item),name,List.of(lore)));if(action!=null)buttons.put(slot,action);}
     private static ItemStack icon(ItemStack stack,String name,List<String> lore){
         ItemStack copy=stack.copy();if(copy.isEmpty())copy=new ItemStack(Items.PAPER);
-        copy.remove(DataComponents.CONTAINER);if(copy.is(Content.BACKPACK.get()))copy.remove(DataComponents.CUSTOM_DATA);
+        Component originalName=copy.getHoverName().copy();copy.remove(DataComponents.CONTAINER);copy.remove(DataComponents.BUNDLE_CONTENTS);if(copy.is(Content.BACKPACK.get())){copy.remove(DataComponents.CUSTOM_DATA);copy.set(DataComponents.CUSTOM_NAME,originalName);}
         if(name!=null)copy.set(DataComponents.CUSTOM_NAME,Component.literal(name).withStyle(s->s.withItalic(false)));
         List<Component> lines=new ArrayList<>();for(String text:lore)for(int i=0;i<text.length();i+=55)lines.add(Component.literal(text.substring(i,Math.min(i+55,text.length()))).withStyle(s->s.withItalic(false).withColor(0xBFC9DE)));
         copy.set(DataComponents.LORE,new ItemLore(lines));return copy;
@@ -153,13 +156,16 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(!isStoragePage())return;
         if(click.button==2){Set<String> favorites=Profiles.of(owner).favorites;String id=Categories.id(entry.snapshot);if(!favorites.remove(id)&&favorites.size()<256)favorites.add(id);Profiles.changed(owner);return;}
         if(!Transactions.same(entry.inventory.getItem(entry.slot),entry.snapshot)){AnyaStorage.tell(owner,"That stack changed. The view has been refreshed.");return;}
-        MainInventory main=main();List<Network.Target> targets=targets();List<Container> all=new ArrayList<>();all.add(main);all.add(entry.inventory);
+        MainInventory main=main();List<Network.Target> targets=targets();
+        if(hub!=null&&targets.stream().noneMatch(t->t.inventory()==entry.inventory)){AnyaStorage.tell(owner,"That source is no longer accessible. Permissions and range have been rechecked.");return;}
+        List<Container> all=new ArrayList<>();all.add(main);all.add(entry.inventory);
         var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets);
         Transactions.Plan plan=new Transactions.Plan(all,guard);int moved=plan.move(entry.inventory,entry.slot,List.of(main),click.button==1?1:entry.snapshot.getCount());
         String error=moved==0?"Your main inventory is full":plan.commit(owner.getServer());if(!error.isEmpty())AnyaStorage.tell(owner,error);
     }
     private void inventoryClick(int slot,Click click){
         if(slot<0||slot>=36)return;
+        if(page==Page.BASE){selectOre(slot,click);return;}
         if(page==Page.PREFS){Profiles.of(owner).protectedSlots^=1L<<slot;Profiles.changed(owner);return;}
         if(page==Page.UPGRADES){ItemStack s=owner.getInventory().getItem(slot);if(!s.isEmpty()){input=Categories.id(s);AnyaStorage.tell(owner,"Selected filter item: "+input);}return;}
         if(!isStoragePage())return;
@@ -221,6 +227,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(30,Items.WRITABLE_BOOK,"Operator presets",c->navigate(Page.PRESETS));
         button(32,Items.PAPER,"Diagnostics",c->navigate(Page.DIAGNOSTICS));
         button(34,Items.IRON_DOOR,"My protected slots",c->navigate(Page.PREFS));
+        button(37,Items.BOOK,"Category rules: items and tags",c->navigate(Page.CATEGORIES));
         button(45,Items.BARRIER,"Discard and close",c->owner.closeContainer());
         button(53,Items.EMERALD,"Review changes",c->{Config.validate(draft);navigate(Page.CONFIG_CONFIRM);},"Draft revision: "+draft.revision,"Saved revision: "+Config.get().revision,"Saving reloads recipes. Existing items stay registered.");
     }
@@ -235,7 +242,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         for(int i=0;i<36&&offset+i<tiers.size();i++){Config.Tier t=tiers.get(offset+i);String reason=Config.unavailable(draft,t);button(i,t.id.equals("starter")?Content.BACKPACK.get():material(t.material),t.name+(reason.isEmpty()?" [READY]":" [BLOCKED]"),c->{selectedTier=t.id;navigate(Page.TIER);},"ID: "+t.id,"Predecessor: "+t.predecessor,"Material: "+t.material,"Slots: "+t.slots+"; upgrade slots: "+t.upgrades,reason.isEmpty()?"Recipe enabled by this draft":reason);}
         SortedSet<String> found=new TreeSet<>();for(ResourceLocation id:BuiltInRegistries.ITEM.keySet()){String p=id.getPath();if((p.contains("dragonsteel")||p.contains("witherite"))&&p.contains("ingot")&&draft.tiers.stream().noneMatch(t->t.material.equals(id.toString())))found.add(id.toString());}
         int slot=36;for(String id:found){if(slot>44)break;button(slot++,material(id),"Detected: "+id,c->addTier(id),"Create a disabled tier using this exact server item.","Material names do not establish progression balance.");}
-        footer(Page.ADMIN);button(51,Items.HOPPER,"Add held material tier",c->{ItemStack held=owner.getMainHandItem();if(held.isEmpty()||held.is(Content.BACKPACK.get()))throw new IllegalArgumentException("Hold the actual ingredient before opening settings.");addTier(Categories.id(held));},"Uses the exact installed item ID.","New tiers start OFF. Set predecessor and review first.");
+        footer(Page.ADMIN);button(46,Items.ARROW,"Previous tiers",c->offset=Math.max(0,offset-36));button(47,Items.ARROW,"Next tiers",c->offset+=36);button(51,Items.HOPPER,"Add held material tier",c->{ItemStack held=owner.getMainHandItem();if(held.isEmpty()||held.is(Content.BACKPACK.get()))throw new IllegalArgumentException("Hold the actual ingredient before opening settings.");addTier(Categories.id(held));},"Uses the exact installed item ID.","New tiers start OFF. Set predecessor and review first.");
     }
     private void addTier(String material){
         if(draft.tiers.size()>=64)throw new IllegalArgumentException("Tier limit is 64");
@@ -264,7 +271,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private int number(Click c,int old,int step){try{return c.shift?Integer.parseInt(input):old+(c.button==1?-step:step);}catch(NumberFormatException e){throw new IllegalArgumentException("Enter a whole number, then shift-click.");}}
     private void ores(){
         List<String> ids=new ArrayList<>(draft.oreValues.keySet());Collections.sort(ids);offset=Math.min(offset,Math.max(0,((ids.size()-1)/45)*45));
-        for(int i=0;i<45&&offset+i<ids.size();i++){String id=ids.get(offset+i);button(i,material(id),id+": "+draft.oreValues.get(id)+" points",c->draft.oreValues.put(id,number(c,draft.oreValues.get(id),1)),"Left +1, right -1; shift-click uses typed number.","Accepted values are 1..100000.");}
+        for(int i=0;i<45&&offset+i<ids.size();i++){String id=ids.get(offset+i);button(i,material(id),id+": "+draft.oreValues.get(id)+" points",c->{if(c.button==2)draft.oreValues.remove(id);else draft.oreValues.put(id,number(c,draft.oreValues.get(id),1));},"Left +1, right -1; shift-click uses typed number.","Accepted values are 1..100000. Middle-click removes the rule.");}
         footer(Page.ADMIN);button(51,Items.HOPPER,"Add held ore/resource",c->{ItemStack held=owner.getMainHandItem();if(held.isEmpty())throw new IllegalArgumentException("Hold the resource first.");draft.oreValues.putIfAbsent(Categories.id(held),1);},"The actual held registry ID is used.");
     }
     private void recipes(){
@@ -291,7 +298,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private void base(){
         if(hub==null||!hub.ownedBy(owner))return;
         button(10,Items.NAME_TAG,"Base: "+hub.baseName,c->{if(input.isBlank()||input.length()>48)throw new IllegalArgumentException("Enter a base name up to 48 characters.");hub.baseName=input;hub.profileChanged();},"Enter a name in the input bar, then click.");
-        button(12,Items.PLAYER_HEAD,"Trust an online player",c->{ServerPlayer target=owner.getServer().getPlayerList().getPlayerByName(input);if(target==null)throw new IllegalArgumentException("Enter the exact name of an online player.");if(hub.trusted.size()>=64&&!hub.trusted.contains(target.getUUID()))throw new IllegalArgumentException("Trust limit reached.");if(!hub.trusted.remove(target.getUUID()))hub.trusted.add(target.getUUID());hub.profileChanged();},"Enter an online name, then click to add/remove.","Trusted UUID count: "+hub.trusted.size(),"Claim permissions are still required.");
+        button(12,Items.PLAYER_HEAD,"Manage trusted players",c->{ServerPlayer target=owner.getServer().getPlayerList().getPlayerByName(input);UUID targetId;try{targetId=target!=null?target.getUUID():UUID.fromString(input);}catch(IllegalArgumentException e){throw new IllegalArgumentException("Enter an online name or a full player UUID.");}if(hub.trusted.size()>=64&&!hub.trusted.contains(targetId))throw new IllegalArgumentException("Trust limit reached.");if(!hub.trusted.remove(targetId))hub.trusted.add(targetId);hub.profileChanged();},"Enter an online name or full UUID, then click to add/remove.","Trusted UUID count: "+hub.trusted.size(),"Claim permissions are still required.");
         button(14,Items.LAVA_BUCKET,"Feed ore/resource from inventory",null,"Click an inventory slot while in this base menu.","Left feeds a stack; right feeds one.","Only resources with configured point values are accepted.");
         button(16,Items.ENDER_PEARL,"Radius: "+hub.radius()+" -> "+hub.nextRadius(),c->{if(hub.radius()>=Config.get().maxRadius)throw new IllegalArgumentException("Maximum radius reached.");if(hub.oreProgress<hub.upgradeCost())throw new IllegalArgumentException("Not enough ore progress.");int cost=hub.upgradeCost();hub.oreProgress-=cost;hub.rangeUpgrades++;hub.profileChanged();AnyaStorage.tell(owner,"Spent "+cost+" points. Radius is now "+hub.radius()+".");},"Stored ore points: "+hub.oreProgress,"Next upgrade costs: "+hub.upgradeCost(),"Click explicitly to spend points and upgrade.","One radius controls search, terminal access and QuickStack.");
         button(28,Items.HOPPER,"Container routing",null,"Bind a remote to this hub.","Sneak-use the remote on a supported chest.","Set category, exact-item filters, priority and overflow there.");
@@ -321,6 +328,39 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(50,Items.FURNACE,"Toggle smelt filter: "+input,c->Upgrades.filter(bag,"SmeltFilter",input));
         button(51,Items.WATER_BUCKET,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");tag.remove("SmeltFilter");BagInventory.data(bag.stack,tag);owner.getInventory().setChanged();});
         button(53,Items.BARRIER,"Close",c->owner.closeContainer());
+    }
+    private void selectOre(int slot,Click click){
+        if(hub==null||!hub.ownedBy(owner))return;
+        ItemStack item=owner.getInventory().getItem(slot);
+        if(!Transactions.same(item,playerSeen[slot]))throw new IllegalArgumentException("Inventory changed; select the refreshed slot.");
+        Integer value=Config.get().oreValues.get(Categories.id(item));
+        if(item.isEmpty()||value==null)throw new IllegalArgumentException("This item has no configured ore-feeder value.");
+        if(item.is(Content.BACKPACK.get())||item.has(DataComponents.BLOCK_ENTITY_DATA)||item.has(DataComponents.BUNDLE_CONTENTS)||!item.getOrDefault(DataComponents.CONTAINER,net.minecraft.world.item.component.ItemContainerContents.EMPTY).equals(net.minecraft.world.item.component.ItemContainerContents.EMPTY))throw new IllegalArgumentException("Containers cannot be burned as ore fuel.");
+        feedCount=Math.min(click.button==1?1:item.getCount(),Math.max(0,(1000000-hub.oreProgress)/value));
+        if(feedCount==0)throw new IllegalArgumentException("Ore progress is full; upgrade before feeding more.");
+        feedSlot=slot;feedPoints=Math.multiplyExact(feedCount,value);feedBefore=hub.oreProgress;feedRevision=Config.get().revision;feedSnapshot=item.copy();navigate(Page.FEED_CONFIRM);
+    }
+    private void feedConfirm(){
+        button(13,feedSnapshot.getItem(),"Consume "+feedCount+" "+feedSnapshot.getHoverName().getString(),null,"Adds "+feedPoints+" upgrade points.","Stored progress: "+feedBefore+" -> "+(feedBefore+feedPoints),"Current radius: "+hub.radius()+"; next radius: "+hub.nextRadius(),"Next upgrade costs "+hub.upgradeCost()+" points.","Feeding does not automatically buy the radius upgrade.");
+        button(45,Items.ARROW,"Cancel feeding",c->navigate(Page.BASE));
+        button(53,Items.EMERALD,"Confirm feeding",c->{
+            if(Config.get().revision!=feedRevision||hub.oreProgress!=feedBefore||!Transactions.same(owner.getInventory().getItem(feedSlot),feedSnapshot))throw new IllegalArgumentException("Ore, progress or settings changed. Select the resource again.");
+            MainInventory inventory=new MainInventory(owner);Transactions.Plan plan=new Transactions.Plan(List.of(inventory),()->stillValid(owner)&&hub.ownedBy(owner)&&Config.get().revision==feedRevision&&hub.oreProgress==feedBefore);
+            ItemStack consumed=plan.work(inventory)[feedSlot].copyWithCount(feedCount);plan.work(inventory)[feedSlot].shrink(feedCount);plan.authorizeRecipe(List.of(consumed),List.of());
+            String error=plan.commit(owner.getServer());if(!error.isEmpty())throw new IllegalArgumentException(error);
+            hub.oreProgress=feedBefore+feedPoints;hub.profileChanged();AnyaStorage.tell(owner,"Added "+feedPoints+" ore points. Choose the radius upgrade button separately to spend them.");navigate(Page.BASE);
+        });
+    }
+    private void categories(){
+        List<String> keys=new ArrayList<>(draft.categoryRules.keySet());offset=Math.min(offset,Math.max(0,((keys.size()-1)/45)*45));
+        List<String> categories=Config.CATEGORIES.stream().filter(s->!s.equals("any")).toList();
+        for(int i=0;i<45&&offset+i<keys.size();i++){
+            String key=keys.get(offset+i),category=draft.categoryRules.get(key);
+            button(i,key.startsWith("#")?Items.BOOK:material(key),key+" -> "+category,c->{if(c.button==2)draft.categoryRules.remove(key);else draft.categoryRules.put(key,categories.get(Math.floorMod(categories.indexOf(category)+(c.button==1?-1:1),categories.size())));},"Left/right cycles categories; middle-click removes.","Exact item rules override tag rules.","Tag rules are evaluated in displayed insertion order.");
+        }
+        footer(Page.ADMIN);
+        button(50,Items.HOPPER,"Add held item rule",c->{ItemStack held=owner.getMainHandItem();if(held.isEmpty())throw new IllegalArgumentException("Hold an item before opening settings.");draft.categoryRules.putIfAbsent(Categories.id(held),"misc");});
+        button(51,Items.BOOK,"Add rule from input",c->{String key=input;if(!Config.validId(key.startsWith("#")?key.substring(1):key))throw new IllegalArgumentException("Enter namespace:item or #namespace:tag.");if(!key.startsWith("#")&&!Config.installed(key))throw new IllegalArgumentException("That item is not installed.");draft.categoryRules.putIfAbsent(key,"misc");},"For example minecraft:diamond or #c:ores.","Rules are only active after reviewing and applying the draft.");
     }
     private void diagnostics(){
         button(10,Items.PAPER,"Configuration",null,Config.lastStatus,"Revision: "+Config.get().revision,"Settings: /anya storage or /as");

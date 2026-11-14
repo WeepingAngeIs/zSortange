@@ -21,9 +21,11 @@ public final class BagInventory implements Container {
         this.player=player;this.playerSlot=slot;this.stack=player.getInventory().getItem(slot);
         if(!stack.is(Content.BACKPACK.get())||stack.getCount()!=1)throw new IllegalArgumentException("A single backpack is required");
         initialize(stack);CompoundTag data=data(stack);
-        int size=Math.max(9,Math.min(216,data.getInt("Capacity")));
-        items=NonNullList.withSize(size,ItemStack.EMPTY);
-        observed=stack.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY);observed.copyInto(items);
+        int size=data.getInt("Capacity");
+        observed=stack.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY);
+        long storedSize=observed.stream().count();
+        if(size<9||size>216||storedSize>216)throw new IllegalArgumentException("Invalid backpack capacity; contents left untouched for recovery");
+        size=Math.max(size,(int)storedSize);items=NonNullList.withSize(size,ItemStack.EMPTY);observed.copyInto(items);
     }
     public static CompoundTag data(ItemStack stack) { return stack.getOrDefault(DataComponents.CUSTOM_DATA,CustomData.EMPTY).copyTag(); }
     public static void data(ItemStack stack,CompoundTag tag) { stack.set(DataComponents.CUSTOM_DATA,CustomData.of(tag)); }
@@ -44,5 +46,5 @@ public final class BagInventory implements Container {
     @Override public void setChanged(){observed=ItemContainerContents.fromItems(items);stack.set(DataComponents.CONTAINER,observed);player.getInventory().setChanged();}
     @Override public boolean stillValid(Player p){return p==player&&valid();}
     @Override public void clearContent(){items.replaceAll(s->ItemStack.EMPTY);setChanged();}
-    @Override public boolean canPlaceItem(int slot,ItemStack item){return slot>=0&&slot<items.size()&&item.getItem().canFitInsideContainerItems()&&!item.is(Content.BACKPACK.get())&&item.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY).equals(ItemContainerContents.EMPTY);}
+    @Override public boolean canPlaceItem(int slot,ItemStack item){return slot>=0&&slot<items.size()&&item.getItem().canFitInsideContainerItems()&&!item.is(Content.BACKPACK.get())&&!item.has(DataComponents.BUNDLE_CONTENTS)&&!item.has(DataComponents.BLOCK_ENTITY_DATA)&&item.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY).equals(ItemContainerContents.EMPTY);}
 }
