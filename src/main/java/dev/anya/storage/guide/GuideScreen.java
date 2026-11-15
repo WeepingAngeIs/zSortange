@@ -56,7 +56,10 @@ public final class GuideScreen extends Screen {
         if(!key.startsWith("item:"))return ClientLooks.shell(key);
         ResourceLocation id=ResourceLocation.tryParse(key.substring(5));return id==null?ItemStack.EMPTY:new ItemStack(BuiltInRegistries.ITEM.get(id));
     }
+    // Screen.render calls renderBackground before widgets; our artwork must not be blurred a second time.
+    @Override public void renderBackground(GuiGraphics g,int mx,int my,float partial){}
     @Override public void render(GuiGraphics g,int mx,int my,float partial){
+        super.renderBackground(g,mx,my,partial);
         g.fill(0,0,width,height,0xc5111524);
         g.pose().pushPose();g.pose().translate(left,top,0);g.pose().scale(bookW/460f,bookH/286f,1);
         g.blit(ExpansionPackets.id("textures/gui/ancient_technology.png"),0,0,0,0,460,286,460,286);g.pose().popPose();

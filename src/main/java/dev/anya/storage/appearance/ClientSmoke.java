@@ -35,7 +35,7 @@ public final class ClientSmoke {
         if(phase==1&&ticks==30){Screenshot.grab(mc.gameDirectory,"anya-models-client.png",mc.getMainRenderTarget(),c->saved.incrementAndGet());phase=2;}
         if(phase==2&&saved.get()==1){mc.setScreen(new Preview(true));phase=3;ticks=0;}
         if(phase==3&&ticks==30){Screenshot.grab(mc.gameDirectory,"anya-interiors-client.png",mc.getMainRenderTarget(),c->saved.incrementAndGet());phase=4;}
-        if(phase==4&&saved.get()==2){mc.setScreen(new dev.anya.storage.guide.GuideScreen(new dev.anya.storage.guide.GuidePacket(0,dev.anya.storage.guide.GuideContent.renderFixture())));phase=5;ticks=0;}
+        if(phase==4&&saved.get()==2){mc.options.guiScale().set(2);mc.resizeDisplay();mc.setScreen(new dev.anya.storage.guide.GuideScreen(new dev.anya.storage.guide.GuidePacket(0,dev.anya.storage.guide.GuideContent.renderFixture())));phase=5;ticks=0;}
         if(phase==5&&ticks==45){Screenshot.grab(mc.gameDirectory,"anya-guide-client.png",mc.getMainRenderTarget(),c->saved.incrementAndGet());phase=6;}
         if(phase==6&&saved.get()==3){if(mc.screen instanceof dev.anya.storage.guide.GuideScreen guide)guide.setPage(1);phase=7;ticks=0;}
         if(phase==7&&ticks==45){Screenshot.grab(mc.gameDirectory,"anya-guide-recipe-client.png",mc.getMainRenderTarget(),c->saved.incrementAndGet());phase=8;}

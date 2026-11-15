@@ -17,7 +17,13 @@ neoForge {
                 gameDirectory = project.file('run-client-smoke')
             }
         }
-        server { server(); programArgument '--nogui' }
+        server {
+            server(); programArgument '--nogui'
+            if(project.hasProperty('guidePersistence')) {
+                systemProperty 'anyastorage.guidePersistence', project.guidePersistence
+                gameDirectory = project.file('run-guide-persistence')
+            }
+        }
         gameTestServer {
             type = 'gameTestServer'
             systemProperty 'neoforge.enabledGameTestNamespaces', 'anyastorage'

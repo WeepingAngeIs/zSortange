@@ -39,6 +39,18 @@ jobs:
         run: |
           set -o pipefail
           gradle --no-daemon runGameTestServer 2>&1 | tee export/game-test-output.log
+      - name: Verify tutorial grant across a real dedicated-server restart
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p run-guide-persistence
+          test ! -e run-guide-persistence/world
+          printf 'eula=true\n' > run-guide-persistence/eula.txt
+          printf 'level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nonline-mode=false\nview-distance=2\nsimulation-distance=2\nspawn-protection=0\nserver-ip=127.0.0.1\nserver-port=25579\n' > run-guide-persistence/server.properties
+          timeout 180s gradle --no-daemon runServer -PguidePersistence=seed 2>&1 | tee export/guide-persistence-seed.log
+          grep -q 'ANYA_GUIDE_PERSISTENCE_SEED' export/guide-persistence-seed.log
+          timeout 180s gradle --no-daemon runServer -PguidePersistence=verify 2>&1 | tee export/guide-persistence-verify.log
+          grep -q 'ANYA_GUIDE_PERSISTENCE_VERIFY' export/guide-persistence-verify.log
       - name: Install software-rendering display
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
       - name: Start Minecraft client and inspect rendered assets
