@@ -13,7 +13,7 @@ neoForge {
         client { client()
             if (project.hasProperty('clientSmoke')) {
                 systemProperty 'anyastorage.clientSmoke', 'true'
-                programArguments.addAll '--width', '1280', '--height', '900'
+                programArguments.addAll '--width', '1280', '--height', '1000'
                 gameDirectory = project.file(project.hasProperty('accessoriesTest') ? 'run-client-accessories-smoke' : 'run-client-smoke')
             }
         }
