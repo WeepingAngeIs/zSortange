@@ -32,7 +32,7 @@ public final class PocketContent {
             lines.add(Component.literal("Experimental home entrance, not an inventory cube."));
             lines.add(Component.literal("Decorative portal preview only. No live world view."));
             lines.add(Component.literal("Link using a bound remote; right-click to visit."));
-            if(!PocketService.enabled())lines.add(Component.literal("Pocket prototype is gated OFF on this server."));
+            lines.add(Component.literal("Requires experimental server opt-in. See Ancient Technology for live status."));
         }
     });
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES=DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE,AnyaStorage.ID);
@@ -55,8 +55,7 @@ public final class PocketContent {
         }
         @Override public void animateTick(BlockState state,Level level,BlockPos pos,RandomSource random){
             // Local decorative fallback: never requests a destination, network payload or chunk ticket.
-            if(random.nextInt(8)==0)
-                level.addParticle(net.minecraft.core.particles.ParticleTypes.END_ROD,pos.getX()+random.nextDouble(),pos.getY()+1.05,pos.getZ()+random.nextDouble(),0,.006,0);
+            if(level.isClientSide)PocketPreviewParticles.emit(level,pos,random);
         }
     }
     public static final class EntranceEntity extends BlockEntity {

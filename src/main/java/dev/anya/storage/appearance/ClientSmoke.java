@@ -105,6 +105,10 @@ public final class ClientSmoke {
                 int i=0;for(String name:ClientLooks.TEXTURES){int x=24+(i%6)*168,y=66+(i/6)*170;i++;
                     g.fill(x,y,x+154,y+156,0xff252a3b);g.pose().pushPose();g.pose().translate(x+22,y+9,0);g.pose().scale(7,7,1);g.renderItem(ClientLooks.shell(name),0,0);g.pose().popPose();g.drawString(font,Looks.title(name),x+8,y+137,0xffecd3e4,false);
                 }
+                int x=24+(i%6)*168,y=66+(i/6)*170;
+                g.fill(x,y,x+154,y+156,0xff252a3b);g.pose().pushPose();g.pose().translate(x+22,y+9,0);g.pose().scale(7,7,1);
+                g.renderItem(new net.minecraft.world.item.ItemStack(dev.anya.storage.pocket.PocketContent.ITEM.get()),0,0);g.pose().popPose();
+                g.drawString(font,"Void Cube / NON-LIVE",x+8,y+137,0xffecd3e4,false);
             }
         }
     }

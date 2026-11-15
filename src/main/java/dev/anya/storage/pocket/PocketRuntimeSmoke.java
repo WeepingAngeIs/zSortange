@@ -51,7 +51,7 @@ public final class PocketRuntimeSmoke {
     }
     @net.neoforged.bus.api.SubscribeEvent(priority=net.neoforged.bus.api.EventPriority.LOWEST) public static void tick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event){
         if(!running||event.getServer()!=server)return;
-        try{tick++;while(!steps.isEmpty()&&steps.firstKey()<=tick)steps.pollFirstEntry().getValue().run();if(tick>800)throw new IllegalStateException("Pocket runtime probe timed out");}
+        try{tick++;while(!steps.isEmpty()&&steps.firstKey()<=tick)steps.pollFirstEntry().getValue().run();if(tick>1400)throw new IllegalStateException("Pocket runtime probe timed out");}
         catch(Throwable error){running=false;AnyaStorage.LOG.error("ANYA_POCKET_RUNTIME_FAILED",error);server.halt(false);}
     }
     private static void exercise(Fixture h)throws Exception {
@@ -144,7 +144,17 @@ public final class PocketRuntimeSmoke {
                 var record=PocketService.ledger(server).get(id);var level=PocketService.dimension(server);var chest=(StorageEntity)level.getBlockEntity(PocketService.chestPositions(record).getFirst());
                 check(h,Transactions.same(chest.getItem(0),named),"Reanchor/logout/recovery never copied or removed chest contents");
                 AnyaStorage.LOG.info("ANYA_POCKET_RUNTIME_OK: actual dimension crossings; two embedded-channel ServerPlayer identities; four physical chests; components; Visit; revocation; home remote; anchor destruction/reanchor; logout/login hooks; zero final Anya-owned requests. Normal player-file save verification ran; not real-client multiplayer or forced socket disconnect testing.");
-                PocketService.logout(owner);PocketService.logout(visitor);h.succeed();
+                PocketService.logout(owner);PocketService.logout(visitor);
+            }catch(Exception e){throw new AssertionError(e);}
+        });
+        h.runAfterDelay(940,()->{
+            try{
+                var record=PocketService.ledger(server).get(id);var level=PocketService.dimension(server);int remaining=0;
+                for(int x=(record.x()-1)>>4;x<=(record.x()+32)>>4;x++)for(int z=(record.z()-1)>>4;z<=(record.z()+32)>>4;z++)
+                    if(level.getChunkSource().getChunkNow(x,z)!=null)remaining++;
+                check(h,PocketService.ownedTicketRequests()==0&&remaining==0,"Engine retained destination chunks after idle cleanup window");
+                AnyaStorage.LOG.info("ANYA_POCKET_UNLOAD_OK: zero Anya-owned tickets and zero of the 16 destination chunk positions loaded after 600 additional idle ticks; isolated server only, not full-pack retention proof");
+                h.succeed();
             }catch(Exception e){throw new AssertionError(e);}
         });
     }
