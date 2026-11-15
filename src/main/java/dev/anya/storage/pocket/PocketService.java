@@ -65,7 +65,7 @@ public final class PocketService {
         if(!enabled())return "Pocket prototype is gated OFF";
         if(!p.isAlive()||p.isSpectator())return "Player cannot interact";
         StorageEntity hub=home(p,pocket);if(hub==null)return "Loaded home hub/entrance identity is missing or changed";
-        if(!hub.permits(p,rights|(kind==PocketLeases.Kind.VISIT?BasePermissions.VISIT:0)))return "Pocket permission denied; Visit is separate from storage rights";
+        if(!hub.allowed(p)||!hub.permits(p,rights|(kind==PocketLeases.Kind.VISIT?BasePermissions.VISIT:0)))return "Pocket permission denied; Visit is separate from storage rights";
         ServerLevel home=(ServerLevel)hub.getLevel();
         String reason=Safety.locationReason(p,home,hub.getBlockPos());if(!reason.isEmpty())return reason;
         reason=Safety.locationReason(p,home,BlockPos.of(pocket.anchor().entrance()));if(!reason.isEmpty())return reason;
@@ -136,8 +136,9 @@ public final class PocketService {
         if(dimension(p.getServer())==null)throw new IOException("Pocket dimension is missing; restart a disposable world with the matching data pack");
         if(r.stage()==PocketLedger.Stage.BUILDING&&!PREPARING.containsKey(r.id()))throw new IOException("Interrupted room preparation: fail-closed, no regeneration. Preserve this world for manual inspection");
         if(kind==PocketLeases.Kind.REMOTE&&r.stage()!=PocketLedger.Stage.READY)throw new IOException("Visit once to prepare the pocket before opening remote storage");
+        p.closeContainer(); // Close an older view before creating the new lease.
         if(!LEASES.acquire(p.getUUID(),r.id(),kind,r.epoch(),clock,ExpansionRules.get().activePocketLimit,16,80,ExpansionRules.get().pocketSessionTicks))throw new IOException("Active-pocket or player budget reached");
-        p.closeContainer();PENDING.put(p.getUUID(),new Pending(p,r.id(),kind));syncTickets(p.getServer());
+        PENDING.put(p.getUUID(),new Pending(p,r.id(),kind));syncTickets(p.getServer());
         AnyaStorage.tell(p,"Preparing bounded pocket access. The destination is leased only for active users; the preview is not a live view.");
     }
     private static Set<Ticket> pocketTickets(PocketLedger.Pocket p){
@@ -176,6 +177,7 @@ public final class PocketService {
             if(p.stage()!=PocketLedger.Stage.RESERVED)throw new IOException("Interrupted preparation cannot be replayed");
             // Refuse collisions with pre-existing world data instead of clearing an occupied cell.
             for(BlockPos pos:chestPositions(p))if(!level.isEmptyBlock(pos))throw new IOException("Allocated cell is not empty; automatic generation denied");
+            if(!level.isEmptyBlock(exitPosition(p)))throw new IOException("Exit position is occupied; generation denied");
             ledger.stage(p.id(),PocketLedger.Stage.RESERVED,PocketLedger.Stage.BUILDING);job.blocks=shell(p);job.began=true;
         }
         int budget=256;
@@ -185,6 +187,7 @@ public final class PocketService {
             if(!level.isEmptyBlock(pos))throw new IOException("Chest destination changed during preparation; no inventory was overwritten");
             level.setBlock(pos,Content.CRATE.get().defaultBlockState(),3);var chest=(StorageEntity)level.getBlockEntity(pos);chest.owner=p.owner();chest.pocketId=p.id();chest.setChanged();
         }
+        if(!level.isEmptyBlock(exitPosition(p)))throw new IOException("Exit position changed during preparation; no block was overwritten");
         level.setBlock(exitPosition(p),Blocks.LODESTONE.defaultBlockState(),3);
         level.getChunkSource().save(true); // commit newly built region data before publishing READY
         ledger.stage(p.id(),PocketLedger.Stage.BUILDING,PocketLedger.Stage.READY);PREPARING.remove(p.id());return true;
@@ -238,11 +241,23 @@ public final class PocketService {
         p.closeContainer();p.stopRiding();TELEPORT.set(true);
         try{p.teleportTo(level,pos.x,pos.y,pos.z,yaw,pitch);p.setDeltaMovement(Vec3.ZERO);p.fallDistance=0;}finally{TELEPORT.remove();}
     }
-    private static void savePlayer(ServerPlayer p){if(!(p instanceof FakePlayer))p.getServer().getPlayerList().save(p);}
+    private static void savePlayer(ServerPlayer p)throws IOException {
+        if(p instanceof FakePlayer)return; // Isolated test identities have no normal player file.
+        p.getServer().getPlayerList().save(p);
+        // Vanilla may log a failed save rather than throw. Verify the resulting position before clearing recovery.
+        var file=p.getServer().getWorldPath(LevelResource.PLAYER_DATA_DIR).resolve(p.getUUID()+".dat");
+        if(!java.nio.file.Files.isRegularFile(file,java.nio.file.LinkOption.NOFOLLOW_LINKS)||java.nio.file.Files.size(file)>16*1024*1024)throw new IOException("Player save missing or outside bounded verification size; recovery remains recorded");
+        var tag=net.minecraft.nbt.NbtIo.readCompressed(file,net.minecraft.nbt.NbtAccounter.create(32L*1024*1024));
+        var pos=tag.getList("Pos",net.minecraft.nbt.Tag.TAG_DOUBLE);
+        if(!tag.hasUUID("UUID")||!tag.getUUID("UUID").equals(p.getUUID())||!tag.getString("Dimension").equals(p.level().dimension().location().toString())||pos.size()!=3||Math.abs(pos.getDouble(0)-p.getX())>0.01||Math.abs(pos.getDouble(1)-p.getY())>0.01||Math.abs(pos.getDouble(2)-p.getZ())>0.01)throw new IOException("Player position save not confirmed; recovery remains recorded");
+    }
     private static boolean safe(ServerLevel level,ServerPlayer p,Vec3 point){
         if(level==null)return false;BlockPos pos=BlockPos.containing(point);
         if(!level.hasChunkAt(pos)||!level.getWorldBorder().isWithinBounds(pos)||!level.getBlockState(pos.below()).isFaceSturdy(level,pos.below(),Direction.UP)||!level.getFluidState(pos).isEmpty()||!level.getFluidState(pos.above()).isEmpty())return false;
-        Block floor=level.getBlockState(pos.below()).getBlock();if(floor==Blocks.MAGMA_BLOCK||floor==Blocks.CAMPFIRE||floor==Blocks.SOUL_CAMPFIRE)return false;
+        for(BlockPos check:List.of(pos.below(),pos,pos.above())){
+            Block b=level.getBlockState(check).getBlock();
+            if(b==Blocks.MAGMA_BLOCK||b==Blocks.CAMPFIRE||b==Blocks.SOUL_CAMPFIRE||b==Blocks.FIRE||b==Blocks.SOUL_FIRE||b==Blocks.CACTUS||b==Blocks.SWEET_BERRY_BUSH||b==Blocks.WITHER_ROSE||b==Blocks.POWDER_SNOW||b==Blocks.NETHER_PORTAL||b==Blocks.END_PORTAL||b==Blocks.END_GATEWAY)return false;
+        }
         return level.noCollision(p,p.getBoundingBox().move(point.subtract(p.position())));
     }
     private static Vec3 findSafe(ServerLevel level,ServerPlayer p,Vec3 center){

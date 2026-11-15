@@ -19,17 +19,18 @@ neoForge {
         }
         server {
             server(); programArgument '--nogui'
+            if(project.hasProperty('pocketTest')) {
+                systemProperty 'anyastorage.pocketPrototype', 'true'
+                systemProperty 'anyastorage.pocketTests', 'true'
+                gameDirectory = project.file('run-pocket-tests')
+            }
+
             if(project.hasProperty('guidePersistence')) {
                 systemProperty 'anyastorage.guidePersistence', project.guidePersistence
                 gameDirectory = project.file('run-guide-persistence')
             }
         }
         gameTestServer {
-            if(project.hasProperty('pocketTest')) {
-                systemProperty 'anyastorage.pocketPrototype', 'true'
-                systemProperty 'anyastorage.pocketTests', 'true'
-                gameDirectory = project.file('run-pocket-tests')
-            }
             type = 'gameTestServer'
             systemProperty 'neoforge.enabledGameTestNamespaces', 'anyastorage'
             if(project.hasProperty('accessoriesTest')) {
