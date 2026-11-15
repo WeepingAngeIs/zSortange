@@ -18,7 +18,7 @@ public final class AnyaStorage {
     public static final String ID="anyastorage";
     public static final Logger LOG=LogUtils.getLogger();
     public AnyaStorage(IEventBus bus) {
-        Config.init(); Content.register(bus); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);bus.addListener(dev.anya.storage.guide.GuidePacket::register);
+        Config.init(); Content.register(bus); bus.addListener((net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent e)->e.enqueueWork(()->{if(BackpackAccess.accessories())dev.anya.storage.compat.AccessoriesBridge.register();})); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);bus.addListener(dev.anya.storage.guide.GuidePacket::register);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::login);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::tick);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::inventoryRetry);

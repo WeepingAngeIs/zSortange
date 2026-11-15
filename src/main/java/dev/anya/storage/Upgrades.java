@@ -21,7 +21,7 @@ public final class Upgrades {
     public static boolean installed(BagInventory bag,String id){for(Tag entry:installedItems(bag.stack))if(((CompoundTag)entry).getString("Id").equals(id))return true;return false;}
     public static boolean active(BagInventory bag,String id){return Config.get().backpacks&&Boolean.TRUE.equals(Config.get().upgrades.get(id))&&installed(bag,id);}
     public static boolean change(BagInventory bag,String id,boolean remove){
-        ServerPlayer p=bag.player;if(!bag.valid()||bag.playerSlot>=36){AnyaStorage.tell(p,"Put the backpack in your main inventory to edit upgrades.");return false;}
+        ServerPlayer p=bag.player;if(!bag.valid()||bag.playerSlot<0||bag.playerSlot>=36){AnyaStorage.tell(p,"Put the backpack in your main inventory to edit upgrades.");return false;}
         boolean present=installed(bag,id);if(remove!=present)return false;
         CompoundTag tag=BagInventory.data(bag.stack);ListTag upgrades=tag.getList("InstalledUpgrades",Tag.TAG_COMPOUND).copy();
         if(!remove&&upgrades.size()>=tag.getInt("UpgradeSlots")){AnyaStorage.tell(p,"No free upgrade slots.");return false;}
@@ -66,8 +66,8 @@ public final class Upgrades {
     }
     public static void tick(PlayerTickEvent.Post event){
         if(!(event.getEntity() instanceof ServerPlayer p)||p.tickCount%20!=0||!p.isAlive()||p.isSpectator()||p.containerMenu!=p.inventoryMenu||!Config.get().backpacks)return;
-        for(int i=0;i<36;i++)if(p.getInventory().getItem(i).is(Content.BACKPACK.get())&&!installedItems(p.getInventory().getItem(i)).isEmpty()){
-            BagInventory bag=new BagInventory(p,i);
+        for(var source:BackpackAccess.priority(p))if(!installedItems(source.stack()).isEmpty()&&BackpackAccess.unique(p,source.stack())){
+            BagInventory bag=source.open(p);
             try { if(active(bag,"pickup"))pickup(bag);if(active(bag,"refill"))refill(bag);if(active(bag,"feeding"))feed(bag);if(active(bag,"smelting"))smelt(bag); }
             catch(Exception e){AnyaStorage.LOG.error("Backpack automation stopped for {}",p.getUUID(),e);}
             break; // One active backpack per player per second bounds the automation cost.

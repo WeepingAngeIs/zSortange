@@ -16,7 +16,10 @@ public final class Looks {
     }
     public static Look of(ItemStack stack){
         CompoundTag t=BagInventory.data(stack);
-        return new Look(known(ELEMENTS,t.getString("Element"),"plain"),known(SKINS,t.getString("Skin"),"elemental"),known(LEAVES,t.getString("LeafSpecies"),"oak"),known(INTERIORS,t.getString("Interior"),"atelier"));
+        String element=known(ELEMENTS,t.getString("Element"),"plain"),skin=known(SKINS,t.getString("Skin"),"elemental");
+        String design=skin.equals("elemental")?element:skin;
+        String automatic=switch(design){case "leaf","oak","cherry","dark_oak"->"botanical";case "water","diamond"->"ocean";case "galaxy"->"galaxy";case "futuristic","stone"->"circuit";case "magma","spooky","cute_spooky","midnight_cat"->"midnight";default->"atelier";};
+        return new Look(element,skin,known(LEAVES,t.getString("LeafSpecies"),"oak"),known(INTERIORS,t.getString("Interior"),automatic));
     }
     public static String known(List<String> list,String key,String fallback){return list.contains(key)?key:fallback;}
     public static boolean unlocked(ItemStack bag,String key,boolean element){

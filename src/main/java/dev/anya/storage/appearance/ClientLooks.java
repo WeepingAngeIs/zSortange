@@ -31,6 +31,7 @@ public final class ClientLooks {
     public static Options options=new Options();
     private static final Map<Integer,ExpansionPackets.Look> worn=new HashMap<>();
     private static Object previousLevel;
+    private static final Map<String,ItemStack> shells=new HashMap<>();
     @SubscribeEvent public static void setup(FMLClientSetupEvent event){event.enqueueWork(()->{
         Path file=FMLPaths.CONFIGDIR.get().resolve("anya-storage-plus-client.json");
         try{if(Files.isRegularFile(file)&&Files.size(file)<=4096){Options loaded=Config.JSON.fromJson(Files.readString(file),Options.class);if(loaded!=null)options=loaded;}}catch(Exception ignored){}
@@ -47,11 +48,14 @@ public final class ClientLooks {
             EntityRenderer<?> renderer=event.getRenderer(type);if(renderer instanceof LivingEntityRenderer living)living.addLayer(new Layer(living));
         }
     }
+    /** Read-only render-only shell. Never pass to a menu, mutation or gameplay inventory. */
     public static ItemStack shell(String texture){
-        if(!TEXTURES.contains(texture))texture="plain";ItemStack s=new ItemStack(Content.BACKPACK.get());CompoundTag data=new CompoundTag();
+        if(!TEXTURES.contains(texture))texture="plain";
+        ItemStack cached=shells.get(texture);if(cached!=null)return cached;
+        ItemStack s=new ItemStack(Content.BACKPACK.get());CompoundTag data=new CompoundTag();
         if(texture.startsWith("leaf_")){data.putString("Element","leaf");data.putString("LeafSpecies",texture.substring(5));}
         else if(Looks.SKINS.contains(texture))data.putString("Skin",texture);else data.putString("Element",texture);
-        BagInventory.data(s,data);return s;
+        BagInventory.data(s,data);shells.put(texture,s);return s;
     }
     private static final class Layer<T extends LivingEntity,M extends EntityModel<T>> extends RenderLayer<T,M> {
         Layer(RenderLayerParent<T,M> parent){super(parent);}

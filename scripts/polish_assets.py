@@ -7,10 +7,10 @@ for name in ORDER:
  for face in ['front','pocket']:
   p=[body]*1024
   for y in range(32):
-   for x in range(32):p[y*32+x]=shade(body,((x*17+y*13)%7)-3+(4 if y<9 else -4 if y>24 else 0))
+   for x in range(32):p[y*32+x]=shade(body,(1 if (x*17+y*13)%31==0 else 0)+(3 if y<9 else -3 if y>24 else 0))
   rect(p,32,0,0,32,2,dark);rect(p,32,0,30,32,2,dark);rect(p,32,0,0,2,32,dark);rect(p,32,30,0,2,32,dark)
-  for t in range(4,29,4):
-   rect(p,32,t,3,2,1,accent);rect(p,32,t,28,2,1,accent);rect(p,32,3,t,1,2,accent);rect(p,32,28,t,1,2,accent)
+  for t in range(6,27,7):
+   rect(p,32,t,3,1,1,shade(body,17));rect(p,32,t,28,1,1,shade(body,17))
   if face=='pocket':
    rect(p,32,4,5,24,1,accent);rect(p,32,4,7,24,1,dark)
    if 'cat' in name:
@@ -28,7 +28,7 @@ for name in ORDER:
     stamp(p,32,STAR,9,10,light,2)
     for x,y in [(6,11),(24,24),(5,23),(24,10)]:rect(p,32,x,y,2,1,accent)
    elif 'leaf' in name or name in ('oak','cherry','dark_oak'):
-    stamp(p,32,LEAF,10,10,accent,2);line(p,32,12,23,20,13,light)
+    stamp(p,32,LEAF,9,10,accent,2);line(p,32,12,24,20,13,dark);line(p,32,16,19,15,15,dark);line(p,32,18,17,23,16,dark)
    elif name=='water':
     stamp(p,32,['   #   ','  ###  ',' ##### ','#######','#######',' ##### ','  ###  '],9,10,accent,2)
     line(p,32,13,18,13,22,light);rect(p,32,14,22,3,1,light)

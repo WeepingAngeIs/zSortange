@@ -1,6 +1,7 @@
 package dev.anya.storage;
 
 import net.minecraft.core.BlockPos;
+import dev.anya.storage.ui.StorageGrid;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.*;
@@ -26,7 +27,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
-    private final ContainerData sync=new SimpleContainerData(4);
+    private final ContainerData sync=new SimpleContainerData(14);
     private final Map<Integer,Consumer<Click>> buttons=new HashMap<>();
     private final Map<Integer,Entry> entries=new HashMap<>();
     private final ItemStack[] playerSeen=new ItemStack[36];
@@ -37,7 +38,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private BlockPos routePos;
     private Config.Data draft;
     private String input="",selectedTier="netherite";
-    private int offset;
+    private int offset,viewportRows=5;
     private UUID selectedImage,deleteImage,selectedMember;
     private boolean clearLogConfirm;
     private String lastAppearance="";
@@ -64,8 +65,9 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private static Slot locked(Container container,int index,int x,int y){return new Slot(container,index,x,y){public boolean mayPlace(ItemStack s){return false;}public boolean mayPickup(Player p){return false;}};}
     private static void open(ServerPlayer p,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos route){
-        p.openMenu(new SimpleMenuProvider((id,inv,ignored)->new StoreMenu(id,inv,p,page,bag,hub,chest,route),Component.literal("Anya Storage")));
+        p.openMenu(new SimpleMenuProvider((id,inv,ignored)->new StoreMenu(id,inv,p,page,bag,hub,chest,route),bag==null?Component.literal("Anya Storage"):bag.stack.getHoverName()));
     }
+    static StoreMenu bagMenu(int id,ServerPlayer p,BagInventory bag){return new StoreMenu(id,p.getInventory(),p,Page.BAG,bag,null,null,null);}
     public static void settings(ServerPlayer p){open(p,p.hasPermissions(2)?Page.ADMIN:Page.PREFS,null,null,null,null);}
     public static void preferences(ServerPlayer p){open(p,Page.PREFS,null,null,null,null);}
     public static void bag(ServerPlayer p,BagInventory bag,boolean upgrades){open(p,upgrades?Page.UPGRADES:Page.BAG,bag,null,null,null);}
@@ -74,6 +76,25 @@ public final class StoreMenu extends AbstractContainerMenu {
     public static void route(ServerPlayer p,StorageEntity hub,BlockPos pos){if(hub.ownedBy(p))open(p,Page.ROUTE,null,hub,null,pos.immutable());}
     public int session(){return (sync.get(0)&65535)|((sync.get(1)&65535)<<16);}
     public int revision(){return (sync.get(2)&65535)|((sync.get(3)&65535)<<16);}
+    private int synchronizedInt(int index){return (sync.get(index)&65535)|((sync.get(index+1)&65535)<<16);}
+    private void synchronizedInt(int index,int value){sync.set(index,value&65535);sync.set(index+1,value>>>16);}
+    public boolean storageView(){return (sync.get(4)&1)!=0;}
+    public boolean backpackView(){return (sync.get(4)&2)!=0;}
+    public boolean privateView(){return (sync.get(4)&4)!=0;}
+    public boolean filteredView(){return (sync.get(4)&8)!=0;}
+    public int visibleRows(){return StorageGrid.clampRows(sync.get(5));}
+    public int capacity(){return Math.max(0,synchronizedInt(6));}
+    public int resultCount(){return Math.max(0,synchronizedInt(8));}
+    public int firstSlot(){return Math.max(0,synchronizedInt(10));}
+    public int occupiedSlots(){return Math.max(0,synchronizedInt(12));}
+    public int shownSlots(){return storageView()?StorageGrid.visible(resultCount(),firstSlot(),visibleRows()):45;}
+    /** Explicit renderer fixture only; cannot be invoked by packets or on a server-owned menu. */
+    public void renderFixture(int capacity,int row,int rows){
+        if(owner!=null||!Boolean.getBoolean("anyastorage.clientSmoke"))throw new IllegalStateException("Not a development renderer fixture");
+        sync.set(4,3);sync.set(5,StorageGrid.clampRows(rows));synchronizedInt(6,capacity);synchronizedInt(8,capacity);synchronizedInt(10,StorageGrid.start(capacity,row,rows));synchronizedInt(12,0);
+        for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
+        button(45,Items.ARROW,"Scroll up",null);button(46,Items.ARROW,"Scroll down",null);button(47,Items.HOPPER,"Organize preview",null);button(48,Items.CHEST,"QuickStack",null);button(49,Items.DROPPER,"Dump matches",null);button(50,Items.IRON_DOOR,"Protected slots",null);button(51,Content.BACKPACK.get(),"Upgrades",null);button(52,Items.NETHER_STAR,"Favorites",null);button(53,Items.PAPER,"Information",null);
+    }
     private void bump(){int value=revision()+1;sync.set(2,value&65535);sync.set(3,value>>>16);}
     private boolean adminPage(){return switch(page){case ADMIN,LIMITS,TIERS,TIER,ORES,RECIPES,UPGRADE_GATES,PRESETS,CONFIG_CONFIRM,CATEGORIES,EXPANSION->true;default->false;};}
     @Override public boolean stillValid(Player player){
@@ -102,6 +123,10 @@ public final class StoreMenu extends AbstractContainerMenu {
         long now=owner.serverLevel().getGameTime();if(lastAction==now)return;lastAction=now;
         try {
             if(packet.verb().equals("text")){input=packet.text().strip();if(input.length()>128)input=input.substring(0,128);offset=0;}
+            else if(packet.verb().equals("viewport")&&isStoragePage()){
+                int value=packet.value();if(value<0||value>16_000_000)return;
+                viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
+            }
             else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
             else if(packet.verb().equals("slot")){
                 int index=packet.value()&255;Click click=new Click((packet.value()>>8)&3,(packet.value()&65536)!=0);
@@ -114,6 +139,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private boolean isStoragePage(){return page==Page.NETWORK||page==Page.BAG||page==Page.CHEST;}
     private void render(){
         buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
+        sync.set(4,bag!=null?2:0);sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
             case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();case ACCESS->access();case ACTIVITY->activity();
@@ -137,22 +163,27 @@ public final class StoreMenu extends AbstractContainerMenu {
         boolean mayView=hub==null||hub.permits(owner,BasePermissions.VIEW);
         List<Entry> values=new ArrayList<>();List<Network.Target> targets=mayView?targets():List.of();
         List<Container> containers=bag!=null?List.of(bag):chest!=null?List.of(chest):targets.stream().map(Network.Target::inventory).toList();
+        int capacity=0,occupied=0;boolean filtered=!input.isBlank()||favoritesOnly;
         for(Container container:containers)for(int i=0;i<container.getContainerSize();i++){
-            ItemStack item=container.getItem(i);if(item.isEmpty()||!Categories.matches(item,input))continue;
-            if(favoritesOnly&&!Profiles.of(owner).favorites.contains(Categories.id(item)))continue;
+            capacity++;ItemStack item=container.getItem(i);if(!item.isEmpty())occupied++;
+            if(filtered&&(item.isEmpty()||!Categories.matches(item,input)||favoritesOnly&&!Profiles.of(owner).favorites.contains(Categories.id(item))))continue;
             BlockPos pos=container instanceof StorageEntity be?be.getBlockPos():null;
             if(pos==null&&bag==null)for(Network.Target target:targets)if(target.inventory()==container){pos=target.pos();break;}
             values.add(new Entry(container,i,item.copy(),pos));
         }
-        values.sort(Comparator.comparing((Entry e)->!Profiles.of(owner).favorites.contains(Categories.id(e.snapshot))).thenComparing(Entry::snapshot,Categories.order()));
-        offset=Math.min(offset,Math.max(0,((values.size()-1)/45)*45));
-        for(int i=0;i<45&&offset+i<values.size();i++){
+        // Unfiltered views retain physical slot order, including every real empty slot.
+        // Search narrows the view without inventing slots or changing the source-slot identity.
+        offset=StorageGrid.start(values.size(),offset/9,viewportRows);
+        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0));sync.set(5,viewportRows);
+        synchronizedInt(6,capacity);synchronizedInt(8,values.size());synchronizedInt(10,offset);synchronizedInt(12,occupied);
+        int shown=StorageGrid.visible(values.size(),offset,viewportRows);
+        for(int i=0;i<shown;i++){
             Entry entry=values.get(offset+i);entries.put(i,entry);
+            if(entry.snapshot.isEmpty())continue;
             String source=entry.position==null?"Backpack":entry.position.toShortString();
-            display.setItem(i,icon(entry.snapshot,null,List.of("Source: "+source+" / slot "+(entry.slot+1),"Category: "+Categories.of(entry.snapshot),"Left: take stack | Right: take one","Middle: favorite this item type",Profiles.of(owner).favorites.contains(Categories.id(entry.snapshot))?"Favorite":"")));
+            display.setItem(i,icon(entry.snapshot,null,List.of("Source: "+source+" / real slot "+(entry.slot+1),"Category: "+Categories.of(entry.snapshot),"Left: take stack | Right: take one","Middle: favorite this item type",Profiles.of(owner).favorites.contains(Categories.id(entry.snapshot))?"Favorite":"")));
         }
-        if(!mayView)button(22,Items.IRON_DOOR,"Contents are private",null,"Your base permissions do not include View.","An explicit inventory click can deposit when allowed.","QuickStack, Dump and withdrawal also require View.");
-        button(45,Items.ARROW,"Previous",c->offset=Math.max(0,offset-45));button(46,Items.ARROW,"Next",c->offset+=45);
+        button(45,Items.ARROW,"Scroll up",c->offset=Math.max(0,offset-9));button(46,Items.ARROW,"Scroll down",c->offset+=9);
         button(47,Items.HOPPER,"Preview organize",c->previewSort(),"Groups by category and exact components.","Nothing moves until you confirm the preview.");
         button(48,Items.CHEST,"QuickStack matching",c->depositAll(false),"Only existing identical item/components.","Protected slots are never swept.");
         button(49,Items.DROPPER,"Dump broader matches",c->depositAll(true),"Same item type or designated category.","Does not empty unrelated items into random chests.");
@@ -161,11 +192,11 @@ public final class StoreMenu extends AbstractContainerMenu {
         else if(hub!=null)button(51,Content.HUB.get().asItem(),hub.ownedBy(owner)?"Base profile / ore feeder":"Base information",c->navigate(hub.ownedBy(owner)?Page.BASE:hub.canReadActivity(owner)?Page.ACTIVITY:Page.DIAGNOSTICS),hub.baseName,"Radius: "+hub.radius());
         else button(51,Items.PINK_DYE,"Cycle front symbol",c->{if(chest.ownedBy(owner)){chest.symbol=Config.SYMBOLS.get((Config.SYMBOLS.indexOf(chest.symbol)+1)%Config.SYMBOLS.size());chest.profileChanged();}},"Owner/operator only",chest.symbol);
         toggle(52,"Favorites only",favoritesOnly,()->favoritesOnly=!favoritesOnly);
-        button(53,Items.PAPER,"Storage information",c->navigate(Page.DIAGNOSTICS),"Matching stacks: "+values.size(),"Page: "+(offset/45+1),"Click items in your inventory below to deposit.","Type name, @mod or #tag in the search bar.");
+        button(53,Items.PAPER,"Storage information",c->navigate(Page.DIAGNOSTICS),"Real slots: "+capacity+" | Occupied: "+occupied,"Visible results: "+values.size(),"Click items in your inventory below to deposit.","Type name, @mod or #tag in the search bar.");
     }
     private boolean permission(int required){String denied=Network.permissionReason(owner,hub,required);if(denied.isEmpty())return true;AnyaStorage.tell(owner,denied);return false;}
     private void take(Entry entry,Click click){
-        if(!isStoragePage()||!permission(BasePermissions.VIEW))return;
+        if(!isStoragePage()||entry.snapshot.isEmpty()||!permission(BasePermissions.VIEW))return;
         if(click.button!=2&&!permission(BasePermissions.WITHDRAW))return;
         if(click.button==2){Set<String> favorites=Profiles.of(owner).favorites;String id=Categories.id(entry.snapshot);if(!favorites.remove(id)&&favorites.size()<256)favorites.add(id);Profiles.changed(owner);return;}
         if(!Transactions.same(entry.inventory.getItem(entry.slot),entry.snapshot)){AnyaStorage.tell(owner,"That stack changed. The view has been refreshed.");return;}
@@ -465,9 +496,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(38,Items.DIAMOND,"Independent progression",null,"Element: "+look.element(),"Skin: "+look.skin(),"Storage tier: "+BagInventory.data(bag.stack).getString("TierName"),"Capacity: "+bag.getContainerSize(),"Netherite and descendants may grant a small knockback bonus.");
         button(45,Items.ARROW,"Back to backpack",c->navigate(Page.BAG));
         boolean worn=BagInventory.data(bag.stack).getUUID("BagId").equals(Profiles.of(owner).wornBag);
-        button(46,Items.LEATHER_CHESTPLATE,worn?"Unequip worn backpack":"Wear this backpack",c->Wearables.toggle(owner,bag.stack),"References this inventory item; no duplicate copy is created.","Only one backpack can grant benefits. Duplicate IDs disable benefits.","Dropping, death or losing the item removes the bonus.");
+        button(46,Items.LEATHER_CHESTPLATE,bag.playerSlot<0?"Equipped in Accessories back slot":worn?"Unequip worn backpack":"Wear this backpack",c->{if(bag.playerSlot>=0)Wearables.toggle(owner,bag.stack);},"References this inventory item; no duplicate copy is created.","Only one backpack can grant benefits. Duplicate IDs disable benefits.","Dropping, death or losing the item removes the bonus.");
         button(48,Items.PAINTING,"My private image library",c->navigate(Page.IMAGES),"Drag ONE PNG file onto this Wardrobe screen to upload.","32..256 px per side; RGB/RGBA 8-bit; at most 64 KiB.","No URLs, filenames or local paths are sent to the server.","Uploads are OFF until your operator permits them.");
-        button(49,Items.PINK_DYE,"Built-in interior: "+Looks.title(look.interior()),c->{CompoundTag t=BagInventory.data(bag.stack);int i=Looks.INTERIORS.indexOf(look.interior());t.putString("Interior",Looks.INTERIORS.get(Math.floorMod(i+(c.button==1?-1:1),Looks.INTERIORS.size())));t.remove("InteriorImage");BagInventory.data(bag.stack,t);owner.getInventory().setChanged();},"Cycles attractive built-in interiors without an upload.","Custom images can be reattached from your library.");
+        button(49,Items.PINK_DYE,"Built-in interior: "+Looks.title(look.interior()),c->{CompoundTag t=BagInventory.data(bag.stack);int i=Looks.INTERIORS.indexOf(look.interior());if(c.shift)t.remove("Interior");else t.putString("Interior",Looks.INTERIORS.get(Math.floorMod(i+(c.button==1?-1:1),Looks.INTERIORS.size())));t.remove("InteriorImage");BagInventory.data(bag.stack,t);owner.getInventory().setChanged();},"Cycles built-in interiors. Shift-click restores automatic theming.","Custom images can be reattached from your library.");
         button(51,Items.BOOK,"Image privacy",null,"Owner-only by default, including before moderation approval.","Other viewers need approval, sharing enabled and an explicit UUID grant.","Operators may inspect/reject images in the moderation library.","Images never appear on the public backpack model.","Recipients could still save screenshots or copies they already received.");
         button(53,Items.BARRIER,"Close",c->owner.closeContainer());
     }

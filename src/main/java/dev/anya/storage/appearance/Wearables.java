@@ -27,7 +27,10 @@ public final class Wearables {
     public static void login(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e){if(e.getEntity() instanceof ServerPlayer p){sent.remove(p.getUUID());refresh(p);}}
     private static final String WILD="AnyaWildBackpack";
     public static ItemStack selected(ServerPlayer p){
-        UUID wanted=Profiles.of(p).wornBag;if(wanted==null||!p.isAlive()||p.isSpectator())return ItemStack.EMPTY;
+        if(!p.isAlive()||p.isSpectator())return ItemStack.EMPTY;
+        var equipped=BackpackAccess.equipped(p);
+        if(!equipped.isEmpty()){ItemStack s=equipped.getFirst().stack();return BackpackAccess.unique(p,s)?s:ItemStack.EMPTY;}
+        UUID wanted=Profiles.of(p).wornBag;if(wanted==null)return ItemStack.EMPTY;
         ItemStack found=ItemStack.EMPTY;
         for(int i=0;i<=40;i++){
             if(i>=36&&i<40)continue;ItemStack s=p.getInventory().getItem(i);if(!s.is(Content.BACKPACK.get())||s.getCount()!=1)continue;

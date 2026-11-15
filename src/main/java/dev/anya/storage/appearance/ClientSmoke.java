@@ -18,7 +18,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Explicit development-only render probe. Never runs unless the launch JVM opts in. */
 @EventBusSubscriber(modid=AnyaStorage.ID,value=Dist.CLIENT)
 public final class ClientSmoke {
-    private static int ticks,phase;
+    private static int ticks,phase,gridIndex;
+    private static final int[][] GRIDS={{27,2,0},{45,2,0},{63,2,0},{63,2,99},{81,2,99},{108,2,0},{108,2,99},{144,2,99},{216,2,0},{216,2,99},{27,1,0},{27,3,0},{27,4,0},{108,4,99}};
+    private static final List<String> gridCaptures=new ArrayList<>();
+    private static long gridStarted;
     private static final AtomicInteger saved=new AtomicInteger();
     @SubscribeEvent public static void tick(ClientTickEvent.Post event){
         if(!Boolean.getBoolean("anyastorage.clientSmoke"))return;
@@ -40,10 +43,40 @@ public final class ClientSmoke {
         if(phase==6&&saved.get()==3){if(mc.screen instanceof dev.anya.storage.guide.GuideScreen guide)guide.setPage(1);phase=7;ticks=0;}
         if(phase==7&&ticks==45){Screenshot.grab(mc.gameDirectory,"anya-guide-recipe-client.png",mc.getMainRenderTarget(),c->saved.incrementAndGet());phase=8;}
         if(phase==8&&saved.get()==4){
-            for(String name:List.of("anya-models-client.png","anya-interiors-client.png","anya-guide-client.png","anya-guide-recipe-client.png"))if(!mc.gameDirectory.toPath().resolve("screenshots").resolve(name).toFile().isFile())throw new IllegalStateException("Screenshot was not saved");
-            AnyaStorage.LOG.info("ANYA_CLIENT_SMOKE_OK: 22 model variants, six interior resources, client registration and four real renderer captures");phase=9;mc.stop();
+            var original=mc.options.keyMappings;
+            var collision=new net.minecraft.client.KeyMapping("key.anyastorage.smoke_collision",org.lwjgl.glfw.GLFW.GLFW_KEY_B,"key.categories.anyastorage");
+            var expanded=Arrays.copyOf(original,original.length+1);expanded[original.length]=collision;mc.options.keyMappings=expanded;
+            if(Client.bagConflict()==null)throw new IllegalStateException("Binding collision was not detected");
+            mc.options.keyMappings=original;
+            gridIndex=0;gridStarted=System.nanoTime();openGrid();phase=10;ticks=0;
+        }
+        if(phase==10&&ticks==18){
+            int[] probe=GRIDS[gridIndex];String name="anya-grid-"+probe[0]+"-scale"+probe[1]+"-row"+probe[2]+"-client.png";gridCaptures.add(name);
+            Screenshot.grab(mc.gameDirectory,name,mc.getMainRenderTarget(),c->saved.incrementAndGet());phase=11;
+        }
+        if(phase==11&&saved.get()==5+gridIndex){
+            gridIndex++;
+            if(gridIndex<GRIDS.length){openGrid();phase=10;ticks=0;}
+            else{
+                for(String name:gridCaptures)if(!mc.gameDirectory.toPath().resolve("screenshots").resolve(name).toFile().isFile())throw new IllegalStateException("Missing grid capture "+name);
+                AnyaStorage.LOG.info("ANYA_CLIENT_SMOKE_OK: 22 models, six interiors, guide and {} production-screen fixtures; scales 1..4; binding conflict detected without changes",GRIDS.length);
+                AnyaStorage.LOG.info("ANYA_UI_PROFILE: capture sequence {} ms; sampled total JVM heap {} bytes; render shells bounded to 22; this is software GL, not a hardware FPS/VRAM benchmark",(System.nanoTime()-gridStarted)/1_000_000,java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());
+                phase=12;mc.stop();
+            }
         }
     }
+    private static void openGrid(){
+        var mc=Minecraft.getInstance();int[] probe=GRIDS[gridIndex];mc.options.guiScale().set(probe[1]);mc.resizeDisplay();
+        var inventory=new net.minecraft.world.entity.player.Inventory(null);
+        inventory.setItem(9,new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.OAK_LEAVES,24));
+        inventory.setItem(10,new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STRING,8));
+        var menu=new StoreMenu(121,inventory);
+        int rows=dev.anya.storage.ui.StorageGrid.layout(mc.getWindow().getGuiScaledWidth(),mc.getWindow().getGuiScaledHeight(),probe[0],true).rows();
+        menu.renderFixture(probe[0],probe[2],rows);
+        mc.setScreen(new Client.Screen(menu,inventory,Component.literal("Oak Grove / "+probe[0]+" slots (render fixture)")));
+        ClientInteriors.current=new ExpansionPackets.Look(-1,UUID.randomUUID(),121,0,"leaf_oak","leaf","botanical",ExpansionPackets.NONE,false);
+    }
+
     private static final class Preview extends Screen {
         final boolean interiors;
         Preview(boolean interiors){super(Component.literal("Anya asset verification"));this.interiors=interiors;}

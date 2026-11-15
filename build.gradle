@@ -27,6 +27,10 @@ neoForge {
         gameTestServer {
             type = 'gameTestServer'
             systemProperty 'neoforge.enabledGameTestNamespaces', 'anyastorage'
+            if(project.hasProperty('accessoriesTest')) {
+                gameDirectory = project.file('run-accessories-tests')
+                systemProperty 'anyastorage.requireAccessories', 'true'
+            }
         }
     }
     mods { anyastorage { sourceSet(sourceSets.main) } }
@@ -71,3 +75,19 @@ tasks.register('sharedBaseTest', JavaExec) {
     mainClass = 'dev.anya.storage.SharedBaseCoreTests'
 }
 tasks.named('check') { dependsOn tasks.named('sharedBaseTest') }
+
+repositories { mavenCentral(); maven { url = 'https://maven.wispforest.io/releases' } }
+dependencies {
+    compileOnly('io.wispforest:accessories-neoforge:1.1.0-beta.53+1.21.1') { transitive = false }
+    if(project.hasProperty('accessoriesTest')) {
+        runtimeOnly('io.wispforest:accessories-neoforge:1.1.0-beta.53+1.21.1') { transitive = false }
+        runtimeOnly('io.wispforest:owo-lib-neoforge:0.12.15.1-beta.6+1.21')
+    }
+}
+
+tasks.register('gridTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.GridTests'
+}
+tasks.named('check') { dependsOn tasks.named('gridTest') }

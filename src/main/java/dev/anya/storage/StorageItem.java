@@ -47,9 +47,16 @@ public final class StorageItem extends Item {
         if(p.serverLevel().getBlockEntity(pos) instanceof StorageEntity hub&&hub.kind().equals("hub")&&Network.hubReason(p,hub).isEmpty())return hub;
         return null;
     }
-    public static void openFirst(ServerPlayer p){if(!Profiles.cooldown(p))return;for(int i=0;i<36;i++)if(p.getInventory().getItem(i).is(Content.BACKPACK.get())){StoreMenu.bag(p,new BagInventory(p,i),false);return;}if(p.getOffhandItem().is(Content.BACKPACK.get())){StoreMenu.bag(p,new BagInventory(p,40),false);return;}AnyaStorage.tell(p,"No backpack in your inventory.");}
+    public static void openFirst(ServerPlayer p){
+        if(!p.isAlive()||p.isSpectator()||p.containerMenu!=p.inventoryMenu||!Profiles.cooldown(p))return;
+        for(var source:BackpackAccess.priority(p)){
+            if(!BackpackAccess.unique(p,source.stack())){AnyaStorage.tell(p,"Duplicate backpack identity detected. Separate the duplicate before opening; contents were not changed.");return;}
+            StoreMenu.bag(p,source.open(p),false);return;
+        }
+        AnyaStorage.tell(p,"No Anya backpack in your native back slot, main inventory or offhand.");
+    }
     @Override public void appendHoverText(ItemStack stack,TooltipContext context,List<Component> lines,TooltipFlag flag){
-        if(kind.equals("backpack")){CompoundTag tag=BagInventory.data(stack);lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use: upgrades"));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Wear and personalize from the backpack Wardrobe."));}
+        if(kind.equals("backpack")){CompoundTag tag=BagInventory.data(stack);lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use: upgrades"));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Accessories back slot supported when installed. Wardrobe remains available."));}
         else {lines.add(Component.literal("Sneak-use on hub: bind | Use: open base storage"));lines.add(Component.literal("Sneak-use on a chest: routing (owner only)"));}
     }
 }

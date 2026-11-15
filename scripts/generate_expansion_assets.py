@@ -27,7 +27,7 @@ def stamp(p,w,rows,x,y,c,scale=1):
    if v!=' ':rect(p,w,x+xx*scale,y+yy*scale,scale,scale,c)
 HEART=[' ## ## ','#######','#######',' ##### ','  ###  ','   #   ']
 STAR=['   #   ','   #   ','#######',' ##### ','  ###  ',' # # # ','#     #']
-LEAF=['    ##','   ###','  ####',' #####','##### ',' ###  ',' #    ']
+LEAF=['     ##','   ####','  #####',' ######',' ##### ',' ####  ','  #    ',' #     ']
 CAT=['#     #','##   ##','#######','#######',' # # # ','  ###  ']
 GHOST=['  ###  ',' ##### ','#######','## # ##','#######','#######','# # # #']
 DIAMOND=['   #   ','  ###  ',' ##### ','#######',' ##### ','  ###  ','   #   ']
@@ -57,11 +57,11 @@ for name in ORDER:
   p=[body]*(32*32)
   for y in range(32):
    for x in range(32):
-    grain=((x*17+y*13)%11)-5
-    p[y*32+x]=shade(body,grain+(4 if y<9 else -4 if y>24 else 0))
+    grain=1 if (x*17+y*13)%31==0 else 0
+    p[y*32+x]=shade(body,grain+(3 if y<9 else -3 if y>24 else 0))
   rect(p,32,0,0,32,2,dark);rect(p,32,0,30,32,2,dark);rect(p,32,0,0,2,32,dark);rect(p,32,30,0,2,32,dark)
-  for t in range(4,29,4):
-   rect(p,32,t,3,2,1,accent);rect(p,32,t,28,2,1,accent);rect(p,32,3,t,1,2,accent);rect(p,32,28,t,1,2,accent)
+  for t in range(6,27,7):
+   rect(p,32,t,3,1,1,shade(body,17));rect(p,32,t,28,1,1,shade(body,17))
   if face=='trim':
    rect(p,32,4,4,24,24,accent);rect(p,32,7,7,18,18,shade(accent,-20));rect(p,32,7,7,18,2,light)
   elif face=='top':
@@ -76,6 +76,8 @@ for name in ORDER:
    # Embroidered pictogram with a one-pixel offset shadow.
    emblem=LEAF if 'leaf' in name or name in ('oak','cherry','dark_oak') else CAT if 'cat' in name else GHOST if 'spooky' in name else STAR if name=='galaxy' else DIAMOND if name in ('diamond','stone') else HEART
    stamp(p,32,emblem,10,11,dark,2);stamp(p,32,emblem,9,10,accent,2)
+   if emblem==LEAF:
+    line(p,32,12,24,20,13,dark);line(p,32,16,19,15,15,dark);line(p,32,18,17,23,16,dark)
    if 'cat' in name:
     rect(p,32,13,18,2,2,dark);rect(p,32,21,18,2,2,dark);rect(p,32,17,20,2,1,light)
     stamp(p,32,BOW,18,6,color('EE9EBE'))
@@ -124,7 +126,7 @@ for name,colors in THEMES.items():
  rect(p,w,117,151,176,83,shade(base,-13))
  # Decorative surface pattern is subtle enough for text and items to remain readable.
  rng=random.Random(name)
- for i in range(80):
+ for i in range(12):
   x=rng.randrange(121,290);y=rng.randrange(37,137)
   if name in ('galaxy','midnight'):rect(p,w,x,y,1,1,shade(accent,-45))
   elif name=='circuit':line(p,w,x,y,min(290,x+7),y,shade(panel,8));line(p,w,x,y,x,min(138,y+5),shade(panel,8))
@@ -145,6 +147,7 @@ for name in PATCHES+[u+'_upgrade' for u in ICONS]:
  for t in range(7,27,4):rect(p,32,t,25,2,1,accent)
  emblem=ICONS.get(key,LEAF if 'leaf' in key or key in ('oak','cherry','dark_oak') else CAT if 'cat' in key else GHOST if 'spooky' in key else STAR if key=='galaxy' else DIAMOND if key in ('stone','diamond') else HEART)
  scale=2;x=(32-len(emblem[0])*scale)//2;y=(32-len(emblem)*scale)//2+1;stamp(p,32,emblem,x+1,y+1,dark,scale);stamp(p,32,emblem,x,y,light,scale)
+ if emblem==LEAF:line(p,32,x+2,y+14,x+11,y+2,dark);line(p,32,x+6,y+8,x+5,y+4,dark)
  png(f'assets/{M}/textures/item/{name}.png',32,32,p);js(f'assets/{M}/models/item/{name}.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{M}:item/{name}'}})
 # Three restrained particle sprites, each with a 28-tick maximum lifetime in Java.
 for name,shape,c in [('leaf_mote',LEAF,color('A2C787')),('cherry_mote',LEAF,color('F2BBCC')),('star_mote',STAR,color('F7E3BD'))]:

@@ -17,7 +17,7 @@ public final class Packets {
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
     public static void register(RegisterPayloadHandlersEvent event) {
-        event.registrar("2").playToServer(Action.TYPE,Action.CODEC,(p,context)->context.enqueueWork(()->{
+        event.registrar("3").playToServer(Action.TYPE,Action.CODEC,(p,context)->context.enqueueWork(()->{
             if(!(context.player() instanceof ServerPlayer player) || player.isSpectator() || !player.isAlive()) return;
             try {
                 if(player.containerMenu instanceof StoreMenu menu && p.menu==menu.containerId) menu.action(p);
