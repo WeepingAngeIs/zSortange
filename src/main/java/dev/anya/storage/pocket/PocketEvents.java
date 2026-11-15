@@ -64,7 +64,7 @@ public final class PocketEvents {
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void travel(EntityTravelToDimensionEvent e){
         if(!PocketService.ownTeleport()&&(PocketService.inPocket(e.getEntity().level())||e.getDimension().equals(PocketService.DIMENSION)))e.setCanceled(true);
     }
-    @SubscribeEvent(priority=EventPriority.LOWEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
+    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
         if(!(e.getEntity() instanceof ServerPlayer p))return;
         var be=p.level().getBlockEntity(e.getPos());
         if(PocketService.inPocket(p.level())){

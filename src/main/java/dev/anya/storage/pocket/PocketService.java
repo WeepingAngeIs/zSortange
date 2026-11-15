@@ -64,6 +64,7 @@ public final class PocketService {
     public static String authorize(ServerPlayer p,PocketLedger.Pocket pocket,PocketLeases.Kind kind,boolean arriving,int rights){
         if(!enabled())return "Pocket prototype is gated OFF";
         if(!p.isAlive()||p.isSpectator())return "Player cannot interact";
+        if(arriving&&kind==PocketLeases.Kind.VISIT){String travel=PocketTravelGuard.reason(p);if(!travel.isEmpty())return travel;}
         StorageEntity hub=home(p,pocket);if(hub==null)return "Loaded home hub/entrance identity is missing or changed";
         if(!hub.allowed(p)||!hub.permits(p,rights|(kind==PocketLeases.Kind.VISIT?BasePermissions.VISIT:0)))return "Pocket permission denied; Visit is separate from storage rights";
         ServerLevel home=(ServerLevel)hub.getLevel();

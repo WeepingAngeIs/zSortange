@@ -110,3 +110,5 @@ tasks.register('pocketCoreTest', JavaExec) {
     mainClass = 'dev.anya.storage.PocketCoreTests'
 }
 tasks.named('check') { dependsOn tasks.named('pocketCoreTest') }
+
+apply from: 'acceptance.gradle'
