@@ -71,7 +71,7 @@ public final class Wearables {
     public static void track(PlayerEvent.StartTracking event){if(event.getEntity() instanceof ServerPlayer p&&event.getTarget() instanceof LivingEntity living)PacketDistributor.sendToPlayer(p,publicLook(living));}
     public static void logout(PlayerEvent.PlayerLoggedOutEvent event){if(event.getEntity() instanceof ServerPlayer p){strip(p);dev.anya.storage.images.InteriorImages.disconnect(p);}}
     public static void clone(PlayerEvent.Clone event){if(event.getOriginal() instanceof ServerPlayer old)strip(old);if(event.getEntity() instanceof ServerPlayer p)strip(p);}
-    public static void spawn(MobSpawnEvent.FinalizeSpawn event){
+    public static void spawn(FinalizeSpawnEvent event){
         var rules=ExpansionRules.get();Mob m=event.getEntity();
         if(!rules.monsterBackpacks||!(m instanceof Monster)||!(event.getSpawnType()==MobSpawnType.NATURAL||event.getSpawnType()==MobSpawnType.CHUNK_GENERATION))return;
         if(!rules.monsterSpecies.contains(BuiltInRegistries.ENTITY_TYPE.getKey(m.getType()).toString())||m.hasCustomName()||!m.getPersistentData().isEmpty())return;

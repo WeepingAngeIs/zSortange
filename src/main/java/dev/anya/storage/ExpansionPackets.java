@@ -31,7 +31,7 @@ public final class ExpansionPackets {
         public Type<? extends CustomPacketPayload> type(){return TYPE;}
     }
     public record ImageReply(int kind,UUID id,int part,int parts,String info,byte[] bytes) implements CustomPacketPayload {
-        public static final Type<ImageReply> TYPE=new Type<>(id("interior_result"));
+        public static final Type<ImageReply> TYPE=new Type<>(ExpansionPackets.id("interior_result"));
         public static final StreamCodec<RegistryFriendlyByteBuf,ImageReply> CODEC=new StreamCodec<>(){
             public ImageReply decode(RegistryFriendlyByteBuf b){return new ImageReply(b.readVarInt(),b.readUUID(),b.readVarInt(),b.readVarInt(),b.readUtf(160),b.readByteArray(16384));}
             public void encode(RegistryFriendlyByteBuf b,ImageReply p){b.writeVarInt(p.kind);b.writeUUID(p.id);b.writeVarInt(p.part);b.writeVarInt(p.parts);b.writeUtf(p.info,160);b.writeByteArray(p.bytes);}
