@@ -4,7 +4,7 @@ on:
   pull_request:
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: storage-${{ github.ref }}
   cancel-in-progress: true
@@ -14,34 +14,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - name: Apply reviewed shared-base checkpoint
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/elemental-pockets'
-        shell: bash
-        run: |
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          import base64, hashlib, json, lzma, subprocess
-          encoded=Path('scripts/reviewed-shared-base.patch.xz.b64')
-          if encoded.exists():
-              preconditions=Path('scripts/reviewed-shared-base-preconditions.json')
-              expected=json.loads(preconditions.read_text())
-              for name,digest in expected.items():
-                  path=Path(name)
-                  if digest is None:
-                      assert not path.exists(), 'Refusing to replace new existing file: '+name
-                  else:
-                      assert path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest()==digest, 'Source changed: '+name
-              patch=lzma.decompress(base64.b64decode(encoded.read_text(),validate=False))
-              assert hashlib.sha256(patch).hexdigest()=='349aa8f42bddfece5fa8e8f4341a2088b0f0c00da6e52c5570568baaab47cc94'
-              subprocess.run(['git','apply','--check','--unidiff-zero','-'],input=patch,check=True)
-              subprocess.run(['git','apply','--unidiff-zero','-'],input=patch,check=True)
-              encoded.unlink();preconditions.unlink()
-              subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
-              subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
-              subprocess.run(['git','add','--',*expected.keys(),str(encoded),str(preconditions)],check=True)
-              subprocess.run(['git','commit','-m','Apply reviewed shared-base permissions and private activity checkpoint'],check=True)
-              subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
-          PYCODE
+        with:
+          persist-credentials: false
       - name: Export exact source snapshot
         run: |
           mkdir -p export
@@ -67,7 +41,7 @@ jobs:
         run: |
           set -o pipefail
           gradle --no-daemon runGameTestServer 2>&1 | tee export/game-test-output.log
-      - name: Verify tutorial grant across a real dedicated-server restart
+      - name: Verify guide and shared bases across a dedicated-server restart
         shell: bash
         run: |
           set -o pipefail
