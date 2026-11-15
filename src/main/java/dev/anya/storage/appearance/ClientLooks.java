@@ -38,6 +38,7 @@ public final class ClientLooks {
         ItemProperties.register(Content.BACKPACK.get(),ExpansionPackets.id("appearance"),(stack,level,living,seed)->Math.max(0,TEXTURES.indexOf(Looks.of(stack).texture()))+1);
         ExpansionPackets.lookReceiver=look->{if(look.entity()<0){if(Minecraft.getInstance().player!=null&&Minecraft.getInstance().player.containerMenu.containerId==look.menu())ClientInteriors.look(look);}else if(TEXTURES.contains(look.texture())||look.texture().isEmpty()){if(worn.size()>256)worn.clear();worn.put(look.entity(),look);}};
         ExpansionPackets.imageReceiver=ClientInteriors::accept;
+        dev.anya.storage.guide.GuidePacket.receiver=packet->Minecraft.getInstance().setScreen(new dev.anya.storage.guide.GuideScreen(packet));
     });}
     public static void saveOptions(){try{Files.writeString(FMLPaths.CONFIGDIR.get().resolve("anya-storage-plus-client.json"),Config.JSON.toJson(options));}catch(Exception ignored){}}
     @SubscribeEvent @SuppressWarnings({"rawtypes","unchecked"}) public static void layers(EntityRenderersEvent.AddLayers event){
@@ -76,7 +77,7 @@ public final class ClientLooks {
                 if(entity==null||entity.isInvisible()||!entity.getUUID().equals(look.uuid())||entity.distanceToSqr(mc.player)>24*24||look.element().equals("disabled")||look.texture().isEmpty())continue;
                 if(entity==mc.player&&mc.options.getCameraType().isFirstPerson())continue;
                 boolean walking=entity.getDeltaMovement().horizontalDistanceSqr()>.001;
-                var particle=look.texture().contains("cherry")?Content.CHERRY_MOTE.get():look.texture().contains("leaf")||look.texture().equals("oak")||look.texture().equals("dark_oak")?Content.LEAF_MOTE.get():look.texture().equals("galaxy")?Content.STAR_MOTE.get():null;
+                var particle=look.texture().contains("cherry")?Content.CHERRY_MOTE.get():look.texture().contains("leaf")||look.texture().equals("oak")||look.texture().equals("dark_oak")?Content.LEAF_MOTE.get():look.texture().equals("galaxy")?Content.STAR_MOTE.get():look.element().equals("magma")?net.minecraft.core.particles.ParticleTypes.WHITE_ASH:look.element().equals("water")?net.minecraft.core.particles.ParticleTypes.BUBBLE_POP:null;
                 if(particle==null||(!walking&&!look.texture().equals("galaxy")))continue;
                 double angle=Math.toRadians(entity.getYRot());double x=entity.getX()+Math.sin(angle)*.3,z=entity.getZ()-Math.cos(angle)*.3;
                 mc.level.addParticle(particle,x,entity.getY()+1,z,0,-.005,0);budget--;

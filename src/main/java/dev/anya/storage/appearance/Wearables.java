@@ -23,6 +23,8 @@ import java.util.*;
 public final class Wearables {
     public static final ResourceLocation ARMOR=ExpansionPackets.id("worn_armor"),KNOCKBACK=ExpansionPackets.id("worn_knockback"),SWIM=ExpansionPackets.id("worn_swim");
     private static final Map<UUID,String> sent=new HashMap<>();
+    public static void dimension(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerChangedDimensionEvent e){if(e.getEntity() instanceof ServerPlayer p){sent.remove(p.getUUID());refresh(p);}}
+    public static void login(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e){if(e.getEntity() instanceof ServerPlayer p){sent.remove(p.getUUID());refresh(p);}}
     private static final String WILD="AnyaWildBackpack";
     public static ItemStack selected(ServerPlayer p){
         UUID wanted=Profiles.of(p).wornBag;if(wanted==null||!p.isAlive()||p.isSpectator())return ItemStack.EMPTY;
@@ -47,7 +49,11 @@ public final class Wearables {
         set(p,Attributes.KNOCKBACK_RESISTANCE,KNOCKBACK,active&&highTier(bag)?rules.netheriteKnockback:0,AttributeModifier.Operation.ADD_VALUE);
         set(p,NeoForgeMod.SWIM_SPEED,SWIM,active&&e.equals("water")&&p.isInWater()?rules.waterSwimBonus:0,AttributeModifier.Operation.ADD_MULTIPLIED_BASE);
         var look=publicLook(p);String signature=look.texture()+"|"+look.element();
-        if(!Objects.equals(sent.put(p.getUUID(),signature),signature)&&p.getServer().getPlayerList().getPlayer(p.getUUID())==p)PacketDistributor.sendToPlayersTrackingEntityAndSelf(p,look);
+        boolean changed=!Objects.equals(sent.put(p.getUUID(),signature),signature);
+        if(p.getServer().getPlayerList().getPlayer(p.getUUID())==p){
+            if(changed)PacketDistributor.sendToPlayersTrackingEntityAndSelf(p,look);
+            else if(p.tickCount%40==0)PacketDistributor.sendToPlayer(p,look);
+        }
     }
     public static void strip(ServerPlayer p){
         set(p,Attributes.ARMOR,ARMOR,0,AttributeModifier.Operation.ADD_VALUE);set(p,Attributes.KNOCKBACK_RESISTANCE,KNOCKBACK,0,AttributeModifier.Operation.ADD_VALUE);set(p,NeoForgeMod.SWIM_SPEED,SWIM,0,AttributeModifier.Operation.ADD_MULTIPLIED_BASE);sent.remove(p.getUUID());

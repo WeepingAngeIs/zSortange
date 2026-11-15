@@ -34,7 +34,8 @@ public final class InteriorImages {
     private static final Map<UUID,Long> startTimes=new HashMap<>(),readTimes=new HashMap<>();
     private static final Map<UUID,Set<UUID>> recipients=new HashMap<>();
     private static ThreadPoolExecutor worker;
-    private static long globalStart;
+    private static long globalStart,downloadSecond;
+    private static int downloadBytes;
     private static void init(MinecraftServer s)throws IOException{
         if(server==s){if(unavailable!=null)throw new IOException(unavailable);return;}
         stop();server=s;
@@ -135,6 +136,8 @@ public final class InteriorImages {
         if(w.sequence()==1){reply(p,4,e.id,0,0,"Access renewed",new byte[0]);return;}
         Path path=file(e.id);if(Files.isSymbolicLink(path)||!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)||Files.size(path)!=e.bytes)throw new IOException("Image unavailable");
         byte[] bytes;try(InputStream input=Files.newInputStream(path)){bytes=input.readNBytes(PngSanitizer.MAX_OUTPUT+1);}if(bytes.length!=e.bytes)throw new IOException("Image unavailable");
+        long second=System.nanoTime()/1_000_000_000L;if(second!=downloadSecond){downloadSecond=second;downloadBytes=0;}
+        if(downloadBytes+bytes.length>1048576)throw new IOException("Image download budget busy; retry shortly");downloadBytes+=bytes.length;
         int parts=(bytes.length+16383)/16384;
         for(int i=0;i<parts;i++)reply(p,1,e.id,i,parts,"",Arrays.copyOfRange(bytes,i*16384,Math.min(bytes.length,(i+1)*16384)));
     }
@@ -157,7 +160,7 @@ public final class InteriorImages {
     private static void invalidate(UUID id){Set<UUID> people=recipients.remove(id);if(people!=null&&server!=null)for(UUID user:people){ServerPlayer p=server.getPlayerList().getPlayer(user);if(p!=null)reply(p,3,id,0,0,"Access changed; cached image removed",new byte[0]);}}
     public static void tick(ServerTickEvent.Post event){long now=System.currentTimeMillis();uploads.values().removeIf(u->u.until<now);startTimes.values().removeIf(t->now-t>600000);readTimes.values().removeIf(t->now-t>60000);}
     public static void disconnect(ServerPlayer p){uploads.remove(p.getUUID());readTimes.remove(p.getUUID());recipients.values().forEach(s->s.remove(p.getUUID()));}
-    public static void stop(){if(worker!=null)worker.shutdownNow();worker=null;server=null;directory=null;unavailable=null;entries.clear();uploads.clear();startTimes.clear();readTimes.clear();recipients.clear();globalStart=0;}
+    public static void stop(){ExpansionPackets.clearImageGate();downloadBytes=0;downloadSecond=0;if(worker!=null)worker.shutdownNow();worker=null;server=null;directory=null;unavailable=null;entries.clear();uploads.clear();startTimes.clear();readTimes.clear();recipients.clear();globalStart=0;}
     private static String safe(String text){return text==null||text.indexOf('/')>=0||text.indexOf('\\')>=0?"Image operation failed; ask an operator to review the server log":text.substring(0,Math.min(text.length(),150));}
     private static void reply(ServerPlayer p,int kind,UUID id,int part,int parts,String info,byte[] bytes){PacketDistributor.sendToPlayer(p,new ExpansionPackets.ImageReply(kind,id,part,parts,info,bytes));}
     private InteriorImages(){}

@@ -18,11 +18,17 @@ public final class AnyaStorage {
     public static final String ID="anyastorage";
     public static final Logger LOG=LogUtils.getLogger();
     public AnyaStorage(IEventBus bus) {
-        Config.init(); Content.register(bus); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);
+        Config.init(); Content.register(bus); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);bus.addListener(dev.anya.storage.guide.GuidePacket::register);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::login);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::tick);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::inventoryRetry);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.guide.GuideService::logout);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::tick);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::incoming);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::track);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::logout);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::dimension);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::login);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::clone);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::spawn);
         NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::death);
@@ -34,12 +40,14 @@ public final class AnyaStorage {
         NeoForge.EVENT_BUS.addListener(Upgrades::dragonDeath);
         NeoForge.EVENT_BUS.addListener(AnyaStorage::stopped);
     }
-    private static void stopped(ServerStoppedEvent e) { Network.clear(); Safety.clear(); Transactions.clear();dev.anya.storage.appearance.Wearables.clear();dev.anya.storage.images.InteriorImages.stop(); }
+    private static void stopped(ServerStoppedEvent e) { dev.anya.storage.guide.GuideService.stop(); Network.clear(); Safety.clear(); Transactions.clear();dev.anya.storage.appearance.Wearables.clear();dev.anya.storage.images.InteriorImages.stop(); }
     public static void tell(ServerPlayer player,String message) { player.sendSystemMessage(Component.literal("[Anya Storage] "+message)); }
     private static void commands(RegisterCommandsEvent event) {
         var storage=Commands.literal("storage").executes(c->{StoreMenu.settings(c.getSource().getPlayerOrException());return 1;})
             .then(Commands.literal("status").executes(c->{c.getSource().sendSuccess(()->Component.literal(Config.lastStatus+" | "+Safety.status()),false);return 1;}));
         var root=Commands.literal("anya").then(storage)
+            .then(Commands.literal("guide").executes(c->{var p=c.getSource().getPlayerOrException();if(dev.anya.storage.guide.GuideService.hasGuide(p))dev.anya.storage.guide.GuideService.open(p);else tell(p,"Recover Ancient Technology with /anya guide recover while carrying one ordinary Book.");return 1;})
+                .then(Commands.literal("recover").executes(c->dev.anya.storage.guide.GuideService.recover(c.getSource().getPlayerOrException()))))
             .then(Commands.literal("quickstack").executes(c->{Network.quick(c.getSource().getPlayerOrException(),false);return 1;}))
             .then(Commands.literal("dump").executes(c->{Network.quick(c.getSource().getPlayerOrException(),true);return 1;}))
             .then(Commands.literal("slots").executes(c->{StoreMenu.preferences(c.getSource().getPlayerOrException());return 1;}));

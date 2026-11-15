@@ -11,6 +11,8 @@ import java.util.function.Consumer;
 
 /** Small bounded wire messages. Public looks never carry backpack contents, names, image IDs or file paths. */
 public final class ExpansionPackets {
+    private static final dev.anya.storage.images.ImageRateGate IMAGE_GATE=new dev.anya.storage.images.ImageRateGate();
+    public static void clearImageGate(){IMAGE_GATE.clear();}
     public static final UUID NONE=new UUID(0,0);
     public static Consumer<Look> lookReceiver=p->{};
     public static Consumer<ImageReply> imageReceiver=p->{};
@@ -43,7 +45,10 @@ public final class ExpansionPackets {
         var r=event.registrar("3");
         r.playToClient(Look.TYPE,Look.CODEC,(p,c)->c.enqueueWork(()->lookReceiver.accept(p)));
         r.playToClient(ImageReply.TYPE,ImageReply.CODEC,(p,c)->c.enqueueWork(()->imageReceiver.accept(p)));
-        r.playToServer(ImageWire.TYPE,ImageWire.CODEC,(p,c)->c.enqueueWork(()->{if(c.player() instanceof ServerPlayer sp)dev.anya.storage.images.InteriorImages.receive(sp,p);}));
+        r.executesOn(net.neoforged.neoforge.network.registration.HandlerThread.NETWORK).playToServer(ImageWire.TYPE,ImageWire.CODEC,(p,c)->{
+            if(c.player() instanceof ServerPlayer sp && IMAGE_GATE.allow(sp.getUUID(),System.nanoTime()/1_000_000_000L))
+                c.enqueueWork(()->dev.anya.storage.images.InteriorImages.receive(sp,p));
+        });
     }
     private ExpansionPackets(){}
 }

@@ -29,6 +29,7 @@ public final class Content {
     public static final DeferredBlock<StorageBlock> CUBE=BLOCKS.register("uwu_cube",()->new StorageBlock("cube",BlockBehaviour.Properties.of().strength(6,1200).noOcclusion()));
     public static final DeferredItem<StorageItem> BACKPACK=ITEMS.register("backpack",()->new StorageItem("backpack",new Item.Properties().stacksTo(1)));
     public static final DeferredItem<StorageItem> REMOTE=ITEMS.register("remote",()->new StorageItem("remote",new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<dev.anya.storage.guide.GuideItem> GUIDE=ITEMS.register("ancient_technology",()->new dev.anya.storage.guide.GuideItem(new Item.Properties().stacksTo(1)));
     public static final DeferredItem<Item> CORE=ITEMS.registerSimpleItem("storage_core");
     public static final DeferredItem<Item> DRAGON_TOKEN=ITEMS.registerSimpleItem("dragon_victory_token");
     public static final Map<String,DeferredItem<Item>> STYLES=new LinkedHashMap<>();
