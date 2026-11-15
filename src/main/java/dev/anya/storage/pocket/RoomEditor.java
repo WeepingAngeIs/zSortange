@@ -23,8 +23,9 @@ public final class RoomEditor {
     public static boolean enabled(){return PocketService.enabled()&&ExpansionRules.get().pocketEditing;}
     public static boolean supported(Block block){return DECOR.contains(block)||block==Content.CRATE.get();}
     public static String help(){return "Experimental room editing: "+enabled()+". /anya pocket build place uses the plain held block on the face you look at; remove returns a block directly to inventory. Supported: stone bricks, quartz block, oak/cherry planks, black/purple/cyan concrete, sea lantern. Empty Anya chests: four reserved pads only. Build is separate from Visit and storage rights.";}
+    // Server commands use the current pose, never a previous-tick interpolated camera.
     public static BlockHitResult looking(ServerPlayer p){
-        if(p.pick(5,0,false) instanceof BlockHitResult h&&h.getType()==HitResult.Type.BLOCK)return h;
+        if(p.pick(5,1.0f,false) instanceof BlockHitResult h&&h.getType()==HitResult.Type.BLOCK)return h;
         throw new IllegalArgumentException("Look at a block within five blocks");
     }
     private static PocketLedger.Pocket record(ServerPlayer p)throws IOException{
@@ -35,7 +36,7 @@ public final class RoomEditor {
         return r;
     }
     private static boolean sight(ServerPlayer p,BlockHitResult hit){
-        if(!(p.pick(5,0,false) instanceof BlockHitResult now)||now.getType()!=HitResult.Type.BLOCK)return false;
+        if(!(p.pick(5,1.0f,false) instanceof BlockHitResult now)||now.getType()!=HitResult.Type.BLOCK)return false;
         return now.getBlockPos().equals(hit.getBlockPos())&&now.getDirection()==hit.getDirection();
     }
     private static String permission(ServerPlayer p,PocketLedger.Pocket r,BlockPos pos,BlockState state,boolean removal){

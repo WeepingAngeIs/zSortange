@@ -57,14 +57,18 @@ public final class RoomProbe {
         double x=target.getX()+.5,y=floor?target.getY()+1:target.getY(),z=target.getZ()+2.5;
         double dy=point.y-(y+p.getEyeHeight());float pitch=(float)-Math.toDegrees(Math.atan2(dy,2));
         p.connection.teleport(x,y,z,180,pitch);
-        return RoomEditor.looking(p);
+        var hit=RoomEditor.looking(p);check(hit.getBlockPos().equals(target),"Fixture raycast missed intended target: expected="+target+" actual="+hit.getBlockPos()+" face="+hit.getDirection());return hit;
     }
     private static void rejected(ServerPlayer p,BlockHitResult hit,boolean removal,String label)throws Exception{
+        BlockPos target=removal?hit.getBlockPos():hit.getBlockPos().relative(hit.getDirection());boolean loaded=p.serverLevel().hasChunkAt(target);
+        var state=loaded?p.serverLevel().getBlockState(target):null;var entity=loaded?p.serverLevel().getBlockEntity(target):null;
         var inv=new MainInventory(p);List<ItemStack> before=new ArrayList<>();for(int i=0;i<36;i++)before.add(inv.getItem(i).copy());
         boolean refused=false;
         try{var edit=RoomEditor.prepare(p,hit,removal);refused=!edit.commit().isEmpty();}catch(java.io.IOException|IllegalArgumentException expected){refused=true;}
         check(refused,"Expected rejection: "+label);for(int i=0;i<36;i++)check(Transactions.same(before.get(i),inv.getItem(i)),"Rejected edit changed inventory: "+label);
-        log("rejected without inventory mutation: "+label);
+        if(loaded)check(p.serverLevel().getBlockState(target)==state&&p.serverLevel().getBlockEntity(target)==entity,"Rejected edit changed world: "+label);
+        else check(!p.serverLevel().hasChunkAt(target),"Rejected edit loaded target: "+label);
+        log("rejected without world/inventory mutation: "+label);
     }
     @SubscribeEvent public static void start(ServerStartedEvent event)throws Exception{
         if(!active())return;server=event.getServer();Acceptance.verifyJar("room-server");
@@ -96,7 +100,8 @@ public final class RoomProbe {
         rejected(p,hit,false,"foreign OPAC construction claim");claims.unclaim(dim,pos.getX()>>4,pos.getZ()>>4);
         var positive=RoomEditor.prepare(p,hit,false);check(positive.commit().isEmpty(),"Owner decoration failed");check(!positive.commit().isEmpty(),"Successful edit replayed");
         check(p.level().getBlockState(pos).is(Blocks.CHERRY_PLANKS)&&count(p,Items.CHERRY_PLANKS)==2,"Represented-block conservation failed");
-        log("owner single-use world/inventory conservation; stale policy; disabled gate; real OPAC edit denial");
+        rejected(p,aim(p,at(26,64,20),true),false,"same-tick separate edit cooldown");
+        log("owner single-use world/inventory conservation; stale policy; disabled gate; real OPAC edit denial; independent-edit cooldown");
         // Forged target coordinates must fail without loading their destination.
         BlockPos far=new BlockPos(1000000,65,1000000);var level=p.serverLevel();check(!level.hasChunkAt(far),"Far fixture target already loaded");
         rejected(p,new BlockHitResult(Vec3.atCenterOf(far),Direction.UP,far,false),false,"forged non-raycast unloaded target");check(!level.hasChunkAt(far),"Rejected edit loaded a distant chunk");
