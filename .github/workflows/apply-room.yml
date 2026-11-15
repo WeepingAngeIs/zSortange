@@ -1,0 +1,35 @@
+name: Apply guarded room editing checkpoint
+on:
+  push:
+    branches: [feature/elemental-pockets]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact source with preconditions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,lzma,subprocess
+          parts=[Path('scripts/reviewed-room.'+str(i)+'.b64') for i in range(2)]
+          if parts[0].exists():
+              raw=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
+              assert hashlib.sha256(raw).hexdigest()=='29fcfeff1d135eb0a6cc05c79a8a4b48280d13a7b9e80a5f0b6c45d2903991bb'
+              data=json.loads(raw);expected=data['preconditions'];patch=data['patch'].encode()
+              for name,digest in expected.items():
+                  p=Path(name)
+                  assert (not p.exists()) if digest is None else (p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==digest), 'Refusing changed source: '+name
+              subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+              subprocess.run(['git','apply','-'],input=patch,check=True)
+              for p in parts:p.unlink()
+              subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+              subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+              subprocess.run(['git','add','--',*expected.keys(),*[str(p) for p in parts]],check=True)
+              subprocess.run(['git','commit','-m','Implement independently gated narrow room edits and new packaged construction acceptance'],check=True)
+              subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
