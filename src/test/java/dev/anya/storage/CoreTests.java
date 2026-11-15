@@ -4,7 +4,7 @@ public final class CoreTests {
     private static int checks;
     private static void check(boolean value,String why) { checks++; if(!value) throw new AssertionError(why); }
     private static void invalid(Config.Data d,String why) { boolean failed=false; try { Config.validate(d); } catch(IllegalArgumentException e) { failed=true; } check(failed,why); }
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         Config.Data d=new Config.Data(); Config.validate(d); check(d.tiers.size()==5,"vanilla tiers");
         Config.Data copy=Config.copy(d); copy.maxRadius=48; check(d.maxRadius==64,"draft isolation");
         check(!d.compatibility && d.cubeRecipe==0 && !d.recipes.get("endgame"),"safe defaults");
@@ -27,5 +27,6 @@ public final class CoreTests {
         copy=Config.copy(d); copy.categoryRules.put("minecraft:diamond","any");invalid(copy,"any is a route wildcard, not a category");
         copy=Config.copy(d); copy.categoryRules.put("minecraft:diamond","invented");invalid(copy,"unknown category");
         System.out.println("PASS: "+checks+" configuration assertions");
+        ExpansionCoreTests.run();
     }
 }

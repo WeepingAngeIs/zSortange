@@ -13,13 +13,16 @@ import net.minecraft.world.inventory.*;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.component.ItemLore;
 import java.lang.reflect.Field;
+import dev.anya.storage.appearance.*;
+import dev.anya.storage.images.InteriorImages;
+import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
 
 /** Display-only slots. The only accepted input is a session/revision-checked intent packet. */
 public final class StoreMenu extends AbstractContainerMenu {
-    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES }
+    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
@@ -35,6 +38,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     private Config.Data draft;
     private String input="",selectedTier="netherite";
     private int offset;
+    private UUID selectedImage,deleteImage;
+    private String lastAppearance="";
     private boolean favoritesOnly;
     private int feedSlot,feedCount,feedPoints,feedBefore;
     private long feedRevision;
@@ -45,9 +50,9 @@ public final class StoreMenu extends AbstractContainerMenu {
 
     public StoreMenu(int id,Inventory inventory){
         super(Content.MENU.get(),id);
-        for(int row=0;row<6;row++)for(int col=0;col<9;col++)addSlot(locked(display,row*9+col,17+col*18,34+row*18));
-        for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(locked(inventory,9+row*9+col,17+col*18,155+row*18));
-        for(int col=0;col<9;col++)addSlot(locked(inventory,col,17+col*18,213));
+        for(int row=0;row<6;row++)for(int col=0;col<9;col++)addSlot(locked(display,row*9+col,125+col*18,34+row*18));
+        for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(locked(inventory,9+row*9+col,125+col*18,155+row*18));
+        for(int col=0;col<9;col++)addSlot(locked(inventory,col,125+col*18,213));
         addDataSlots(sync);
     }
     private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos){
@@ -69,7 +74,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     public int session(){return (sync.get(0)&65535)|((sync.get(1)&65535)<<16);}
     public int revision(){return (sync.get(2)&65535)|((sync.get(3)&65535)<<16);}
     private void bump(){int value=revision()+1;sync.set(2,value&65535);sync.set(3,value>>>16);}
-    private boolean adminPage(){return switch(page){case ADMIN,LIMITS,TIERS,TIER,ORES,RECIPES,UPGRADE_GATES,PRESETS,CONFIG_CONFIRM,CATEGORIES->true;default->false;};}
+    private boolean adminPage(){return switch(page){case ADMIN,LIMITS,TIERS,TIER,ORES,RECIPES,UPGRADE_GATES,PRESETS,CONFIG_CONFIRM,CATEGORIES,EXPANSION->true;default->false;};}
     @Override public boolean stillValid(Player player){
         if(owner==null)return true;if(player!=owner||!owner.isAlive()||owner.isSpectator())return false;
         if(adminPage()&&!owner.hasPermissions(2))return false;
@@ -87,6 +92,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     @Override public void broadcastChanges(){
         if(owner!=null&&owner.containerMenu==this&&stillValid(owner)&&isStoragePage()&&owner.serverLevel().getGameTime()-lastRefresh>=10){render();bump();lastRefresh=owner.serverLevel().getGameTime();}
         super.broadcastChanges();
+        if(owner!=null&&owner.containerMenu==this&&stillValid(owner))syncAppearance();
     }
     public void action(Packets.Action packet){
         if(owner==null||packet.session()!=session()||packet.revision()!=revision()){sendAllDataToRemote();return;}
@@ -94,20 +100,21 @@ public final class StoreMenu extends AbstractContainerMenu {
         long now=owner.serverLevel().getGameTime();if(lastAction==now)return;lastAction=now;
         try {
             if(packet.verb().equals("text")){input=packet.text().strip();if(input.length()>128)input=input.substring(0,128);offset=0;}
+            else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
             else if(packet.verb().equals("slot")){
                 int index=packet.value()&255;Click click=new Click((packet.value()>>8)&3,(packet.value()&65536)!=0);
                 if(index>=0&&index<54){Consumer<Click> action=buttons.get(index);if(action!=null)action.accept(click);else if(entries.containsKey(index))take(entries.get(index),click);}
                 else if(index>=54&&index<90)inventoryClick(slots.get(index).getContainerSlot(),click);
             }
         } catch(IllegalArgumentException e){AnyaStorage.tell(owner,e.getMessage());}
-        if(owner.containerMenu==this){if(!stillValid(owner)){owner.closeContainer();return;}render();bump();sendAllDataToRemote();}
+        if(owner.containerMenu==this){if(!stillValid(owner)){owner.closeContainer();return;}render();bump();sendAllDataToRemote();Wearables.refresh(owner);}
     }
     private boolean isStoragePage(){return page==Page.NETWORK||page==Page.BAG||page==Page.CHEST;}
     private void render(){
-        buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,icon(new ItemStack(Items.GRAY_STAINED_GLASS_PANE)," ",List.of()));
+        buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
-            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();
+            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();
         }
     }
     private void navigate(Page next){page=next;offset=0;pending=null;}
@@ -229,6 +236,8 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(32,Items.PAPER,"Diagnostics",c->navigate(Page.DIAGNOSTICS));
         button(34,Items.IRON_DOOR,"My protected slots",c->navigate(Page.PREFS));
         button(37,Items.BOOK,"Category rules: items and tags",c->navigate(Page.CATEGORIES));
+        button(38,Content.BACKPACK.get(),"Elemental, cosmetics, image and pocket policy",c->navigate(Page.EXPANSION));
+        button(39,Items.PAINTING,"Interior moderation library",c->navigate(Page.IMAGES));
         button(45,Items.BARRIER,"Discard and close",c->owner.closeContainer());
         button(53,Items.EMERALD,"Review changes",c->{Config.validate(draft);navigate(Page.CONFIG_CONFIRM);},"Draft revision: "+draft.revision,"Saved revision: "+Config.get().revision,"Saving reloads recipes. Existing items stay registered.");
     }
@@ -319,6 +328,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private void upgrades(){
         if(bag==null)return;
         for(int i=0;i<Config.UPGRADE_IDS.size();i++){String id=Config.UPGRADE_IDS.get(i);boolean installed=Upgrades.installed(bag,id);button(10+i,Content.UPGRADES.get(id).get(),id+(installed?" [INSTALLED]":" [EMPTY]"),c->{boolean remove=c.button==1;if(Upgrades.change(bag,id,remove)){int slot=bag.playerSlot;StoreMenu.bag(owner,new BagInventory(owner,slot),true);}},"Left: install from your inventory.","Right: uninstall and return the exact upgrade item.","Server enabled: "+Config.get().upgrades.get(id));}
+        button(27,Items.PAINTING,"Wardrobe / wear / interiors",c->navigate(Page.WARDROBE),"Element, cosmetic skin and storage tier are independent.");
         button(21,Items.PAPER,"Installed upgrade slots",null,Upgrades.installedItems(bag.stack).size()+" / "+BagInventory.data(bag.stack).getInt("UpgradeSlots"),"Automatic upgrades use the first upgraded backpack.","Automation pauses while a container screen is open.");
         button(23,Items.HOPPER,"Pickup filter",null,"Auto-stores items after normal vanilla pickup.","Empty filter: only existing identical stacks.",BagInventory.data(bag.stack).getList("PickupFilter",Tag.TAG_STRING).toString());
         button(25,Items.FURNACE,"Smelting filter / fuel",null,"No filter means no automatic smelting.","Fuel: ordinary coal/charcoal stored inside the bag.","Fuel ticks: "+BagInventory.data(bag.stack).getInt("FuelTicks"),BagInventory.data(bag.stack).getList("SmeltFilter",Tag.TAG_STRING).toString());
@@ -388,4 +398,78 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(28,Items.BOOK,"Beta safety scope",null,"Server-thread snapshots and component conservation checks.","Permissions, range and inventory identity are rechecked.","Hard-crash durability across vanilla save files is not guaranteed.","Back up your test world; do not remove your existing mods yet.");
         footer(bag!=null?Page.BAG:hub!=null?Page.NETWORK:chest!=null?Page.CHEST:owner.hasPermissions(2)?Page.ADMIN:Page.PREFS);
     }
+    public BagInventory imageBag(){return owner!=null&&bag!=null&&bag.valid()?bag:null;}
+    public boolean wardrobeOpen(){return page==Page.WARDROBE;}
+    public boolean moderatingImage(UUID id){return owner!=null&&owner.hasPermissions(2)&&page==Page.IMAGES&&Objects.equals(selectedImage,id);}
+    public void refreshAppearance(){if(owner!=null){render();bump();lastAppearance="";syncAppearance();sendAllDataToRemote();}}
+    private void syncAppearance(){
+        Looks.Look look=bag==null?new Looks.Look("plain","elemental","oak","atelier"):Looks.of(bag.stack);
+        CompoundTag data=bag==null?new CompoundTag():BagInventory.data(bag.stack);
+        UUID id=data.hasUUID("InteriorImage")?data.getUUID("InteriorImage"):ExpansionPackets.NONE;
+        if(page==Page.IMAGES&&selectedImage!=null&&owner.hasPermissions(2))id=selectedImage;
+        UUID bagId=data.hasUUID("BagId")?data.getUUID("BagId"):ExpansionPackets.NONE;
+        String signature=look.toString()+id+bagId+page;
+        if(signature.equals(lastAppearance))return;lastAppearance=signature;
+        PacketDistributor.sendToPlayer(owner,new ExpansionPackets.Look(-1,bagId,containerId,session(),look.texture(),look.element(),look.interior(),id,page==Page.WARDROBE));
+    }
+    private void wardrobe(){
+        if(bag==null)return;Looks.Look look=Looks.of(bag.stack);
+        for(int i=0;i<Looks.ELEMENTS.size();i++){
+            String element=Looks.ELEMENTS.get(i);boolean unlocked=Looks.unlocked(bag.stack,element,true);
+            Item icon=element.equals("plain")?Items.LEATHER:Content.STYLES.get("element_"+element).get();
+            button(i,icon,Looks.title(element)+(look.element().equals(element)?" [ACTIVE]":unlocked?" [UNLOCKED]":" [CRAFT BINDING]"),c->{
+                if(!unlocked)throw new IllegalArgumentException("Craft this elemental binding, then combine it with the backpack in a crafting grid.");Looks.apply(bag.stack,element,true);owner.getInventory().setChanged();
+            },"One elemental path at a time. Appearance does not grant stats.","Defaults: stone +2 armor; diamond +4; magma 20% less fire damage.","Water +10% swim speed in water; no water breathing or immunity.","Server rules may change these values. Armor/Origins effects are not replaced.");
+        }
+        for(int i=0;i<Looks.SKINS.size();i++){
+            String skin=Looks.SKINS.get(i);boolean unlocked=Looks.unlocked(bag.stack,skin,false);
+            button(18+i,skin.equals("elemental")?Content.BACKPACK.get():Content.STYLES.get("skin_"+skin).get(),Looks.title(skin)+(look.skin().equals(skin)?" [WORN LOOK]":unlocked?" [UNLOCKED]":" [CRAFT PATCH]"),c->{
+                if(!unlocked)throw new IllegalArgumentException("Craft this skin patch, then combine it with the backpack. Unlocked looks can be switched freely.");Looks.apply(bag.stack,skin,false);owner.getInventory().setChanged();
+            },"Cosmetic slot only. No armor or capacity changes.","Tier upgrades preserve this look and all unlocked skins.");
+        }
+        button(36,Items.LEATHER,"Accessible starter recipes",null,"Leather: 6 leather + 2 string + 1 chest.","Leaf: 4 matching leaves + 2 leather + 2 string.","All eight vanilla leaf species have recipes.","Bindings: stone/cobblestone, diamond, magma, prismarine, leaves.","Skin patches use paper, dyes and themed vanilla materials.","Recipes are supplied as normal crafting JSON; no new ore generation.");
+        button(38,Items.DIAMOND,"Independent progression",null,"Element: "+look.element(),"Skin: "+look.skin(),"Storage tier: "+BagInventory.data(bag.stack).getString("TierName"),"Capacity: "+bag.getContainerSize(),"Netherite and descendants may grant a small knockback bonus.");
+        button(45,Items.ARROW,"Back to backpack",c->navigate(Page.BAG));
+        boolean worn=BagInventory.data(bag.stack).getUUID("BagId").equals(Profiles.of(owner).wornBag);
+        button(46,Items.LEATHER_CHESTPLATE,worn?"Unequip worn backpack":"Wear this backpack",c->Wearables.toggle(owner,bag.stack),"References this inventory item; no duplicate copy is created.","Only one backpack can grant benefits. Duplicate IDs disable benefits.","Dropping, death or losing the item removes the bonus.");
+        button(48,Items.PAINTING,"My private image library",c->navigate(Page.IMAGES),"Drag ONE PNG file onto this Wardrobe screen to upload.","32..256 px per side; RGB/RGBA 8-bit; at most 64 KiB.","No URLs, filenames or local paths are sent to the server.","Uploads are OFF until your operator permits them.");
+        button(49,Items.PINK_DYE,"Built-in interior: "+Looks.title(look.interior()),c->{CompoundTag t=BagInventory.data(bag.stack);int i=Looks.INTERIORS.indexOf(look.interior());t.putString("Interior",Looks.INTERIORS.get(Math.floorMod(i+(c.button==1?-1:1),Looks.INTERIORS.size())));t.remove("InteriorImage");BagInventory.data(bag.stack,t);owner.getInventory().setChanged();},"Cycles attractive built-in interiors without an upload.","Custom images can be reattached from your library.");
+        button(51,Items.BOOK,"Image privacy",null,"Owner-only by default, including before moderation approval.","Other viewers need approval, sharing enabled and an explicit UUID grant.","Operators may inspect/reject images in the moderation library.","Images never appear on the public backpack model.","Recipients could still save screenshots or copies they already received.");
+        button(53,Items.BARRIER,"Close",c->owner.closeContainer());
+    }
+    private void expansion(){
+        Field[] fields=ExpansionRules.Options.class.getFields();int start=offset;offset=Math.min(offset,Math.max(0,((fields.length-1)/45)*45));
+        for(int i=0;i<45&&offset+i<fields.length;i++){
+            Field f=fields[offset+i];Object value;try{value=f.get(draft.expansion);}catch(IllegalAccessException e){throw new IllegalStateException(e);}
+            button(i,Items.COMPARATOR,f.getName()+": "+value,c->{
+                try{
+                    if(f.getType()==boolean.class)f.setBoolean(draft.expansion,!f.getBoolean(draft.expansion));
+                    else if(f.getType()==int.class)f.setInt(draft.expansion,c.shift?Integer.parseInt(input):f.getInt(draft.expansion)+(c.button==1?-1:1));
+                    else if(f.getType()==double.class)f.setDouble(draft.expansion,c.shift?Double.parseDouble(input):Math.round((f.getDouble(draft.expansion)+(c.button==1?-.01:.01))*10000)/10000.0);
+                    else if(f.getType()==List.class){@SuppressWarnings("unchecked") List<String> values=(List<String>)f.get(draft.expansion);String key=input;if(key.isBlank())throw new IllegalArgumentException("Enter an exact registry ID, or full UUID for upload permissions.");if(!values.remove(key))values.add(key);}
+                }catch(ReflectiveOperationException|NumberFormatException e){throw new IllegalArgumentException("Enter a valid number, then shift-click the setting.");}
+            },"Boolean: toggle. Number: +/-; shift-click uses the input.","Lists: type one exact ID/UUID and click to toggle membership.","Changes remain a private draft until Review and Apply.","Hard image/particle safety limits cannot be disabled.");
+        }
+        footer(Page.ADMIN);
+    }
+    private void images(){
+        List<InteriorImages.Entry> values=InteriorImages.list(owner,bag==null&&owner.hasPermissions(2));
+        offset=Math.min(offset,Math.max(0,((values.size()-1)/45)*45));
+        for(int i=0;i<45&&offset+i<values.size();i++){
+            var e=values.get(offset+i);
+            button(i,Items.PAINTING,(e.approved?"Approved":"Private / pending")+" "+e.width+" x "+e.height,c->{
+                selectedImage=e.id;deleteImage=null;
+                if(bag!=null&&e.owner.equals(owner.getUUID()))try{InteriorImages.attach(owner,bag,e.id);}catch(java.io.IOException ex){throw new IllegalArgumentException(ex.getMessage());}
+            },"Image ID: "+e.id,"Owner UUID: "+e.owner,"Stored bytes: "+e.bytes,"Explicit shared viewers: "+e.viewers.size(),"Click to select/preview. Your image attaches to the open bag.");
+        }
+        footer(bag==null?Page.ADMIN:Page.WARDROBE);
+        button(48,Items.PLAYER_HEAD,"Toggle selected image viewer",c->{if(selectedImage==null)return;ServerPlayer target=owner.getServer().getPlayerList().getPlayerByName(input);UUID id;try{id=target!=null?target.getUUID():UUID.fromString(input);}catch(Exception e){throw new IllegalArgumentException("Enter an online player name or full UUID.");}AnyaStorage.tell(owner,InteriorImages.manage(owner,selectedImage,"share",id));},"Enter a player name or UUID. Only the owner can share.","Sharing must be enabled and the image approved.");
+        if(bag!=null)button(49,Items.WATER_BUCKET,"Use built-in interior",c->InteriorImages.clearAttachment(owner,bag));
+        if(owner.hasPermissions(2))button(50,Items.EMERALD,"Approve / revoke selected image",c->{if(selectedImage!=null)AnyaStorage.tell(owner,InteriorImages.manage(owner,selectedImage,"approve",null));},"Moderation changes shared access; owners keep their private preview.","To reject and erase an image, use Delete twice.");
+        button(51,Items.LAVA_BUCKET,Objects.equals(deleteImage,selectedImage)&&selectedImage!=null?"CONFIRM DELETE selected image":"Delete selected image (two clicks)",c->{
+            if(selectedImage==null)return;if(!Objects.equals(deleteImage,selectedImage)){deleteImage=selectedImage;return;}
+            AnyaStorage.tell(owner,InteriorImages.manage(owner,selectedImage,"delete",null));deleteImage=null;selectedImage=null;
+        },"Deletes only this image. No backpack contents are affected.","All authorized clients are told to discard their cached copy.");
+    }
+
 }

@@ -25,7 +25,8 @@ tasks.named('processResources', ProcessResources) {
     filesMatching('META-INF/neoforge.mods.toml') { expand mod_version: project.mod_version }
 }
 tasks.register('generateAssets', Exec) { commandLine 'python3', 'scripts/generate_assets.py' }
-tasks.named('processResources') { dependsOn 'generateAssets' }
+tasks.register('generateExpansionAssets', Exec) { dependsOn 'generateAssets'; commandLine 'python3', 'scripts/generate_expansion_assets.py' }
+tasks.named('processResources') { dependsOn 'generateExpansionAssets' }
 tasks.register('coreTest', JavaExec) {
     dependsOn tasks.named('testClasses')
     classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
@@ -33,4 +34,4 @@ tasks.register('coreTest', JavaExec) {
 }
 tasks.named('test') { enabled = false }
 tasks.named('check') { dependsOn tasks.named('coreTest') }
-tasks.named('sourcesJar') { dependsOn 'generateAssets' }
+tasks.named('sourcesJar') { dependsOn 'generateExpansionAssets' }

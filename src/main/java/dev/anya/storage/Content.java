@@ -31,12 +31,20 @@ public final class Content {
     public static final DeferredItem<StorageItem> REMOTE=ITEMS.register("remote",()->new StorageItem("remote",new Item.Properties().stacksTo(1)));
     public static final DeferredItem<Item> CORE=ITEMS.registerSimpleItem("storage_core");
     public static final DeferredItem<Item> DRAGON_TOKEN=ITEMS.registerSimpleItem("dragon_victory_token");
+    public static final Map<String,DeferredItem<Item>> STYLES=new LinkedHashMap<>();
     public static final Map<String,DeferredItem<Item>> UPGRADES=new LinkedHashMap<>();
     public static final Supplier<BlockEntityType<StorageEntity>> STORAGE=ENTITIES.register("storage",()->BlockEntityType.Builder.of(StorageEntity::new,HUB.get(),CRATE.get(),CUBE.get()).build(null));
     public static final Supplier<MenuType<StoreMenu>> MENU=MENUS.register("storage",()->new MenuType<>(StoreMenu::new,FeatureFlags.DEFAULT_FLAGS));
     public static final Supplier<RecipeSerializer<UpgradeRecipe>> UPGRADE_RECIPE=RECIPES.register("backpack_upgrade",()->new SimpleCraftingRecipeSerializer<>(UpgradeRecipe::new));
     public static final Supplier<RecipeSerializer<CubeRecipe>> CUBE_RECIPE=RECIPES.register("cube",()->new SimpleCraftingRecipeSerializer<>(CubeRecipe::new));
+    public static final Supplier<RecipeSerializer<dev.anya.storage.appearance.StyleRecipe>> STYLE_RECIPE=RECIPES.register("backpack_style",()->new SimpleCraftingRecipeSerializer<>(dev.anya.storage.appearance.StyleRecipe::new));
+    private static final DeferredRegister<net.minecraft.core.particles.ParticleType<?>> PARTICLES=DeferredRegister.create(Registries.PARTICLE_TYPE,AnyaStorage.ID);
+    public static final Supplier<net.minecraft.core.particles.SimpleParticleType> LEAF_MOTE=PARTICLES.register("leaf_mote",()->new net.minecraft.core.particles.SimpleParticleType(false));
+    public static final Supplier<net.minecraft.core.particles.SimpleParticleType> CHERRY_MOTE=PARTICLES.register("cherry_mote",()->new net.minecraft.core.particles.SimpleParticleType(false));
+    public static final Supplier<net.minecraft.core.particles.SimpleParticleType> STAR_MOTE=PARTICLES.register("star_mote",()->new net.minecraft.core.particles.SimpleParticleType(false));
     static {
+        for(String element:dev.anya.storage.appearance.Looks.ELEMENTS) if(!element.equals("plain"))STYLES.put("element_"+element,ITEMS.registerSimpleItem("element_"+element));
+        for(String skin:dev.anya.storage.appearance.Looks.SKINS) if(!skin.equals("elemental"))STYLES.put("skin_"+skin,ITEMS.registerSimpleItem("skin_"+skin));
         ITEMS.registerSimpleBlockItem(HUB); ITEMS.registerSimpleBlockItem(CRATE); ITEMS.registerSimpleBlockItem(CUBE);
         for(String id:Config.UPGRADE_IDS) UPGRADES.put(id,ITEMS.registerSimpleItem(id+"_upgrade",new Item.Properties().stacksTo(16)));
         CONDITIONS.register("recipe_group",()->RecipeCondition.CODEC);
@@ -46,5 +54,5 @@ public final class Content {
             }).build());
     }
     private Content() {}
-    public static void register(IEventBus bus) { BLOCKS.register(bus); ITEMS.register(bus); ENTITIES.register(bus); MENUS.register(bus); RECIPES.register(bus); CONDITIONS.register(bus); TABS.register(bus); }
+    public static void register(IEventBus bus) { BLOCKS.register(bus); ITEMS.register(bus); ENTITIES.register(bus); MENUS.register(bus); RECIPES.register(bus); CONDITIONS.register(bus); TABS.register(bus); PARTICLES.register(bus); }
 }

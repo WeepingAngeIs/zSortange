@@ -18,7 +18,15 @@ public final class AnyaStorage {
     public static final String ID="anyastorage";
     public static final Logger LOG=LogUtils.getLogger();
     public AnyaStorage(IEventBus bus) {
-        Config.init(); Content.register(bus); bus.addListener(Packets::register);
+        Config.init(); Content.register(bus); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::tick);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::incoming);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::track);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::logout);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::clone);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::spawn);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.appearance.Wearables::death);
+        NeoForge.EVENT_BUS.addListener(dev.anya.storage.images.InteriorImages::tick);
         NeoForge.EVENT_BUS.addListener(AnyaStorage::commands);
         NeoForge.EVENT_BUS.addListener(AnyaStorage::breakBlock);
         NeoForge.EVENT_BUS.addListener(Network::tick);
@@ -26,7 +34,7 @@ public final class AnyaStorage {
         NeoForge.EVENT_BUS.addListener(Upgrades::dragonDeath);
         NeoForge.EVENT_BUS.addListener(AnyaStorage::stopped);
     }
-    private static void stopped(ServerStoppedEvent e) { Network.clear(); Safety.clear(); Transactions.clear(); }
+    private static void stopped(ServerStoppedEvent e) { Network.clear(); Safety.clear(); Transactions.clear();dev.anya.storage.appearance.Wearables.clear();dev.anya.storage.images.InteriorImages.stop(); }
     public static void tell(ServerPlayer player,String message) { player.sendSystemMessage(Component.literal("[Anya Storage] "+message)); }
     private static void commands(RegisterCommandsEvent event) {
         var storage=Commands.literal("storage").executes(c->{StoreMenu.settings(c.getSource().getPlayerOrException());return 1;})

@@ -36,6 +36,7 @@ public final class Config {
     }
     public static final class Data {
         public int schema=2;
+        public ExpansionRules.Options expansion=new ExpansionRules.Options();
         public long revision=0;
         public boolean compatibility=false, fallbackMissingTiers=false;
         public boolean backpacks=true, network=true, quickStack=true, organize=true, labels=true, audit=true;
@@ -82,6 +83,7 @@ public final class Config {
     }
     public static void validate(Data d) {
         require(d!=null && d.schema==2 && d.revision>=0,"Unsupported schema or revision");
+        ExpansionRules.validate(d.expansion);
         require(d.initialRadius>=4 && d.initialRadius<=128,"Initial radius must be 4..128");
         require(d.maxRadius>=d.initialRadius && d.maxRadius<=128,"Maximum radius must be initial..128");
         require(d.radiusStep>=1 && d.radiusStep<=32,"Radius step must be 1..32");

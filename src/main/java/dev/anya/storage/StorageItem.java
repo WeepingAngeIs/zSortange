@@ -49,7 +49,7 @@ public final class StorageItem extends Item {
     }
     public static void openFirst(ServerPlayer p){if(!Profiles.cooldown(p))return;for(int i=0;i<36;i++)if(p.getInventory().getItem(i).is(Content.BACKPACK.get())){StoreMenu.bag(p,new BagInventory(p,i),false);return;}if(p.getOffhandItem().is(Content.BACKPACK.get())){StoreMenu.bag(p,new BagInventory(p,40),false);return;}AnyaStorage.tell(p,"No backpack in your inventory.");}
     @Override public void appendHoverText(ItemStack stack,TooltipContext context,List<Component> lines,TooltipFlag flag){
-        if(kind.equals("backpack")){CompoundTag tag=BagInventory.data(stack);lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use: upgrades"));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));}
+        if(kind.equals("backpack")){CompoundTag tag=BagInventory.data(stack);lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use: upgrades"));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Wear and personalize from the backpack Wardrobe."));}
         else {lines.add(Component.literal("Sneak-use on hub: bind | Use: open base storage"));lines.add(Component.literal("Sneak-use on a chest: routing (owner only)"));}
     }
 }
