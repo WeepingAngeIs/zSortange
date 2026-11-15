@@ -66,7 +66,6 @@ public final class Client {
         private void send(String action,String text,int value){
             if(minecraft.player!=null)PacketDistributor.sendToServer(new Packets.Action(menu.containerId,menu.session(),menu.revision(),action,text,value));
         }
-        @Override public void tick(){if(minecraft.player!=null)super.tick();}
         @Override protected void containerTick(){
             super.containerTick();ticks++;ClientInteriors.tick();reflow();
             if(debounce>0&&--debounce==0&&!input.getValue().equals(sent)){sent=input.getValue();pendingRow=-1;send("text",sent,0);}

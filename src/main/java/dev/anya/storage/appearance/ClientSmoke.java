@@ -73,8 +73,17 @@ public final class ClientSmoke {
         var menu=new StoreMenu(121,inventory);
         int rows=dev.anya.storage.ui.StorageGrid.layout(mc.getWindow().getGuiScaledWidth(),mc.getWindow().getGuiScaledHeight(),probe[0],true).rows();
         menu.renderFixture(probe[0],probe[2],rows);
-        mc.setScreen(new Client.Screen(menu,inventory,Component.literal("Oak Grove / "+probe[0]+" slots (render fixture)")));
+        mc.setScreen(new GridPreview(new Client.Screen(menu,inventory,Component.literal("Oak Grove / "+probe[0]+" slots (render fixture)"))));
         ClientInteriors.current=new ExpansionPackets.Look(-1,UUID.randomUUID(),121,0,"leaf_oak","leaf","botanical",ExpansionPackets.NONE,false);
+    }
+
+    /** The production renderer is initialized normally; this title-screen fixture has no LocalPlayer. */
+    private static final class GridPreview extends Screen {
+        private final Client.Screen delegate;
+        GridPreview(Client.Screen delegate){super(Component.literal("Anya storage render fixture"));this.delegate=delegate;}
+        @Override protected void init(){delegate.init(minecraft,width,height);}
+        @Override public void render(GuiGraphics g,int mx,int my,float partial){delegate.render(g,mx,my,partial);}
+        @Override public void removed(){delegate.removed();}
     }
 
     private static final class Preview extends Screen {
