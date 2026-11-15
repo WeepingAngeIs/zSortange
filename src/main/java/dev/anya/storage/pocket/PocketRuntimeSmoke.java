@@ -26,7 +26,20 @@ public final class PocketRuntimeSmoke {
         void succeed(){running=false;getLevel.getServer().saveEverything(true,true,true);getLevel.getServer().halt(false);}
     }
     private static void check(Fixture h,boolean value,String message){if(!value)throw new IllegalStateException(message);}
-    private static ServerPlayer player(Fixture h,String name){return new FakePlayer(h.getLevel(),new GameProfile(UUID.randomUUID(),name)){@Override public boolean hasPermissions(int ignored){return false;}};}
+    private static ServerPlayer player(Fixture h,String name){
+        var profile=new GameProfile(UUID.randomUUID(),name);
+        var p=new ServerPlayer(h.getLevel().getServer(),h.getLevel(),profile,net.minecraft.server.level.ClientInformation.createDefault()){
+            @Override public boolean hasPermissions(int ignored){return false;}
+        };
+        var connection=new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.SERVERBOUND){
+            @Override public boolean isMemoryConnection(){return true;}
+            @Override public void send(net.minecraft.network.protocol.Packet<?> packet,net.minecraft.network.PacketSendListener callback,boolean flush){} // CI transport sink, no real client.
+        };
+        new io.netty.channel.embedded.EmbeddedChannel(connection);
+        net.neoforged.neoforge.network.registration.NetworkRegistry.configureMockConnection(connection);
+        h.getLevel().getServer().getPlayerList().placeNewPlayer(connection,p,net.minecraft.server.network.CommonListenerCookie.createInitial(profile,false));
+        return p;
+    }
     @net.neoforged.bus.api.SubscribeEvent public static void started(net.neoforged.neoforge.event.server.ServerStartedEvent event)throws Exception {
         if(!Boolean.getBoolean("anyastorage.pocketTests"))return;
         server=event.getServer();
@@ -130,7 +143,7 @@ public final class PocketRuntimeSmoke {
                 check(h,PocketService.ownedTicketRequests()==0,"Recovery tickets also expired");
                 var record=PocketService.ledger(server).get(id);var level=PocketService.dimension(server);var chest=(StorageEntity)level.getBlockEntity(PocketService.chestPositions(record).getFirst());
                 check(h,Transactions.same(chest.getItem(0),named),"Reanchor/logout/recovery never copied or removed chest contents");
-                AnyaStorage.LOG.info("ANYA_POCKET_RUNTIME_OK: actual dimension crossings; two FakePlayer identities; four physical chests; components; Visit; revocation; home remote; anchor destruction/reanchor; logout/login hooks; zero final Anya-owned requests. Not real-client multiplayer or forced socket disconnect testing.");
+                AnyaStorage.LOG.info("ANYA_POCKET_RUNTIME_OK: actual dimension crossings; two embedded-channel ServerPlayer identities; four physical chests; components; Visit; revocation; home remote; anchor destruction/reanchor; logout/login hooks; zero final Anya-owned requests. Normal player-file save verification ran; not real-client multiplayer or forced socket disconnect testing.");
                 PocketService.logout(owner);PocketService.logout(visitor);h.succeed();
             }catch(Exception e){throw new AssertionError(e);}
         });
