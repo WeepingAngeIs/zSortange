@@ -4,7 +4,7 @@ public final class GridTests {
     private static int checked;
     private static void check(boolean condition,String message){checked++;if(!condition)throw new AssertionError(message);}
     public static void main(String[] args){
-        int[] capacities={0,1,8,9,17,27,45,63,81,108,144,216,16384};
+        int[] capacities={0,1,8,9,17,27,45,63,81,108,144,216,270,324,378,432,16384};
         int[][] sizes={{320,180},{426,240},{640,360},{854,480},{1280,720},{1920,1080},{2560,1440}};
         for(int capacity:capacities)for(int visibleRows=1;visibleRows<=5;visibleRows++){
             int max=StorageGrid.maxStartRow(capacity,visibleRows);

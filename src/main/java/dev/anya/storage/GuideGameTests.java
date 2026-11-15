@@ -42,7 +42,14 @@ public final class GuideGameTests {
         var starter=pages.stream().filter(p->p.title().equals("Your first leather backpack")).findFirst().orElseThrow();
         h.assertTrue(starter.cells().stream().filter(c->c.id().equals("minecraft:leather")).count()==6,"recipe loaded from actual current recipe manager");
         var stone=pages.stream().filter(p->p.title().equals("Stone binding")).findFirst().orElseThrow();h.assertTrue(stone.body().contains("2 armor points"),"actual default armor value described");
-        h.assertTrue(pages.stream().anyMatch(p->p.body().contains("NOT implemented in this milestone")),"experimental pocket not misrepresented");h.succeed();
+        var limits=pages.stream().filter(p->p.title().equals("What this milestone does not do")).findFirst().orElseThrow();
+        h.assertTrue(limits.body().contains("Live portal rendering and unrestricted pocket building are NOT implemented"),"unavailable live renderer and unrestricted construction explicitly excluded");
+        var builder=pages.stream().filter(p->p.title().equals("Build without granting storage")).findFirst().orElseThrow();
+        String editing=ExpansionRules.get().pocketEditing?"enabled for this test server":"OFF";
+        h.assertTrue(builder.body().contains("Room editing is "+editing)&&builder.body().contains("both Visit and Build"),"guide uses live edit gate and independent delegated rights");
+        var pads=pages.stream().filter(p->p.title().equals("Optional chest pads")).findFirst().orElseThrow();
+        h.assertTrue(pads.body().contains("ONLY when empty")&&pads.body().contains("original four chests cannot be removed"),"guide preserves occupied and mandatory chest restrictions");
+        h.succeed();
     }
     @GameTest(template="empty") public static void guideRecoveryProtectsNamedItems(GameTestHelper h){
         var p=player(h);ItemStack named=new ItemStack(Items.BOOK);named.set(DataComponents.CUSTOM_NAME,Component.literal("Precious notes"));p.getInventory().setItem(0,named);

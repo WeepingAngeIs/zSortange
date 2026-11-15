@@ -64,6 +64,22 @@ public final class ClientProbe {
         Acceptance.require(next>m.firstSlot(),"Named sample absent from all synchronized physical slots");
         requestViewport(m,next);
     }
+    /** New room scenario: prove the added physical chest reaches the unchanged production grid. */
+    private static void inspectExpandedRoom(Minecraft mc){
+        Acceptance.require(ticks<=180,"Timed out inspecting added chest in synchronized network view");
+        if(ticks<5)return;
+        Acceptance.require(mc.player.containerMenu instanceof StoreMenu,"Expected combined pocket menu");
+        StoreMenu m=(StoreMenu)mc.player.containerMenu;
+        Acceptance.require(!m.privateView()&&!m.filteredView()&&m.capacity()==270,"Expected five real 54-slot room chests");
+        if(expectedOffset<0){requestViewport(m,216);return;}
+        if(m.firstSlot()!=216){if(ticks-viewportRequestedAt>=20)requestViewport(m,216);return;}
+        if(ticks-viewportRequestedAt<3)return;
+        var sample=m.getSlot(0).getItem();
+        Acceptance.require(sample.is(Items.EMERALD)&&sample.getCount()==13&&sample.getHoverName().getString().equals("Room acceptance emeralds"),"Added-chest physical slot 216 lost named sample");
+        shot("expanded-room-network-270");
+        AnyaStorage.LOG.info("ANYA_ROOM_CLIENT_GRID_OK capacity={} offset={} display=0 physical=216 count={} revision={}",m.capacity(),m.firstSlot(),sample.getCount(),m.revision());
+        ack();
+    }
     private static void requestViewport(StoreMenu m,int offset){
         Acceptance.require(++viewportAttempts<=24,"Viewport retry bound exceeded");
         expectedOffset=offset;viewportRequestedAt=ticks;
@@ -83,6 +99,7 @@ public final class ClientProbe {
             if(work==null||mc.player==null||mc.level==null||mc.getOverlay()!=null)return;
             ticks++;String[] a=work.action().split(" ");String action=a[0];
             if(action.equals("withdrawone")){withdrawLocatedSample(mc);return;}
+            if(action.equals("roomnetwork")){inspectExpandedRoom(mc);return;}
             if(ticks==1){
                 switch(action){
                     case "block" -> {BlockPos pos=new BlockPos(Integer.parseInt(a[1]),Integer.parseInt(a[2]),Integer.parseInt(a[3]));mc.gameMode.useItemOn(mc.player,InteractionHand.MAIN_HAND,new BlockHitResult(Vec3.atCenterOf(pos),Direction.UP,pos,false));}

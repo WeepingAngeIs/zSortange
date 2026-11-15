@@ -159,7 +159,11 @@ public final class RoomProbe {
                 case 10 -> {if(done(b())){check(b().level().getBlockEntity(added.getBlockPos())==added&&added.getItem(0).getCount()==13,"Occupied optional chest was removed");movers();layoutChanges();next();}}
                 case 11 -> {if(tick-since>10){var pad=PocketRoomLayout.pads(room()).get(1);check(RoomEditor.prepare(a(),aim(a(),pad,false),true).commit().isEmpty(),"Empty optional chest removal failed");check(a().level().isEmptyBlock(pad)&&count(a(),Content.CRATE.get().asItem())==1,"Empty chest returned incorrectly");held(b(),new ItemStack(Items.CHERRY_PLANKS,2));var planned=RoomEditor.prepare(b(),aim(b(),at(8,64,20),true),false);hub.setMember(b().getUUID(),BasePermissions.VISIT);check(!planned.commit().isEmpty()&&b().level().isEmptyBlock(at(8,65,20))&&count(b(),Items.CHERRY_PLANKS)==2,"Build revocation accepted stale edit");hub.setMember(b().getUUID(),RIGHTS);aim(b(),at(6,65,20),false);send(b(),"command anya pocket build remove");next();}}
                 case 12 -> {if(done(b())){check(b().level().isEmptyBlock(at(6,65,20))&&count(b(),Items.CHERRY_PLANKS)==3,"Decorative removal not conserved");aim(b(),added.getBlockPos(),false);var cp=added.getBlockPos();send(b(),"block "+cp.getX()+" 65 "+cp.getZ());next();}}
-                case 13 -> {if(done(b())){send(b(),"photo editable-room-chest");next();}}
+                case 13 -> {if(done(b())){
+                    StoreMenu.pocket(b(),new PocketView(b(),room(),PocketLeases.Kind.VISIT));
+                    check(b().containerMenu instanceof StoreMenu m&&m.capacity()==270,"Combined view did not include the added physical chest");
+                    send(b(),"roomnetwork");next();
+                }}
                 case 14 -> {if(done(b())){Acceptance.marker("kill-beta","Kill visiting room builder with persisted added chest contents");next();}}
                 case 15 -> {if(b()==null){Acceptance.marker("restart-beta","Reconnect same room-builder identity");next();}}
                 case 16 -> {if(b()!=null&&!inside(b())&&PocketService.ledger(server).returning(b().getUUID())==null&&tick-since>30){check(count(b(),Items.CHERRY_PLANKS)==3&&count(b(),Items.EMERALD)==0&&added.getItem(0).getCount()==13,"Socket recovery changed build materials or stored sample");log("real client SIGKILL/reconnect preserved added chest, build rights and recovered materials");
