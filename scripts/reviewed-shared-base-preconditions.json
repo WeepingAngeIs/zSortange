@@ -1,0 +1,21 @@
+{
+  "README.md": "14b5910cb6d7cb012eeb881e801ec9a1a8d1942e2e37db8680225145a107a8db",
+  "build.gradle": "b86151456be1407ea3758cd01341702054f2a856471b867e0e1e82168dded8b4",
+  "docs/EXPANSION.md": "cc52205ecbcfc86dda34ddaa43bed8839735909b7f73ceea66be22b6159d4feb",
+  "docs/SHARED_BASES.md": null,
+  "docs/TESTING.md": "f3898a3e13c3f1181af717009d784d271b5b35c1d9c2fd77052401aa3dd68e0c",
+  "docs/TUTORIAL.md": "4a05eeaafa9da4ff85818fc5965e55ea0ae9822cb24538134350283dc277a564",
+  "docs/VERIFICATION.md": "91ff20a5027d484a20a043c72f9ba16af49b1ec28026107d0a3d6126828bb777",
+  "gradle.properties": "a40a6c16beecbfbf9a2bf2a149c0ed572a1c39a8749e49bdaca4ec399f6e5793",
+  "src/main/java/dev/anya/storage/BaseActivity.java": null,
+  "src/main/java/dev/anya/storage/BasePermissions.java": null,
+  "src/main/java/dev/anya/storage/ExpansionRules.java": "a56eb68b4814500ade674f6bb45e257cf2b90bc6cccdcb7e7832814df3936b9a",
+  "src/main/java/dev/anya/storage/Network.java": "79f30d0806eab66ac0c2edfc31814f3fb63bb1db9fe9d88daa166d42749e1f58",
+  "src/main/java/dev/anya/storage/SharedBaseGameTests.java": null,
+  "src/main/java/dev/anya/storage/SharedBasePersistenceSmoke.java": null,
+  "src/main/java/dev/anya/storage/StorageEntity.java": "13da4bc01d3446faacf392357a1d929143bb3935052fce65a5ef2b5b3ea05d0a",
+  "src/main/java/dev/anya/storage/StoreMenu.java": "2e1e6dc18b5d6a2b02ac473da81f24fe92c1c752db56a17ebd966f2b5b9d7a9f",
+  "src/main/java/dev/anya/storage/guide/GuideContent.java": "c343cf9fd22a2e9948f1c5ebe0b12e1e7d88225e9ed7b6a1217ba34c0da80bc6",
+  "src/main/java/dev/anya/storage/guide/GuidePersistenceSmoke.java": "8d399db3bc82286962d1c201f26970f89eb226904b8dfcc483d772e224042b71",
+  "src/test/java/dev/anya/storage/SharedBaseCoreTests.java": null
+}
