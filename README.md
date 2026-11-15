@@ -1,6 +1,6 @@
 # Anya Storage Plus
 
-**0.3.0-beta.3, true-capacity interface and optional native back slot**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
+**0.3.0-beta.4, gated home-pocket safety prototype**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
 
 The verified `0.2.0-beta.1` remains on `main` while this milestone is developed on `feature/elemental-pockets`. No installed profile, live server or valuable world is modified by producing this build. Use the same playable JAR on server and clients in a disposable or backed-up test world. Do not install two versions together.
 
@@ -22,9 +22,11 @@ New in beta.2: independent home-hub View/Deposit/Withdraw/Log permissions, priva
 
 Existing hub/remote search, physical containers, QuickStack, routing, installable upgrades, configurable optional material tiers, safe settings drafts and previews remain. Exact installed Dragonsteel/Witherite progression must still be verified in the target pack; use Add Held Material rather than inventing IDs.
 
-## Not implemented here
+## Gated home-pocket prototype
 
-Pocket dimensions, pocket scenery, pocket visit/view/deposit/withdraw enforcement, shared pocket logs, home-to-pocket access, a portal preview block and live portal rendering are **not implemented**. `pocketStorage=true` is rejected. No Immersive Portals dependency is installed or bundled. The approved low-cost preview remains a future design requirement, not a shipped renderer.
+Beta.4 adds a distinct craftable Home Void Cube entrance, durable identity/return ledger, separate Visit right, bounded active leases, and protected physical-chest pocket access behind an explicit disposable-test JVM gate plus the server switch. It does not turn the old UwU inventory cube into a dimension. Existing beta.3 backpack features remain.
+
+Read [Pocket milestone, gates and exact limitations](docs/POCKET_MILESTONE.md) before attempting a disposable-world test. Construction, arbitrary storage/machinery, live portal rendering and full-pack approval are NOT implemented. Normal launches still reject enabling pocket storage. No portal dependency or installed profile is changed.
 
 ## Start here
 

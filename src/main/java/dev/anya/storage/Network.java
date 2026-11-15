@@ -60,7 +60,7 @@ public final class Network {
         }
     }
     public static boolean supported(BlockEntity be){
-        if(be instanceof StorageEntity storage)return !storage.kind().equals("hub");
+        if(be instanceof StorageEntity storage)return storage.pocketId==null&&!storage.kind().equals("hub");
         Config.Data c=Config.get();
         return be!=null && ((c.vanillaChests&&(be.getClass()==ChestBlockEntity.class||be.getClass()==TrappedChestBlockEntity.class)) || (c.vanillaBarrels&&be.getClass()==BarrelBlockEntity.class) || (c.vanillaShulkers&&be.getClass()==ShulkerBoxBlockEntity.class));
     }

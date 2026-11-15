@@ -15,6 +15,9 @@ import java.util.*;
 public final class StorageEntity extends BlockEntity implements WorldlyContainer {
     private NonNullList<ItemStack> items;
     public UUID owner;
+    public UUID pocketId;
+    private UUID storageIdentity;
+    public UUID storageIdentity(){if(storageIdentity==null){storageIdentity=UUID.randomUUID();setChanged();}return storageIdentity;}
     public final Set<UUID> trusted=new HashSet<>();
     public final Map<UUID,Integer> memberPermissions=new HashMap<>();
     public final BaseActivity activity=new BaseActivity();
@@ -41,7 +44,7 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public int memberMask(UUID id){return trusted.contains(id)?memberPermissions.getOrDefault(id,BasePermissions.LEGACY):0;}
     public boolean permitsMember(UUID id,int rights){return BasePermissions.allows(memberMask(id),rights);}
     public boolean permits(ServerPlayer p,int rights){return ownedBy(p)||BasePermissions.allows(memberMask(p.getUUID()),rights);}
-    public boolean allowed(ServerPlayer p){return ownedBy(p)||(kind().equals("hub")?memberMask(p.getUUID())>0:trusted.contains(p.getUUID()));}
+    public boolean allowed(ServerPlayer p){if(pocketId!=null)return dev.anya.storage.pocket.PocketService.physicalAllowed(p,this);return ownedBy(p)||(kind().equals("hub")?memberMask(p.getUUID())>0:trusted.contains(p.getUUID()));}
     public void setMember(UUID id,int rights){
         if(id==null||!BasePermissions.valid(rights))throw new IllegalArgumentException("Invalid member or permission mask");
         if(!trusted.contains(id)&&trusted.size()>=64)throw new IllegalArgumentException("Trust limit reached");
@@ -66,6 +69,7 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     @Override public void setRemoved(){Network.remove(this);super.setRemoved();}
     @Override protected void saveAdditional(CompoundTag tag,HolderLookup.Provider lookup){
         super.saveAdditional(tag,lookup);ContainerHelper.saveAllItems(tag,items,lookup);tag.putInt("Capacity",items.size());
+        if(storageIdentity!=null)tag.putUUID("StorageIdentity",storageIdentity);if(pocketId!=null)tag.putUUID("PocketId",pocketId);
         if(owner!=null)tag.putUUID("Owner",owner);tag.putString("BaseName",baseName);tag.putString("Symbol",symbol);
         tag.putInt("Ore",oreProgress);tag.putInt("RangeUpgrades",rangeUpgrades);tag.putLong("ProfileRevision",profileRevision);
         ListTag trust=new ListTag();trusted.forEach(uuid->trust.add(NbtUtils.createUUID(uuid)));tag.put("Trusted",trust);
@@ -78,6 +82,7 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
         int capacity=tag.contains("Capacity")?tag.getInt("Capacity"):items.size();
         if(capacity<1||capacity>4096)throw new IllegalArgumentException("Refusing corrupt storage capacity "+capacity);
         items=NonNullList.withSize(capacity,ItemStack.EMPTY);ContainerHelper.loadAllItems(tag,items,lookup);
+        storageIdentity=tag.hasUUID("StorageIdentity")?tag.getUUID("StorageIdentity"):null;pocketId=tag.hasUUID("PocketId")?tag.getUUID("PocketId"):null;
         owner=tag.hasUUID("Owner")?tag.getUUID("Owner"):null;baseName=tag.getString("BaseName");symbol=tag.getString("Symbol");
         if(baseName.isBlank())baseName="My Base";if(!Config.SYMBOLS.contains(symbol))symbol="heart";
         oreProgress=Math.max(0,tag.getInt("Ore"));rangeUpgrades=Math.max(0,tag.getInt("RangeUpgrades"));profileRevision=tag.getLong("ProfileRevision");

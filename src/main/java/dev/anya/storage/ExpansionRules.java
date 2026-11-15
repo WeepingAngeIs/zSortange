@@ -16,14 +16,19 @@ public final class ExpansionRules {
         public boolean imagesEnabled=false, imageUploadsForAll=false, imageSharing=false, imageModeration=true;
         public List<String> imageUploaders=new ArrayList<>();
         public int imagesPerPlayer=4, imagesTotal=128, imageWorldMiB=16;
+        public String pocketCoreMaterial="minecraft:diamond";
+        public int pocketSessionTicks=6000;
         public boolean pocketStorage=false, pocketActivityLog=false, pocketLogNames=false;
         public int pocketLimit=64, activePocketLimit=4, pocketContainers=32, pocketLogEntries=100;
     }
     public static Options get(){return Config.get().expansion;}
-    public static void validate(Options o){
+    public static void validate(Options o){validate(o,false);}
+    public static void validate(Options o,boolean dormantLoad){
         require(o!=null,"Expansion settings cannot be null");
         range(o.activityLogEntries,1,128,"Base activity log entries");
-        require(!o.pocketStorage,"Pocket storage is not implemented in this milestone; its gate must stay OFF");
+        require(dormantLoad||!o.pocketStorage||Boolean.getBoolean("anyastorage.pocketPrototype"),"Pocket storage remains experimental: requires the explicit disposable-test JVM gate anyastorage.pocketPrototype");
+        require(Config.validId(o.pocketCoreMaterial),"Pocket core material must be a registry ID");
+        range(o.pocketSessionTicks,200,12000,"Pocket session ticks");
         finite(o.stoneArmor,0,4,"Stone armor");finite(o.diamondArmor,0,6,"Diamond armor");
         finite(o.magmaReduction,0,.5,"Magma reduction");finite(o.waterSwimBonus,0,.25,"Water swim bonus");
         finite(o.netheriteKnockback,0,.1,"High-tier knockback resistance");

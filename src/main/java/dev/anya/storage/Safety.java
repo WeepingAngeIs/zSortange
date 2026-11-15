@@ -53,12 +53,20 @@ public final class Safety {
             if(!(other instanceof ChestBlockEntity))return "Other half of double chest is missing";
             String denial=reason(p,other,hub,false);if(!denial.isEmpty())return "Other half: "+denial;
         }
+        return locationReason(p,level,pos);
+    }
+    /** Explicit target dimension for pocket operations; actor identity is never substituted. */
+    public static String locationReason(ServerPlayer p,ServerLevel level,BlockPos pos){
+        if(!p.isAlive()||p.isSpectator())return "Player cannot interact";
+        if(level==null||!level.hasChunkAt(pos))return "Target chunk is not loaded";
+        if(!level.getWorldBorder().isWithinBounds(pos))return "Outside world border";
+        if(p.getServer().isUnderSpawnProtection(level,pos,p))return "Spawn protection";
         init();if(failed)return message;
         if(apiGet!=null)try{
             Object protection=protectionGet.invoke(apiGet.invoke(null,p.getServer()));
             if((Boolean)blockCheck.invoke(protection,p,InteractionHand.MAIN_HAND,ItemStack.EMPTY,level,pos,Direction.UP,false,false,true))return "Claim permission denied";
         }catch(ReflectiveOperationException|RuntimeException e){failed=true;message="Claim API failed: remote storage blocked";AnyaStorage.LOG.error(message,e);return message;}
-        StorageAccessEvent event=new StorageAccessEvent(p,pos);NeoForge.EVENT_BUS.post(event);return event.isCanceled()?"Storage access cancelled by an addon":"";
+        StorageAccessEvent event=new StorageAccessEvent(p,level,pos);NeoForge.EVENT_BUS.post(event);return event.isCanceled()?"Storage access cancelled by an addon":"";
     }
     public static boolean pickup(ServerPlayer p,ItemEntity item){
         init();if(failed)return false;if(apiGet==null)return true;

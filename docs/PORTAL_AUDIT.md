@@ -1,3 +1,5 @@
+> Historical renderer audit from beta.2. Beta.4 adds a separately gated pocket core and non-live abstract entrance preview; see POCKET_MILESTONE.md. The live-renderer audit and missing compatibility evidence below remain unchanged.
+
 # Optional live portal lead: source audit, not an integration
 
 ## Status and inspected revision

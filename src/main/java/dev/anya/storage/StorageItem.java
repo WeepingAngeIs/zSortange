@@ -20,7 +20,7 @@ public final class StorageItem extends Item {
         ItemStack stack=player.getItemInHand(hand);
         if(!level.isClientSide&&player instanceof ServerPlayer p){
             if(kind.equals("backpack")){int slot=hand==InteractionHand.MAIN_HAND?p.getInventory().selected:40;StoreMenu.bag(p,new BagInventory(p,slot),player.isShiftKeyDown());}
-            else {StorageEntity hub=bound(p,stack);if(hub!=null)StoreMenu.network(p,hub);else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this remote. Use it within that hub's radius.");}
+            else {StorageEntity hub=bound(p,stack);if(hub!=null){if(!dev.anya.storage.pocket.PocketService.remote(p,stack,hub))StoreMenu.network(p,hub);}else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this remote. Use it within that hub's radius.");}
         }
         return InteractionResultHolder.sidedSuccess(stack,level.isClientSide);
     }
@@ -29,9 +29,10 @@ public final class StorageItem extends Item {
         if(context.getLevel().isClientSide)return InteractionResult.SUCCESS;
         if(!(context.getPlayer() instanceof ServerPlayer p))return InteractionResult.PASS;
         var be=context.getLevel().getBlockEntity(context.getClickedPos());
+        if(be instanceof dev.anya.storage.pocket.PocketContent.EntranceEntity entrance){dev.anya.storage.pocket.PocketService.link(p,entrance,context.getItemInHand());return InteractionResult.CONSUME;}
         if(be instanceof StorageEntity hub&&hub.kind().equals("hub")){
             String reason=Safety.reason(p,hub,null);if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return InteractionResult.FAIL;}
-            CompoundTag tag=BagInventory.data(context.getItemInHand());tag.putString("HubDimension",p.level().dimension().location().toString());tag.putLong("HubPos",hub.getBlockPos().asLong());BagInventory.data(context.getItemInHand(),tag);
+            CompoundTag tag=BagInventory.data(context.getItemInHand());tag.putString("HubDimension",p.level().dimension().location().toString());tag.putLong("HubPos",hub.getBlockPos().asLong());tag.remove("PocketId");BagInventory.data(context.getItemInHand(),tag);
             AnyaStorage.tell(p,"Remote bound to "+hub.baseName+"; radius "+hub.radius()+" blocks.");return InteractionResult.CONSUME;
         }
         StorageEntity hub=bound(p,context.getItemInHand());

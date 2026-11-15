@@ -76,14 +76,15 @@ public final class Config {
                 Set<String> fields=JSON.toJsonTree(new Data()).getAsJsonObject().keySet();
                 for(String key:object.keySet()) if(!fields.contains(key)) throw new IOException("Unknown config key: "+key);
                 live=JSON.fromJson(object,Data.class);
-                validate(live);
+                validate(live,true);
             } else { live=new Data(); persist(live); }
             lastStatus="Loaded revision "+live.revision;
         } catch(Exception e) { throw new IllegalStateException("Cannot load storage config; original file has not been reset",e); }
     }
-    public static void validate(Data d) {
+    public static void validate(Data d) {validate(d,false);}
+    private static void validate(Data d,boolean dormantLoad) {
         require(d!=null && d.schema==2 && d.revision>=0,"Unsupported schema or revision");
-        ExpansionRules.validate(d.expansion);
+        ExpansionRules.validate(d.expansion,dormantLoad);
         require(d.initialRadius>=4 && d.initialRadius<=128,"Initial radius must be 4..128");
         require(d.maxRadius>=d.initialRadius && d.maxRadius<=128,"Maximum radius must be initial..128");
         require(d.radiusStep>=1 && d.radiusStep<=32,"Radius step must be 1..32");

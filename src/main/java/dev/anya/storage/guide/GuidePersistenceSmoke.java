@@ -43,6 +43,7 @@ public final class GuidePersistenceSmoke {
             check(state.guideGranted&&player.getInventory().isEmpty(),"Journal recovery failed");
         }
         SharedBasePersistenceSmoke.run(server,phase);
+        dev.anya.storage.pocket.PocketPersistenceSmoke.run(server,phase);
         server.saveEverything(true,true,true);
         AnyaStorage.LOG.info("ANYA_GUIDE_PERSISTENCE_{}: real dedicated server, durable journal and existing preferences verified",phase.toUpperCase(java.util.Locale.ROOT));
         server.halt(false);

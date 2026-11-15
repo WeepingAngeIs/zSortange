@@ -7,5 +7,7 @@ import net.neoforged.bus.api.ICancellableEvent;
 public final class StorageAccessEvent extends Event implements ICancellableEvent {
     public final ServerPlayer player;
     public final BlockPos position;
-    public StorageAccessEvent(ServerPlayer player,BlockPos position) { this.player=player;this.position=position.immutable(); }
+    public final net.minecraft.server.level.ServerLevel level;
+    public StorageAccessEvent(ServerPlayer player,BlockPos position) { this(player,player.serverLevel(),position); }
+    public StorageAccessEvent(ServerPlayer player,net.minecraft.server.level.ServerLevel level,BlockPos position){this.player=player;this.level=level;this.position=position.immutable();}
 }

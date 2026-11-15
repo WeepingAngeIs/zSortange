@@ -33,6 +33,8 @@ public final class ClientSmoke {
                 var model=mc.getItemRenderer().getModel(ClientLooks.shell(name),null,null,0);
                 if(model.getParticleIcon().contents().name().getPath().contains("missing"))throw new IllegalStateException("Missing backpack model: "+name);
             }
+            var entrance=mc.getItemRenderer().getModel(new net.minecraft.world.item.ItemStack(dev.anya.storage.pocket.PocketContent.ITEM.get()),null,null,0);
+            if(entrance.getParticleIcon().contents().name().getPath().contains("missing"))throw new IllegalStateException("Missing pocket entrance preview model");
             mc.setScreen(new Preview(false));phase=1;ticks=0;
         }
         if(phase>0&&mc.getOverlay()==null)ticks++;
