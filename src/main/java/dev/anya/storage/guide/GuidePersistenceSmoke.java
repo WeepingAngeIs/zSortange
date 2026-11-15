@@ -42,6 +42,7 @@ public final class GuidePersistenceSmoke {
             check(GuideService.grantOnce(player,journal)==GuideService.Grant.ALREADY,"Journal failed to reject a stale SavedData grant");
             check(state.guideGranted&&player.getInventory().isEmpty(),"Journal recovery failed");
         }
+        SharedBasePersistenceSmoke.run(server,phase);
         server.saveEverything(true,true,true);
         AnyaStorage.LOG.info("ANYA_GUIDE_PERSISTENCE_{}: real dedicated server, durable journal and existing preferences verified",phase.toUpperCase(java.util.Locale.ROOT));
         server.halt(false);

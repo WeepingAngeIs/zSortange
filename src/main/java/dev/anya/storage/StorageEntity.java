@@ -16,6 +16,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     private NonNullList<ItemStack> items;
     public UUID owner;
     public final Set<UUID> trusted=new HashSet<>();
+    public final Map<UUID,Integer> memberPermissions=new HashMap<>();
+    public final BaseActivity activity=new BaseActivity();
     public String baseName="My Base",symbol="heart";
     public int oreProgress,rangeUpgrades,viewers;
     public long profileRevision;
@@ -36,13 +38,27 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public int nextRadius(){return Math.min(Config.get().maxRadius,radius()+Config.get().radiusStep);}
     public int upgradeCost(){return Math.min(1000000,Config.get().upgradeBaseCost*(rangeUpgrades+1));}
     public boolean ownedBy(ServerPlayer p){return p.hasPermissions(2)||Objects.equals(owner,p.getUUID());}
-    public boolean allowed(ServerPlayer p){return ownedBy(p)||trusted.contains(p.getUUID());}
+    public int memberMask(UUID id){return trusted.contains(id)?memberPermissions.getOrDefault(id,BasePermissions.LEGACY):0;}
+    public boolean permitsMember(UUID id,int rights){return BasePermissions.allows(memberMask(id),rights);}
+    public boolean permits(ServerPlayer p,int rights){return ownedBy(p)||BasePermissions.allows(memberMask(p.getUUID()),rights);}
+    public boolean allowed(ServerPlayer p){return ownedBy(p)||(kind().equals("hub")?memberMask(p.getUUID())>0:trusted.contains(p.getUUID()));}
+    public void setMember(UUID id,int rights){
+        if(id==null||!BasePermissions.valid(rights))throw new IllegalArgumentException("Invalid member or permission mask");
+        if(!trusted.contains(id)&&trusted.size()>=64)throw new IllegalArgumentException("Trust limit reached");
+        trusted.add(id);memberPermissions.put(id,rights);profileChanged();
+    }
+    public void removeMember(UUID id){trusted.remove(id);memberPermissions.remove(id);profileChanged();}
+    public boolean canReadActivity(ServerPlayer p){return ExpansionRules.get().activityLogging&&(ownedBy(p)||(ExpansionRules.get().activityMemberLogs&&permits(p,BasePermissions.LOG)));}
+    public void logTransfer(ServerPlayer p,BaseActivity.Action action,int accepted){
+        if(kind().equals("hub")&&activity.record(ExpansionRules.get(),System.currentTimeMillis(),p.getUUID(),action,accepted))setChanged();
+    }
     public Route route(BlockPos pos){return routes.getOrDefault(pos.asLong(),new Route());}
     public void profileChanged(){profileRevision++;setChanged();if(level!=null)level.sendBlockUpdated(worldPosition,getBlockState(),getBlockState(),3);}
     public void openViewer(){viewers++;if(level!=null)level.blockEvent(worldPosition,getBlockState().getBlock(),1,viewers);}
     public void closeViewer(){viewers=Math.max(0,viewers-1);if(level!=null)level.blockEvent(worldPosition,getBlockState().getBlock(),1,viewers);}
     @Override public boolean triggerEvent(int id,int value){if(id==1){viewers=value;return true;}return super.triggerEvent(id,value);}
     public static void tick(Level level,BlockPos pos,BlockState state,StorageEntity be){
+        if(!level.isClientSide&&level.getGameTime()%20==0&&be.activity.prune(ExpansionRules.get()))be.setChanged();
         be.previousOpenness=be.openness;be.openness=Math.max(0,Math.min(1,be.openness+(be.viewers>0?0.12f:-0.12f)));
         if(!level.isClientSide&&be.showLabels!=Config.get().labels){be.showLabels=Config.get().labels;level.sendBlockUpdated(pos,state,state,3);}
     }
@@ -53,6 +69,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
         if(owner!=null)tag.putUUID("Owner",owner);tag.putString("BaseName",baseName);tag.putString("Symbol",symbol);
         tag.putInt("Ore",oreProgress);tag.putInt("RangeUpgrades",rangeUpgrades);tag.putLong("ProfileRevision",profileRevision);
         ListTag trust=new ListTag();trusted.forEach(uuid->trust.add(NbtUtils.createUUID(uuid)));tag.put("Trusted",trust);
+        ListTag rights=new ListTag();memberPermissions.forEach((id,mask)->{if(trusted.contains(id)){CompoundTag t=new CompoundTag();t.putUUID("Id",id);t.putInt("Mask",mask);rights.add(t);}});tag.put("MemberPermissions",rights);
+        tag.put("Activity",activity.save(ExpansionRules.get()));
         ListTag rules=new ListTag();routes.forEach((pos,route)->{CompoundTag r=new CompoundTag();r.putLong("Pos",pos);r.putString("Category",route.category);r.putInt("Priority",route.priority);r.putBoolean("Overflow",route.overflow);ListTag ids=new ListTag();route.items.forEach(s->ids.add(StringTag.valueOf(s)));r.put("Items",ids);rules.add(r);});tag.put("Routes",rules);
     }
     @Override protected void loadAdditional(CompoundTag tag,HolderLookup.Provider lookup){
@@ -64,6 +82,11 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
         if(baseName.isBlank())baseName="My Base";if(!Config.SYMBOLS.contains(symbol))symbol="heart";
         oreProgress=Math.max(0,tag.getInt("Ore"));rangeUpgrades=Math.max(0,tag.getInt("RangeUpgrades"));profileRevision=tag.getLong("ProfileRevision");
         trusted.clear();for(Tag uuid:tag.getList("Trusted",Tag.TAG_INT_ARRAY))try{trusted.add(NbtUtils.loadUUID(uuid));}catch(IllegalArgumentException ignored){}
+        memberPermissions.clear();ListTag rights=tag.getList("MemberPermissions",Tag.TAG_COMPOUND);
+        if(rights.size()>64)throw new IllegalArgumentException("Refusing oversized member permissions; data was not reset");
+        for(int i=0;i<rights.size();i++){CompoundTag t=rights.getCompound(i);if(!t.hasUUID("Id"))continue;UUID id=t.getUUID("Id");int mask=t.contains("Mask",Tag.TAG_INT)?t.getInt("Mask"):-1;
+            if(trusted.contains(id))memberPermissions.merge(id,BasePermissions.valid(mask)?mask:0,(a,b)->a&b);}
+        activity.load(tag.getList("Activity",Tag.TAG_COMPOUND),ExpansionRules.get());
         routes.clear();ListTag rules=tag.getList("Routes",Tag.TAG_COMPOUND);
         for(int i=0;i<Math.min(512,rules.size());i++){CompoundTag r=rules.getCompound(i);Route route=new Route();route.category=r.getString("Category");if(!Config.CATEGORIES.contains(route.category))route.category="any";route.priority=Math.max(0,Math.min(9,r.getInt("Priority")));route.overflow=r.getBoolean("Overflow");ListTag ids=r.getList("Items",Tag.TAG_STRING);for(int j=0;j<Math.min(64,ids.size());j++)route.items.add(ids.getString(j));routes.put(r.getLong("Pos"),route);}
     }

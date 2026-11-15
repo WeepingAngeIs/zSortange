@@ -50,3 +50,7 @@ The monster wears a decorative data marker, not an armor-slot item. Existing nam
 ## Additional direction, not shipped promises
 
 The implemented per-backpack unlock collection supports a collecting progression without sacrificing a favorite skin. Later cosmetic-only additions could include biome discovery patches and small removable charms. These should remain independent of capacity and combat effects. They are ideas, not unimplemented buttons advertised as working features.
+
+## Shared-base continuation
+
+0.3.0-beta.2 adds independent rights and bounded private activity history to the existing ordinary home hub. It preserves all elements, models, interiors and guide behavior above. See SHARED_BASES.md for the exact scope and remaining pocket boundary.

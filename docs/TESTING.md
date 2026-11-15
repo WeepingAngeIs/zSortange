@@ -1,14 +1,16 @@
-# Expansion milestone 1 verification
+# Expansion and shared-base verification
 
 The current pipeline distinguishes compilation, pure assertions, real server runtime, a two-process persistence probe, client asset rendering and unperformed full-pack acceptance. Consult the final artifact's exact `SOURCE_COMMIT.txt` and workflow result, not an earlier commit's success.
 
 ## Automated lanes
 
-`gradle clean build` runs 343 configuration assertions, 540 expansion/PNG-security assertions, 109 durable-guide-journal assertions and 1,154 image-rate/filter assertions. These are assertion counts, not that many independent integration tests. `gradle runGameTestServer` runs 40 required Minecraft/NeoForge GameTests, including the prior 500-transfer randomized conservation case.
+`gradle clean build` runs 343 configuration assertions, 540 expansion/PNG-security assertions, 109 durable-guide-journal assertions and 1,154 image-rate/filter assertions, plus 3,842 shared-base permission assertions. These are assertion counts, not that many independent integration tests. `gradle runGameTestServer` runs 52 required Minecraft/NeoForge GameTests, including the prior 500-transfer randomized conservation case.
 
 Expansion GameTests cover appearance/tier independence, nonmutating style crafts, all-component preservation, one worn backpack, duplicate-ID rejection, modifier removal, appearance serialization and closed upload defaults. Guide GameTests cover one-time grant, full inventory, existing copies, named-book recovery protection, existing profile fields and live recipe/settings pages.
 
 The `guidePersistence=seed` and `guidePersistence=verify` opt-in runs start two separate ordinary dedicated-server processes against one disposable world. They verify production SavedData/journal persistence, no automatic regrant after the original item is removed, preservation of other profile fields and a stale-SavedData recovery check. The caller is a FakePlayer test identity, not a real client connection.
+
+SharedBaseGameTests and the extended persistence probe are described in SHARED_BASES.md. Hub permissions do not stand in for pocket/physical-world protection or real two-client tests.
 
 The `clientSmoke` opt-in run starts the actual Minecraft client with software OpenGL. It verifies model registration/texture atlas availability, captures 22 backpack variants, six default interiors and two book page layouts, and exits. Book screenshots use a clearly labeled development fixture. Production guide pages read the server's live snapshot, checked independently in GameTests. Captures are inspected for missing textures, loading overlays, blur, clipping and text readability.
 

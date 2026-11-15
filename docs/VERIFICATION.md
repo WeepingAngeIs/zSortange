@@ -7,3 +7,8 @@ A pre-release verification of the illustrated guide and restart probe succeeded 
 The old verified beta remains at `533582032fe8bc2aa97fc6e93c1bf8d76c781540` on the preserved main branch. No installation, valuable-world migration, optional renderer installation or live-server deployment is performed by these builds.
 
 The final delivery's verification text identifies its precise source commit, run, JAR SHA-256 and outstanding limitations. The broader manual acceptance list is in TESTING.md.
+
+
+Recovery baseline independently rechecked: commit `37baabf5e29ba94eea592e74d0378f3de2b9a606`, run `43672293771`, completed successfully. Downloaded artifact digest: `d5b498a82e64569ae471a060c0c3fdf4086eaf45d309d899c5b67907a66165a6`. Playable 0.3.0-beta.1 JAR SHA-256: `78a69f78e18cfc9b05c113790abc09bdd713ba55160eb983da3c407ca3c74108`.
+
+The beta.2 shared-base changes are a new source revision. Do not reuse the above result as evidence that the new code passed; consult the beta.2 source manifest, exact build/test logs and checksum supplied by its own run.

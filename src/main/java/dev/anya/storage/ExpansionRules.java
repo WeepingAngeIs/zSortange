@@ -6,6 +6,8 @@ import java.util.*;
 public final class ExpansionRules {
     public static final class Options {
         public boolean tutorialGrant=true, tutorialRecovery=true;
+        public boolean activityLogging=false, activityActorIds=false, activityMemberLogs=false;
+        public int activityLogEntries=64;
         public boolean elementalEffects=true, wearableModels=true, cosmeticParticles=true;
         public double stoneArmor=2, diamondArmor=4, magmaReduction=.20, waterSwimBonus=.10, netheriteKnockback=.025;
         public boolean monsterBackpacks=false;
@@ -20,6 +22,7 @@ public final class ExpansionRules {
     public static Options get(){return Config.get().expansion;}
     public static void validate(Options o){
         require(o!=null,"Expansion settings cannot be null");
+        range(o.activityLogEntries,1,128,"Base activity log entries");
         require(!o.pocketStorage,"Pocket storage is not implemented in this milestone; its gate must stay OFF");
         finite(o.stoneArmor,0,4,"Stone armor");finite(o.diamondArmor,0,6,"Diamond armor");
         finite(o.magmaReduction,0,.5,"Magma reduction");finite(o.waterSwimBonus,0,.25,"Water swim bonus");

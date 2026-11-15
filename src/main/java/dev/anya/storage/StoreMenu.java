@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 
 /** Display-only slots. The only accepted input is a session/revision-checked intent packet. */
 public final class StoreMenu extends AbstractContainerMenu {
-    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES }
+    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES, ACCESS, ACTIVITY }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
@@ -38,7 +38,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     private Config.Data draft;
     private String input="",selectedTier="netherite";
     private int offset;
-    private UUID selectedImage,deleteImage;
+    private UUID selectedImage,deleteImage,selectedMember;
+    private boolean clearLogConfirm;
     private String lastAppearance="";
     private boolean favoritesOnly;
     private int feedSlot,feedCount,feedPoints,feedBefore;
@@ -81,7 +82,8 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(bag!=null&&!bag.valid())return false;
         if(hub!=null&&!Network.hubReason(owner,hub).isEmpty())return false;
         if(chest!=null&&(!chest.stillValid(owner)||!Safety.reason(owner,chest,null).isEmpty()))return false;
-        if((page==Page.BASE||page==Page.ROUTE||page==Page.FEED_CONFIRM)&&hub!=null&&!hub.ownedBy(owner))return false;
+        if((page==Page.BASE||page==Page.ROUTE||page==Page.FEED_CONFIRM||page==Page.ACCESS)&&hub!=null&&!hub.ownedBy(owner))return false;
+        if(page==Page.ACTIVITY&&(hub==null||(!hub.canReadActivity(owner)&&!hub.ownedBy(owner))))return false;
         return true;
     }
     @Override public ItemStack quickMoveStack(Player p,int slot){return ItemStack.EMPTY;}
@@ -114,10 +116,10 @@ public final class StoreMenu extends AbstractContainerMenu {
         buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
-            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();
+            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();case ACCESS->access();case ACTIVITY->activity();
         }
     }
-    private void navigate(Page next){page=next;offset=0;pending=null;}
+    private void navigate(Page next){page=next;offset=0;pending=null;clearLogConfirm=false;}
     private void button(int slot,Item item,String name,Consumer<Click> action,String... lore){display.setItem(slot,icon(new ItemStack(item),name,List.of(lore)));if(action!=null)buttons.put(slot,action);}
     private static ItemStack icon(ItemStack stack,String name,List<String> lore){
         ItemStack copy=stack.copy();if(copy.isEmpty())copy=new ItemStack(Items.PAPER);
@@ -132,7 +134,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     private List<Container> storageContainers(){if(bag!=null)return List.of(bag);if(chest!=null)return List.of(chest);return targets().stream().map(Network.Target::inventory).toList();}
     private MainInventory main(){return new MainInventory(owner,bag==null?-1:bag.playerSlot);}
     private void storage(){
-        List<Entry> values=new ArrayList<>();List<Network.Target> targets=targets();
+        boolean mayView=hub==null||hub.permits(owner,BasePermissions.VIEW);
+        List<Entry> values=new ArrayList<>();List<Network.Target> targets=mayView?targets():List.of();
         List<Container> containers=bag!=null?List.of(bag):chest!=null?List.of(chest):targets.stream().map(Network.Target::inventory).toList();
         for(Container container:containers)for(int i=0;i<container.getContainerSize();i++){
             ItemStack item=container.getItem(i);if(item.isEmpty()||!Categories.matches(item,input))continue;
@@ -148,27 +151,31 @@ public final class StoreMenu extends AbstractContainerMenu {
             String source=entry.position==null?"Backpack":entry.position.toShortString();
             display.setItem(i,icon(entry.snapshot,null,List.of("Source: "+source+" / slot "+(entry.slot+1),"Category: "+Categories.of(entry.snapshot),"Left: take stack | Right: take one","Middle: favorite this item type",Profiles.of(owner).favorites.contains(Categories.id(entry.snapshot))?"Favorite":"")));
         }
+        if(!mayView)button(22,Items.IRON_DOOR,"Contents are private",null,"Your base permissions do not include View.","An explicit inventory click can deposit when allowed.","QuickStack, Dump and withdrawal also require View.");
         button(45,Items.ARROW,"Previous",c->offset=Math.max(0,offset-45));button(46,Items.ARROW,"Next",c->offset+=45);
         button(47,Items.HOPPER,"Preview organize",c->previewSort(),"Groups by category and exact components.","Nothing moves until you confirm the preview.");
         button(48,Items.CHEST,"QuickStack matching",c->depositAll(false),"Only existing identical item/components.","Protected slots are never swept.");
         button(49,Items.DROPPER,"Dump broader matches",c->depositAll(true),"Same item type or designated category.","Does not empty unrelated items into random chests.");
         button(50,Items.IRON_DOOR,"Protected slots",c->navigate(Page.PREFS));
         if(bag!=null)button(51,Content.BACKPACK.get(),"Backpack upgrades",c->navigate(Page.UPGRADES),bag.name(),"Saved capacity: "+bag.getContainerSize());
-        else if(hub!=null)button(51,Content.HUB.get().asItem(),hub.ownedBy(owner)?"Base profile / ore feeder":"Base information",c->navigate(hub.ownedBy(owner)?Page.BASE:Page.DIAGNOSTICS),hub.baseName,"Radius: "+hub.radius());
+        else if(hub!=null)button(51,Content.HUB.get().asItem(),hub.ownedBy(owner)?"Base profile / ore feeder":"Base information",c->navigate(hub.ownedBy(owner)?Page.BASE:hub.canReadActivity(owner)?Page.ACTIVITY:Page.DIAGNOSTICS),hub.baseName,"Radius: "+hub.radius());
         else button(51,Items.PINK_DYE,"Cycle front symbol",c->{if(chest.ownedBy(owner)){chest.symbol=Config.SYMBOLS.get((Config.SYMBOLS.indexOf(chest.symbol)+1)%Config.SYMBOLS.size());chest.profileChanged();}},"Owner/operator only",chest.symbol);
         toggle(52,"Favorites only",favoritesOnly,()->favoritesOnly=!favoritesOnly);
         button(53,Items.PAPER,"Storage information",c->navigate(Page.DIAGNOSTICS),"Matching stacks: "+values.size(),"Page: "+(offset/45+1),"Click items in your inventory below to deposit.","Type name, @mod or #tag in the search bar.");
     }
+    private boolean permission(int required){String denied=Network.permissionReason(owner,hub,required);if(denied.isEmpty())return true;AnyaStorage.tell(owner,denied);return false;}
     private void take(Entry entry,Click click){
-        if(!isStoragePage())return;
+        if(!isStoragePage()||!permission(BasePermissions.VIEW))return;
+        if(click.button!=2&&!permission(BasePermissions.WITHDRAW))return;
         if(click.button==2){Set<String> favorites=Profiles.of(owner).favorites;String id=Categories.id(entry.snapshot);if(!favorites.remove(id)&&favorites.size()<256)favorites.add(id);Profiles.changed(owner);return;}
         if(!Transactions.same(entry.inventory.getItem(entry.slot),entry.snapshot)){AnyaStorage.tell(owner,"That stack changed. The view has been refreshed.");return;}
         MainInventory main=main();List<Network.Target> targets=targets();
         if(hub!=null&&targets.stream().noneMatch(t->t.inventory()==entry.inventory)){AnyaStorage.tell(owner,"That source is no longer accessible. Permissions and range have been rechecked.");return;}
         List<Container> all=new ArrayList<>();all.add(main);all.add(entry.inventory);
-        var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets);
+        var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.VIEW|BasePermissions.WITHDRAW);
         Transactions.Plan plan=new Transactions.Plan(all,guard);int moved=plan.move(entry.inventory,entry.slot,List.of(main),click.button==1?1:entry.snapshot.getCount());
         String error=moved==0?"Your main inventory is full":plan.commit(owner.getServer());if(!error.isEmpty())AnyaStorage.tell(owner,error);
+        else if(hub!=null)hub.logTransfer(owner,BaseActivity.Action.WITHDRAW,moved);
     }
     private void inventoryClick(int slot,Click click){
         if(slot<0||slot>=36)return;
@@ -176,22 +183,24 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(page==Page.DIAGNOSTICS||(page==Page.PREFS&&click.shift)){explainSlot(slot,click.button==1);return;}
         if(page==Page.PREFS){Profiles.of(owner).protectedSlots^=1L<<slot;Profiles.changed(owner);return;}
         if(page==Page.UPGRADES){ItemStack s=owner.getInventory().getItem(slot);if(!s.isEmpty()){input=Categories.id(s);AnyaStorage.tell(owner,"Selected filter item: "+input);}return;}
-        if(!isStoragePage())return;
+        if(!isStoragePage()||!permission(BasePermissions.DEPOSIT))return;
         if(!Transactions.same(owner.getInventory().getItem(slot),playerSeen[slot])){AnyaStorage.tell(owner,"Inventory changed; try the refreshed slot.");return;}
         if(bag!=null&&!Config.get().backpacks){AnyaStorage.tell(owner,"Backpacks are disabled. Existing contents can still be withdrawn.");return;}
         MainInventory main=main();if(main.getItem(slot).isEmpty())return;
         List<Network.Target> targets=targets();List<Container> destinations=bag!=null?List.of(bag):chest!=null?List.of(chest):targets.stream().map(Network.Target::inventory).toList();
         List<Container> all=new ArrayList<>(destinations);all.add(main);
-        var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets);
+        var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.DEPOSIT);
         Transactions.Plan plan=new Transactions.Plan(all,guard);ItemStack item=plan.work(main)[slot];
         if(hub!=null)destinations=Network.destinations(plan,targets,hub,item,Network.Mode.MANUAL);
         int moved=plan.move(main,slot,destinations,click.button==1?1:item.getCount());String error=moved==0?"No capacity or the destination filter rejects this item":plan.commit(owner.getServer());if(!error.isEmpty())AnyaStorage.tell(owner,error);
+        else if(hub!=null)hub.logTransfer(owner,BaseActivity.Action.DEPOSIT,moved);
     }
     private void depositAll(boolean dump){
+        if(!permission(BasePermissions.VIEW|BasePermissions.DEPOSIT))return;
         if(!Config.get().quickStack){AnyaStorage.tell(owner,"QuickStack is disabled.");return;}
         if(bag!=null&&!Config.get().backpacks)return;
         MainInventory main=main();List<Network.Target> targets=targets();List<Container> storage=storageContainers(),all=new ArrayList<>(storage);all.add(main);
-        var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets);
+        var guard=hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.VIEW|BasePermissions.DEPOSIT);
         Transactions.Plan plan=new Transactions.Plan(all,guard);int moved=0,locked=0,unmatched=0,full=0;
         for(int i=0;i<36;i++){
             ItemStack stack=plan.work(main)[i];if(stack.isEmpty())continue;if(Profiles.of(owner).protectedSlot(i)){locked+=stack.getCount();continue;}
@@ -201,9 +210,11 @@ public final class StoreMenu extends AbstractContainerMenu {
             if(destinations.isEmpty()){unmatched+=stack.getCount();continue;}moved+=plan.move(main,i,destinations,stack.getCount());full+=plan.work(main)[i].getCount();
         }
         String error=moved>0?plan.commit(owner.getServer()):"";String report=error.isEmpty()?"Moved "+moved+"; protected "+locked+"; no matching destination "+unmatched+"; full/filtered "+full:error;
+        if(error.isEmpty()&&moved>0&&hub!=null)hub.logTransfer(owner,dump?BaseActivity.Action.DUMP:BaseActivity.Action.QUICKSTACK,moved);
         Profiles.of(owner).lastReport=report;AnyaStorage.tell(owner,report);
     }
     private void previewSort(){
+        if(!permission(BasePermissions.LEGACY))return;
         if(!Config.get().organize){AnyaStorage.tell(owner,"Organization is disabled.");return;}
         pendingContainers=storageContainers();if(hub!=null)pending=Network.organize(owner,hub,targets());
         else {
@@ -308,12 +319,35 @@ public final class StoreMenu extends AbstractContainerMenu {
     private void base(){
         if(hub==null||!hub.ownedBy(owner))return;
         button(10,Items.NAME_TAG,"Base: "+hub.baseName,c->{if(input.isBlank()||input.length()>48)throw new IllegalArgumentException("Enter a base name up to 48 characters.");hub.baseName=input;hub.profileChanged();},"Enter a name in the input bar, then click.");
-        button(12,Items.PLAYER_HEAD,"Manage trusted players",c->{ServerPlayer target=owner.getServer().getPlayerList().getPlayerByName(input);UUID targetId;try{targetId=target!=null?target.getUUID():UUID.fromString(input);}catch(IllegalArgumentException e){throw new IllegalArgumentException("Enter an online name or a full player UUID.");}if(hub.trusted.size()>=64&&!hub.trusted.contains(targetId))throw new IllegalArgumentException("Trust limit reached.");if(!hub.trusted.remove(targetId))hub.trusted.add(targetId);hub.profileChanged();},"Enter an online name or full UUID, then click to add/remove.","Trusted UUID count: "+hub.trusted.size(),"Claim permissions are still required.");
+        button(12,Items.PLAYER_HEAD,"Member permissions",c->navigate(Page.ACCESS),"Edit View, Deposit, Withdraw and Activity Log separately.","Existing trusted members keep their previous storage access.","New members begin with View only; claims still apply.");
         button(14,Items.LAVA_BUCKET,"Feed ore/resource from inventory",null,"Click an inventory slot while in this base menu.","Left feeds a stack; right feeds one.","Only resources with configured point values are accepted.");
         button(16,Items.ENDER_PEARL,"Radius: "+hub.radius()+" -> "+hub.nextRadius(),c->{if(hub.radius()>=Config.get().maxRadius)throw new IllegalArgumentException("Maximum radius reached.");if(hub.oreProgress<hub.upgradeCost())throw new IllegalArgumentException("Not enough ore progress.");int cost=hub.upgradeCost();hub.oreProgress-=cost;hub.rangeUpgrades++;hub.profileChanged();AnyaStorage.tell(owner,"Spent "+cost+" points. Radius is now "+hub.radius()+".");},"Stored ore points: "+hub.oreProgress,"Next upgrade costs: "+hub.upgradeCost(),"Click explicitly to spend points and upgrade.","One radius controls search, terminal access and QuickStack.");
         button(28,Items.HOPPER,"Container routing",null,"Bind a remote to this hub.","Sneak-use the remote on a supported chest.","Set category, exact-item filters, priority and overflow there.");
         button(31,Items.CLOCK,"Performance",null,Network.performance(hub));button(34,Items.PAPER,"Trusted UUIDs",null,hub.trusted.toString());
+        button(40,Items.WRITABLE_BOOK,"Base activity log",c->navigate(Page.ACTIVITY),"Opt-in counts-only log; actor UUIDs require server opt-in.","Inventory components and private images are never logged.");
         footer(Page.NETWORK);
+    }
+    private void access(){
+        if(hub==null||!hub.ownedBy(owner))return;
+        List<UUID> members=hub.trusted.stream().sorted().toList();offset=Math.min(offset,Math.max(0,((members.size()-1)/27)*27));
+        for(int i=0;i<27&&offset+i<members.size();i++){UUID id=members.get(offset+i);button(i,Items.PLAYER_HEAD,id.toString(),c->selectedMember=id,BasePermissions.describe(hub.memberMask(id)),"Click to select this member.");}
+        if(selectedMember!=null&&hub.trusted.contains(selectedMember)){
+            int[] flags={BasePermissions.VIEW,BasePermissions.DEPOSIT,BasePermissions.WITHDRAW,BasePermissions.LOG};String[] titles={"View contents","Deposit","Withdraw","Read activity log"};
+            for(int i=0;i<flags.length;i++){int flag=flags[i];toggle(28+i,titles[i],hub.permitsMember(selectedMember,flag),()->hub.setMember(selectedMember,hub.memberMask(selectedMember)^flag),"Selected member: "+selectedMember,"Applies immediately; queued transfer plans become stale.",flag==BasePermissions.LOG?"Also requires server activityMemberLogs and activityLogging.":"QuickStack/Dump require View + Deposit; organize requires all three.");}
+            button(34,Items.BARRIER,"Remove selected member",c->{hub.removeMember(selectedMember);selectedMember=null;},"Removes all hub-interface access immediately.");
+        }
+        button(45,Items.ARROW,"Back",c->navigate(Page.BASE));button(46,Items.ARROW,"Previous members",c->offset=Math.max(0,offset-27));button(47,Items.ARROW,"Next members",c->offset+=27);
+        button(50,Items.NAME_TAG,"Select/add member from input",c->{ServerPlayer target=owner.getServer().getPlayerList().getPlayerByName(input);UUID id;try{id=target!=null?target.getUUID():UUID.fromString(input);}catch(IllegalArgumentException ex){throw new IllegalArgumentException("Enter an online player name or full UUID.");}if(Objects.equals(id,hub.owner))throw new IllegalArgumentException("The owner always retains access.");if(!hub.trusted.contains(id))hub.setMember(id,BasePermissions.VIEW);selectedMember=id;},"Enter an online name or full UUID in the input.","New member: View only, with no deposit or withdrawal.");
+        button(53,Items.BARRIER,"Close",c->owner.closeContainer());
+    }
+    private void activity(){
+        if(hub==null)return;var policy=ExpansionRules.get();
+        List<BaseActivity.Entry> list=hub.canReadActivity(owner)?hub.activity.visible(policy):List.of();
+        offset=Math.min(offset,Math.max(0,((list.size()-1)/45)*45));
+        for(int i=0;i<45&&offset+i<list.size();i++){var e=list.get(offset+i);button(i,Items.PAPER,e.action()+": "+e.count()+" items",null,java.time.Instant.ofEpochMilli(e.time()).toString(),e.actor()==null?"Actor identity not collected / redacted":"Actor UUID: "+e.actor(),"Successful hub-interface operation only; not a recovery journal.");}
+        footer(hub.ownedBy(owner)?Page.BASE:Page.NETWORK);
+        button(49,Items.IRON_DOOR,policy.activityLogging?"Activity privacy":"Activity logging is OFF",null,"Default: off. Optional actor IDs: "+policy.activityActorIds,"Member visibility: "+policy.activityMemberLogs+" (also needs Log permission)","Limit per base: "+policy.activityLogEntries+" entries; no item data or image data.");
+        if(hub.ownedBy(owner))button(51,Items.BARRIER,clearLogConfirm?"Confirm clearing this base history":"Clear this base history",c->{if(!clearLogConfirm){clearLogConfirm=true;return;}hub.activity.clear();hub.setChanged();clearLogConfirm=false;},"Two clicks. Does not alter containers, items or permissions.");
     }
     private void routing(){
         if(hub==null||routePos==null)return;StorageEntity.Route route=hub.routes.computeIfAbsent(routePos.asLong(),k->new StorageEntity.Route());

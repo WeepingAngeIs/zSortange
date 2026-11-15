@@ -86,10 +86,15 @@ public final class Network {
         }
         return result;
     }
-    public static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets){
+    public static String permissionReason(ServerPlayer p,StorageEntity hub,int rights){
+        if(hub==null||hub.permits(p,rights))return "";
+        return "Base permission denied. Needed: "+BasePermissions.describe(rights);
+    }
+    public static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets){return guard(p,hub,targets,0);}
+    public static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets,int rights){
         long revision=Config.get().revision,profile=hub==null?0:hub.profileRevision;
         return ()->{
-            if(!p.isAlive()||p.isSpectator()||Config.get().revision!=revision)return false;
+            if(!p.isAlive()||p.isSpectator()||Config.get().revision!=revision||!permissionReason(p,hub,rights).isEmpty())return false;
             if(hub!=null&&(!hubReason(p,hub).isEmpty()||hub.profileRevision!=profile))return false;
             for(Target target:targets){
                 if(!p.serverLevel().hasChunkAt(target.pos))return false;
@@ -114,9 +119,11 @@ public final class Network {
     }
     public static void quick(ServerPlayer player,boolean dump){
         if(!Config.get().quickStack){AnyaStorage.tell(player,"QuickStack is disabled.");return;}if(!Profiles.cooldown(player))return;
-        long start=System.nanoTime();StorageEntity hub=nearest(player);List<Target> targets=targets(player,hub);MainInventory main=new MainInventory(player);
+        long start=System.nanoTime();StorageEntity hub=nearest(player);
+        String denied=permissionReason(player,hub,BasePermissions.VIEW|BasePermissions.DEPOSIT);if(!denied.isEmpty()){AnyaStorage.tell(player,denied);return;}
+        List<Target> targets=targets(player,hub);MainInventory main=new MainInventory(player);
         List<Container> all=new ArrayList<>();all.add(main);targets.forEach(t->all.add(t.inventory));
-        Transactions.Plan plan=new Transactions.Plan(all,guard(player,hub,targets));
+        Transactions.Plan plan=new Transactions.Plan(all,guard(player,hub,targets,BasePermissions.VIEW|BasePermissions.DEPOSIT));
         int moved=0,protectedItems=0,noMatch=0,full=0;
         for(int slot=0;slot<36;slot++){
             ItemStack item=plan.work(main)[slot];if(item.isEmpty())continue;
@@ -126,13 +133,15 @@ public final class Network {
             moved+=plan.move(main,slot,destinations,item.getCount());full+=plan.work(main)[slot].getCount();
         }
         String error=moved>0?plan.commit(player.getServer()):"";
+        if(error.isEmpty()&&moved>0&&hub!=null)hub.logTransfer(player,dump?BaseActivity.Action.DUMP:BaseActivity.Action.QUICKSTACK,moved);
         lastOperationMicros=(System.nanoTime()-start)/1000;
         String report=error.isEmpty()?"Moved "+moved+" items; protected "+protectedItems+"; no eligible match "+noMatch+"; full/filtered "+full+". "+targets.size()+" accessible containers.":error;
         if(targets.isEmpty())report+=" Check range, locks, claims, loaded chunks and container-type settings. "+Safety.status();
         Profiles.of(player).lastReport=report;AnyaStorage.tell(player,report);
     }
     public static Transactions.Plan organize(ServerPlayer player,StorageEntity hub,List<Target> targets){
-        List<Container> containers=targets.stream().map(Target::inventory).toList();Transactions.Plan plan=new Transactions.Plan(containers,guard(player,hub,targets));List<ItemStack> stacks=new ArrayList<>();
+        String denied=permissionReason(player,hub,BasePermissions.LEGACY);if(!denied.isEmpty())throw new IllegalArgumentException(denied);
+        List<Container> containers=targets.stream().map(Target::inventory).toList();Transactions.Plan plan=new Transactions.Plan(containers,guard(player,hub,targets,BasePermissions.LEGACY));List<ItemStack> stacks=new ArrayList<>();
         for(Container container:containers){for(ItemStack item:plan.work(container))if(!item.isEmpty())stacks.add(item.copy());Arrays.fill(plan.work(container),ItemStack.EMPTY);}
         stacks.sort(Categories.order());
         for(ItemStack stack:stacks){for(Container destination:destinations(plan,targets,hub,stack,Mode.MANUAL)){plan.insert(destination,stack);if(stack.isEmpty())break;}if(!stack.isEmpty())throw new IllegalArgumentException("Routing rules leave items without a destination. Allow an overflow chest before organizing.");}
@@ -143,7 +152,7 @@ public final class Network {
         ItemStack item=p.getInventory().getItem(slot);if(item.isEmpty())return "That inventory slot is empty.";
         if(!Config.get().quickStack)return "QuickStack and Dump are disabled by the server.";
         if(Profiles.of(p).protectedSlot(slot))return "Slot "+(slot+1)+" is protected from automatic deposits.";
-        StorageEntity hub=requestedHub==null?nearest(p):requestedHub;List<Target> targets=targets(p,hub);
+        StorageEntity hub=requestedHub==null?nearest(p):requestedHub;String denied=permissionReason(p,hub,BasePermissions.VIEW|BasePermissions.DEPOSIT);if(!denied.isEmpty())return denied;List<Target> targets=targets(p,hub);
         if(targets.isEmpty()){
             if(hub!=null){Index index=INDEX.get(hub);if(index!=null)for(BlockPos pos:index.candidates){
                 if(!p.serverLevel().hasChunkAt(pos))return "No accessible targets; an indexed container at "+pos.toShortString()+" is unloaded. No chunk was loaded.";

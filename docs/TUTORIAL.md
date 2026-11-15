@@ -6,7 +6,7 @@ The tutorial item is named exactly **Ancient Technology** (`anyastorage:ancient_
 
 The server builds a bounded snapshot when the book opens. It includes leather and all eight leaf starters, each elemental path, capacity tiers, optional-material availability, the nine cosmetic patches, installed upgrades, hub/remote/chest controls, QuickStack, interior privacy and recovery. Ordinary recipe grids come from the current recipe manager. Dynamic tier costs/predecessors and ability values come from current server settings. Disabled or absent recipes are labeled unavailable. Reopen the book after an operator changes settings.
 
-Pocket storage and live portals are explicitly labeled unimplemented. The guide is not a teaser claiming that later milestones already exist. Client render captures use a clearly labeled two-page development fixture; production pages are populated from the real server snapshot. The GameTests separately check live recipes/settings.
+Home-hub permissions and activity controls are explained in two additional live guide pages. Pocket storage and live portals are explicitly labeled unimplemented. The guide is not a teaser claiming that later milestones already exist. Client render captures use a clearly labeled two-page development fixture; production pages are populated from the real server snapshot. The GameTests separately check live recipes/settings.
 
 ## One-time automatic grant
 

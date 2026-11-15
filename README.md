@@ -1,10 +1,12 @@
 # Anya Storage Plus
 
-**0.3.0-beta.1, expansion milestone 1**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
+**0.3.0-beta.2, shared-base safety continuation**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
 
 The verified `0.2.0-beta.1` remains on `main` while this milestone is developed on `feature/elemental-pockets`. No installed profile, live server or valuable world is modified by producing this build. Use the same playable JAR on server and clients in a disposable or backed-up test world. Do not install two versions together.
 
 ## Implemented in this milestone
+
+New in beta.2: independent home-hub View/Deposit/Withdraw/Log permissions, privacy-first bounded activity history, legacy trust preservation, and dedicated-server restart coverage for the added fields. See [Shared bases](docs/SHARED_BASES.md).
 
 - Independent elemental identity, cosmetic skin/interior and storage tier. Storage upgrades retain contents, item components, custom name, BagId, installed upgrades and appearance.
 - Leather starter plus eight leaf-species starters, craftable elemental bindings and nine cosmetic patches using existing vanilla materials. No ore generation.
@@ -18,7 +20,7 @@ Existing hub/remote search, physical containers, QuickStack, routing, installabl
 
 ## Not implemented here
 
-Pocket dimensions, pocket scenery, separate visit/view/deposit/withdraw permissions, shared pocket logs, home-to-pocket access, a portal preview block and live portal rendering are **not implemented**. `pocketStorage=true` is rejected. No Immersive Portals dependency is installed or bundled. The approved low-cost preview remains a future design requirement, not a shipped renderer.
+Pocket dimensions, pocket scenery, pocket visit/view/deposit/withdraw enforcement, shared pocket logs, home-to-pocket access, a portal preview block and live portal rendering are **not implemented**. `pocketStorage=true` is rejected. No Immersive Portals dependency is installed or bundled. The approved low-cost preview remains a future design requirement, not a shipped renderer.
 
 ## Start here
 
@@ -36,6 +38,6 @@ Use `/anya storage` or collision-safe `/as` for settings. The bound handheld rem
 - [Automated checks and remaining acceptance tests](docs/TESTING.md)
 - [Inventory safety boundaries](docs/SAFETY.md)
 
-The read-only build workflow compiles, runs configuration/image/journal assertions, launches 40 required GameTests, starts the dedicated server twice against a disposable persistence world, and captures the actual Minecraft renderer. The artifact contains `SOURCE_COMMIT.txt`, logs, source, screenshots and SHA-256 checksums. Consult that exact run's result; source code alone is not evidence of a passing build.
+The read-only build workflow compiles, runs configuration/image/journal assertions, launches 52 required GameTests, starts the dedicated server twice against a disposable persistence world, and captures the actual Minecraft renderer. The artifact contains `SOURCE_COMMIT.txt`, logs, source, screenshots and SHA-256 checksums. Consult that exact run's result; source code alone is not evidence of a passing build.
 
 Full-pack multiplayer, real client disconnects, image upload round trips, wardrobe interaction, worn placement with Figura/Origins, Carry On, OPAC and the actual renderer stack still require acceptance testing. Do not remove the old storage mods or assume hard-crash consistency across separate Minecraft save files.

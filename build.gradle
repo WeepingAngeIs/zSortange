@@ -63,3 +63,11 @@ tasks.register('guideJournalTest', JavaExec) {
     mainClass = 'dev.anya.storage.GuideJournalTests'
 }
 tasks.named('check') { dependsOn tasks.named('guideJournalTest') }
+
+
+tasks.register('sharedBaseTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.SharedBaseCoreTests'
+}
+tasks.named('check') { dependsOn tasks.named('sharedBaseTest') }
