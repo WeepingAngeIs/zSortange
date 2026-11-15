@@ -26,33 +26,33 @@ tasks.register('stageAcceptanceDependencies', Copy) {
     from configurations.packagedLauncherRuntimeClasspath.filter { it.name.contains('open-parties-and-claims-') || it.name.startsWith('carryon-') }
     into layout.buildDirectory.dir('acceptance/dependencies')
 }
-neoForge.runs {
-    acceptanceClient {
+// Independent run models prevent one client's argument files from overwriting the other's.
+['Alpha','Beta'].each { role ->
+    neoForge.runs.create("acceptance${role}") {
         client()
         sourceSet = sourceSets.packagedLauncher
         loadedMods = []
-        gameDirectory = project.file('run-packaged-client-' + (project.findProperty('role') ?: 'Alpha'))
+        gameDirectory = project.file("run-packaged-client-${role}")
         systemProperty 'anya.acceptance', 'true'
-        systemProperty 'anya.role', project.findProperty('role') ?: 'Alpha'
+        systemProperty 'anya.role', role
         systemProperty 'anya.control', project.file('build/acceptance/control').absolutePath
         systemProperty 'anya.expectedJar', tasks.named('jar').get().archiveFile.get().asFile.absolutePath
-        programArguments.addAll '--username', 'AnyaQA' + (project.findProperty('role') ?: 'Alpha'), '--width', '960', '--height', '640'
+        programArguments.addAll '--username', "AnyaQA${role}", '--width', '960', '--height', '640'
         jvmArguments.addAll '-Xmx1000m', '-Xms256m'
     }
 }
-
-tasks.named('runAcceptanceClient', JavaExec) {
-    dependsOn 'jar', 'acceptanceJar'
-    doFirst {
-        if(project.hasProperty('exportAcceptanceLaunch')) {
-            def role = project.findProperty('role') ?: 'Alpha'
+tasks.register('exportAcceptanceLaunches') {
+    dependsOn 'jar', 'acceptanceJar', 'createAcceptanceAlphaLaunchScript', 'createAcceptanceBetaLaunchScript'
+    doLast {
+        ['Alpha','Beta'].each { role ->
+            def script = tasks.named("createAcceptance${role}LaunchScript").get().launchScript.get().asFile
             def target = project.file("build/acceptance/client-${role}.json")
             target.parentFile.mkdirs()
-            def launch = new ArrayList(commandLine)
-            launch[0] = javaLauncher.get().executablePath.asFile.absolutePath
-            assert launch.every { it != null }
-            target.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([command: launch, cwd: workingDir.absolutePath]))
-            throw new StopExecutionException('Exported packaged client command without launching')
+            target.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([
+                command: ['bash',script.absolutePath], cwd: project.file("run-packaged-client-${role}").absolutePath
+            ]))
         }
     }
 }
+// Match the accepted playable binary across independent CI lanes.
+tasks.withType(Jar).configureEach { preserveFileTimestamps = false; reproducibleFileOrder = true }
