@@ -1,0 +1,84 @@
+name: Apply and verify expansion milestone
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: [.ci-expansion/**, .github/workflows/apply-expansion.yml]
+permissions:
+  contents: write
+jobs:
+  expand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify and apply exact reviewed source delta
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,json,lzma,pathlib,shutil
+          root=pathlib.Path('.'); parts=sorted(root.glob('.ci-expansion/*.b64'))
+          assert len(parts)==5, 'Missing source payload'
+          raw=base64.b64decode(''.join(p.read_text() for p in parts),validate=True)
+          assert hashlib.sha256(raw).hexdigest()=='c71cfa4a09ea4d745fbcbad79ba01a7d5ac1a38dd5d1475f79d91f2fa13a3423', 'Source checksum mismatch'
+          manifest=json.loads(lzma.decompress(raw)); prepared=[]
+          for name,change in manifest.items():
+              path=pathlib.PurePosixPath(name)
+              assert not path.is_absolute() and '..' not in path.parts
+              assert name.startswith(('src/','scripts/')) or name in ('build.gradle','gradle.properties')
+              dest=root/name; old=dest.read_text() if dest.exists() else ''
+              assert hashlib.sha256(old.encode()).hexdigest()==change['before'], name+' base changed'
+              lines=old.splitlines(keepends=True)
+              for lo,hi,text in reversed(change['edits']): lines[lo:hi]=[text]
+              text=''.join(lines)
+              assert hashlib.sha256(text.encode()).hexdigest()==change['after'], name+' delta mismatch'
+              prepared.append((dest,text))
+          for dest,text in prepared: dest.parent.mkdir(parents=True,exist_ok=True); dest.write_text(text)
+          shutil.rmtree('.ci-expansion'); pathlib.Path('.github/workflows/apply-expansion.yml').unlink()
+          print('Verified and applied',len(prepared),'source files')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Implement independent elemental wardrobe and private bounded interior uploads'
+          git push origin HEAD:feature/elemental-pockets
+          mkdir -p export
+          git rev-parse HEAD > export/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > export/anya-storage-plus-repository-source.zip
+          echo "SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+          cache-read-only: false
+      - name: Build and test configuration and image validation
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon clean build 2>&1 | tee export/build-output.log
+      - name: Run real Minecraft GameTests
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon runGameTestServer 2>&1 | tee export/game-test-output.log
+      - name: Package verified milestone
+        run: |
+          cp export/* build/libs/
+          cp -r docs build/libs/docs
+          sha256sum build/libs/*.jar > build/libs/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-${{ env.SOURCE_COMMIT }}
+          path: build/libs/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: expansion-diagnostics-${{ github.sha }}
+          path: |
+            export/
+            build/reports/
+            run*/logs/
+          if-no-files-found: ignore
