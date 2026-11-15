@@ -10,7 +10,13 @@ java.withSourcesJar()
 neoForge {
     version = project.neo_version
     runs {
-        client { client() }
+        client { client()
+            if (project.hasProperty('clientSmoke')) {
+                systemProperty 'anyastorage.clientSmoke', 'true'
+                programArguments.addAll '--width', '1280', '--height', '900'
+                gameDirectory = project.file('run-client-smoke')
+            }
+        }
         server { server(); programArgument '--nogui' }
         gameTestServer {
             type = 'gameTestServer'
@@ -25,7 +31,7 @@ tasks.named('processResources', ProcessResources) {
     filesMatching('META-INF/neoforge.mods.toml') { expand mod_version: project.mod_version }
 }
 tasks.register('generateAssets', Exec) { commandLine 'python3', 'scripts/generate_assets.py' }
-tasks.register('generateExpansionAssets', Exec) { dependsOn 'generateAssets'; commandLine 'python3', 'scripts/generate_expansion_assets.py' }
+tasks.register('generateExpansionAssets', Exec) { dependsOn 'generateAssets'; commandLine 'python3', 'scripts/polish_assets.py' }
 tasks.named('processResources') { dependsOn 'generateExpansionAssets' }
 tasks.register('coreTest', JavaExec) {
     dependsOn tasks.named('testClasses')
@@ -35,3 +41,5 @@ tasks.register('coreTest', JavaExec) {
 tasks.named('test') { enabled = false }
 tasks.named('check') { dependsOn tasks.named('coreTest') }
 tasks.named('sourcesJar') { dependsOn 'generateExpansionAssets' }
+
+tasks.named('compileTestJava', JavaCompile) { classpath += sourceSets.main.compileClasspath }

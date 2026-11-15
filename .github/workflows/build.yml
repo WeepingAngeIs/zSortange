@@ -39,6 +39,19 @@ jobs:
         run: |
           set -o pipefail
           gradle --no-daemon runGameTestServer 2>&1 | tee export/game-test-output.log
+      - name: Install software-rendering display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Start Minecraft client and inspect rendered assets
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          mkdir -p run-client-smoke
+          printf 'enableVsync:false\nguiScale:1\nmaxFps:30\n' > run-client-smoke/options.txt
+          timeout 300s xvfb-run -a -s '-screen 0 1600x1200x24' gradle --no-daemon runClient -PclientSmoke 2>&1 | tee export/client-smoke-output.log
+          grep -q 'ANYA_CLIENT_SMOKE_OK' export/client-smoke-output.log
+          cp run-client-smoke/screenshots/anya-*-client.png export/
       - name: Checksums and exact source
         run: |
           cp export/* build/libs/
@@ -56,5 +69,6 @@ jobs:
           path: |
             build/reports/
             run*/logs/
+            run-client-smoke/screenshots/
             export/
           if-no-files-found: ignore
