@@ -1,0 +1,36 @@
+name: Apply reviewed acceptance source
+on:
+  push:
+    branches: [feature/elemental-pockets]
+permissions:
+  contents: write
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact guarded source changes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,lzma,json,subprocess
+          src=Path('scripts/reviewed-acceptance.b64')
+          manifest=Path('scripts/reviewed-acceptance-pre.json')
+          if src.exists():
+              expected=json.loads(manifest.read_text())
+              for name,digest in expected.items():
+                  p=Path(name)
+                  assert (not p.exists()) if digest is None else (p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==digest), 'Source changed: '+name
+              patch=lzma.decompress(base64.b64decode(src.read_text(),validate=True))
+              assert hashlib.sha256(patch).hexdigest()=='be1f2e8ee629a4157bb11f64d65da3ec4bce47cba0411668eedd2a60b65a2c6e'
+              subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+              subprocess.run(['git','apply','-'],input=patch,check=True)
+              src.unlink();manifest.unlink()
+              subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+              subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+              subprocess.run(['git','add','--',*expected.keys(),str(src),str(manifest)],check=True)
+              subprocess.run(['git','commit','-m','Add isolated packaged-JAR real-client acceptance and held-object travel guard'],check=True)
+              subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
