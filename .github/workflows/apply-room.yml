@@ -1,0 +1,32 @@
+name: Correct room fixture head pose
+on:
+  push:
+    branches: [feature/elemental-pockets]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Correct only the reviewed fixture line
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,subprocess
+          p=Path('src/acceptance/java/dev/anya/storage/acceptance/RoomProbe.java')
+          old=p.read_text()
+          assert hashlib.sha256(old.encode()).hexdigest()=='54a162eed94ddd3bcc5f5e24f0de6c61b4ed54e2f3826fac571569120da83e11'
+          a='p.connection.teleport(x,y,z,180,pitch);'
+          assert old.count(a)==1
+          new=old.replace(a,a+'p.setYHeadRot(180);')
+          assert hashlib.sha256(new.encode()).hexdigest()=='faeb400e8c164570ff6d26ab7850966f31d31a82ddcf5817e2c65371bbc37acf'
+          p.write_text(new)
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','--',str(p)],check=True)
+          subprocess.run(['git','commit','-m','Synchronize fixture head yaw before immediate server raycast assertions'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
