@@ -59,7 +59,8 @@ public final class ClientLooks {
             ExpansionPackets.Look look=worn.get(entity.getId());
             if(!options.models||entity.isInvisible()||look==null||!look.uuid().equals(entity.getUUID())||look.texture().isEmpty()||!(getParentModel() instanceof HumanoidModel<?> humanoid))return;
             if(Minecraft.getInstance().getCameraEntity()!=null&&entity.distanceToSqr(Minecraft.getInstance().getCameraEntity())>48*48)return;
-            pose.pushPose();humanoid.body.translateAndRotate(pose);pose.translate(0,.29,.29);pose.mulPose(Axis.XP.rotationDegrees(180));pose.scale(.72f,.72f,.72f);
+            // Humanoid +Y points down and +Z points behind the torso. Preserve +Z so the pocket faces away from the body.
+            pose.pushPose();humanoid.body.translateAndRotate(pose);pose.translate(0,.29,.29);pose.mulPose(Axis.ZP.rotationDegrees(180));pose.scale(.72f,.72f,.72f);
             Minecraft.getInstance().getItemRenderer().renderStatic(shell(look.texture()),ItemDisplayContext.NONE,light,OverlayTexture.NO_OVERLAY,pose,buffers,entity.level(),entity.getId());pose.popPose();
         }
     }
