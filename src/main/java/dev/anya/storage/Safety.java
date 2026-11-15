@@ -68,6 +68,21 @@ public final class Safety {
         }catch(ReflectiveOperationException|RuntimeException e){failed=true;message="Claim API failed: remote storage blocked";AnyaStorage.LOG.error(message,e);return message;}
         StorageAccessEvent event=new StorageAccessEvent(p,level,pos);NeoForge.EVENT_BUS.post(event);return event.isCanceled()?"Storage access cancelled by an addon":"";
     }
+    /** Edit-specific OPAC checks: interaction permission is not permission to place or break. */
+    public static String buildReason(ServerPlayer p,ServerLevel level,BlockPos pos,net.minecraft.world.level.block.state.BlockState state,boolean removing){
+        String common=locationReason(p,level,pos);if(!common.isEmpty())return common;
+        if(apiGet!=null)try{
+            Object protection=protectionGet.invoke(apiGet.invoke(null,p.getServer()));
+            boolean denied;
+            if(removing)denied=(Boolean)blockCheck.invoke(protection,p,InteractionHand.MAIN_HAND,p.getMainHandItem(),level,pos,Direction.UP,true,false,true);
+            else{
+                Method place=Class.forName("xaero.pac.common.server.claims.protection.api.IChunkProtectionAPI").getMethod("onEntityPlaceBlock",net.minecraft.world.level.block.state.BlockState.class,Entity.class,ServerLevel.class,BlockPos.class);
+                denied=(Boolean)place.invoke(protection,state,p,level,pos);
+            }
+            if(denied)return "Claim construction permission denied";
+        }catch(ReflectiveOperationException|RuntimeException e){return "Claim construction API unavailable; edit denied";}
+        return "";
+    }
     public static boolean pickup(ServerPlayer p,ItemEntity item){
         init();if(failed)return false;if(apiGet==null)return true;
         try{return !(Boolean)pickupCheck.invoke(protectionGet.invoke(apiGet.invoke(null,p.getServer())),p,item);}

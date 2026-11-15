@@ -1,3 +1,5 @@
+> Beta.6 clarification: this is a retained historical audit, not current pocket implementation status. The gated physical pocket now exists; live rendering still does not. The pinned backend document and Portal source were reopened for this milestone. See ROOM_EDITING_BETA6.md for the invisible-portal loading caveat and current independent room tests.
+
 > Historical renderer audit from beta.2. Beta.4 adds a separately gated pocket core and non-live abstract entrance preview; see POCKET_MILESTONE.md. The live-renderer audit and missing compatibility evidence below remain unchanged.
 
 # Optional live portal lead: source audit, not an integration

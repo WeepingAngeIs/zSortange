@@ -1,5 +1,12 @@
 # Anya Storage Plus
 
+**0.3.0-beta.6, gated room-editing safety milestone.** Continues beta.5 in the same mod and branch. See [the exact narrow editing scope and acceptance boundaries](docs/ROOM_EDITING_BETA6.md). No profile or player world is modified by building this source.
+
+The four original pocket chests, shell and recovery paths remain protected. Separate Visit and Build rights, eight inert decorative materials, and four optional plain Anya-chest pads are implemented behind the additional default-off `pocketEditing` switch. Arbitrary containers, machinery, unrestricted construction and live portal rendering are not implemented. Existing backpack art/UI and the non-live entrance preview are retained.
+
+The sections below are retained historical beta.4 notes. For the newer packaged beta.5 acceptance and beta.6 room scope, use the exact tagged/source-commit evidence, not the historical untested list.
+
+
 **0.3.0-beta.4, gated home-pocket safety prototype**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
 
 The verified `0.2.0-beta.1` remains on `main` while this milestone is developed on `feature/elemental-pockets`. No installed profile, live server or valuable world is modified by producing this build. Use the same playable JAR on server and clients in a disposable or backed-up test world. Do not install two versions together.

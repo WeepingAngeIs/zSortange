@@ -112,3 +112,10 @@ tasks.register('pocketCoreTest', JavaExec) {
 tasks.named('check') { dependsOn tasks.named('pocketCoreTest') }
 
 apply from: 'acceptance.gradle'
+
+tasks.register('roomBoundsTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.RoomBoundsTests'
+}
+tasks.named('check') { dependsOn tasks.named('roomBoundsTest') }

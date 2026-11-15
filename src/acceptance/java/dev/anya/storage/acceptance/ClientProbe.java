@@ -87,6 +87,7 @@ public final class ClientProbe {
                 switch(action){
                     case "block" -> {BlockPos pos=new BlockPos(Integer.parseInt(a[1]),Integer.parseInt(a[2]),Integer.parseInt(a[3]));mc.gameMode.useItemOn(mc.player,InteractionHand.MAIN_HAND,new BlockHitResult(Vec3.atCenterOf(pos),Direction.UP,pos,false));}
                     case "remote" -> {mc.player.getInventory().selected=0;mc.gameMode.useItem(mc.player,InteractionHand.MAIN_HAND);}
+                    case "command" -> {mc.player.closeContainer();mc.player.connection.sendCommand(work.action().substring("command ".length()));}
                     case "exit" -> mc.player.connection.sendCommand("anya pocket exit");
                     case "close" -> mc.player.closeContainer();
                     case "deposit", "withdraw" -> {

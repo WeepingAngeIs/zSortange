@@ -12,17 +12,15 @@ public final class PocketView {
     private final UUID id;
     private final long epoch,policy;
     private final PocketLeases.Kind kind;
-    private final List<StorageEntity> chests;
+    private final List<StorageEntity> chests,registry;
     public PocketView(ServerPlayer player,PocketLedger.Pocket pocket,PocketLeases.Kind kind)throws java.io.IOException{this(player,pocket,kind,null);}
     public PocketView(ServerPlayer player,PocketLedger.Pocket pocket,PocketLeases.Kind kind,StorageEntity selected)throws java.io.IOException{
         this.player=player;this.id=pocket.id();this.epoch=pocket.epoch();this.kind=kind;
         StorageEntity hub=PocketService.home(player,pocket);if(hub==null)throw new java.io.IOException("Home identity unavailable");policy=hub.profileRevision;
         var level=PocketService.dimension(player.getServer());var list=new ArrayList<StorageEntity>();
         if(level==null||pocket.stage()!=PocketLedger.Stage.READY)throw new java.io.IOException("Pocket is not prepared");
-        for(var pos:PocketService.chestPositions(pocket)){
-            if(!level.hasChunkAt(pos)||!(level.getBlockEntity(pos) instanceof StorageEntity chest)||!id.equals(chest.pocketId)||!Objects.equals(chest.owner,pocket.owner())||!chest.kind().equals("chest"))throw new java.io.IOException("A registered physical chest is missing or changed; no regeneration was attempted");
-            if(selected==null||selected==chest)list.add(chest);
-        }
+        registry=PocketRoomLayout.present(level,pocket);
+        for(StorageEntity chest:registry)if(selected==null||selected==chest)list.add(chest);
         if(list.isEmpty())throw new java.io.IOException("Selected chest is not part of this pocket");chests=List.copyOf(list);
         if(!valid())throw new java.io.IOException("Pocket view is no longer authorized");
     }
@@ -34,6 +32,7 @@ public final class PocketView {
             if(r==null||r.epoch()!=epoch||l==null||!l.pocket().equals(id)||l.kind()!=kind||l.epoch()!=epoch||!PocketService.authorize(player,r,kind,false,rights).isEmpty())return false;
             StorageEntity hub=PocketService.home(player,r);if(hub==null||hub.profileRevision!=policy)return false;
             var level=PocketService.dimension(player.getServer());
+            if(!registry.equals(PocketRoomLayout.present(level,r)))return false;
             for(StorageEntity chest:chests){
                 if(chest.isRemoved()||!level.hasChunkAt(chest.getBlockPos())||level.getBlockEntity(chest.getBlockPos())!=chest||!id.equals(chest.pocketId)||Transactions.quarantined(chest))return false;
                 if(!Safety.locationReason(player,level,chest.getBlockPos()).isEmpty())return false;

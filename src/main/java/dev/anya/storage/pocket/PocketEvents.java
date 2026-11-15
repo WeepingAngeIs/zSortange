@@ -93,6 +93,9 @@ public final class PocketEvents {
             .executes(c->{var p=c.getSource().getPlayerOrException();AnyaStorage.tell(p,PocketService.status());try{for(var r:PocketService.ledger(p.getServer()).pockets())if(r.owner().equals(p.getUUID()))AnyaStorage.tell(p,r.id()+" | "+r.stage()+" | "+r.theme());}catch(java.io.IOException ex){AnyaStorage.tell(p,ex.getMessage());}return 1;})
             .then(Commands.literal("exit").executes(c->{var p=c.getSource().getPlayerOrException();try{if(PocketService.inPocket(p.level())||PocketService.ledger(p.getServer()).returning(p.getUUID())!=null)PocketService.recover(p);else AnyaStorage.tell(p,"No unfinished pocket visit to recover.");}catch(java.io.IOException ex){if(PocketService.inPocket(p.level()))PocketService.recover(p);else AnyaStorage.tell(p,ex.getMessage());}return 1;}))
             .then(Commands.literal("reanchor").then(Commands.argument("identity",StringArgumentType.word()).executes(c->{var p=c.getSource().getPlayerOrException();try{PocketService.reanchor(p,UUID.fromString(StringArgumentType.getString(c,"identity")),lookingAt(p),p.getMainHandItem());}catch(IllegalArgumentException ex){AnyaStorage.tell(p,ex.getMessage());}return 1;})))
+            .then(Commands.literal("build").executes(c->{AnyaStorage.tell(c.getSource().getPlayerOrException(),RoomEditor.help());return 1;})
+                .then(Commands.literal("place").executes(c->{RoomEditor.command(c.getSource().getPlayerOrException(),false);return 1;}))
+                .then(Commands.literal("remove").executes(c->{RoomEditor.command(c.getSource().getPlayerOrException(),true);return 1;})))
             .then(Commands.literal("theme").then(Commands.argument("name",StringArgumentType.word()).executes(c->{var p=c.getSource().getPlayerOrException();try{PocketService.theme(p,lookingAt(p).pocket,StringArgumentType.getString(c,"name"));}catch(IllegalArgumentException ex){AnyaStorage.tell(p,ex.getMessage());}return 1;})))
         ));
     }

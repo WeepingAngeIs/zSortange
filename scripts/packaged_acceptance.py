@@ -21,6 +21,7 @@ with (logdir/'installer.log').open('w') as log:
     subprocess.run(['java','-Xmx1000m','-jar',str(installer),'--installServer',str(server)],stdout=log,stderr=subprocess.STDOUT,check=True,timeout=240)
 (server/'eula.txt').write_text('eula=true\n')
 (server/'server.properties').write_text('level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nonline-mode=false\nview-distance=3\nsimulation-distance=2\nspawn-protection=0\nserver-ip=127.0.0.1\nserver-port=25577\nallow-flight=true\nmax-tick-time=120000\n')
+room=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='room'
 processes=[];handles=[]
 def launch(cmd,cwd,name):
     log=(logdir/(name+'.log')).open('w');handles.append(log)
@@ -35,7 +36,7 @@ def failure():
     found=list(control.glob('FAILED*'))
     if found:raise RuntimeError('\n'.join(p.read_text() for p in found))
 try:
-    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
+    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
     deadline=time.monotonic()+180
     while not (control/'server-ready').exists():
         failure()
@@ -54,7 +55,13 @@ try:
         if time.monotonic()>deadline:raise TimeoutError('Real client acceptance')
         time.sleep(1)
     assert killed and restarted, 'Socket test not exercised'
-    print('ANYA_PACKAGED_NETWORK_ACCEPTANCE_OK')
+    if room:
+        assert srv.wait(timeout=45)==0,'Room server did not stop cleanly'
+        resume=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true','-Danya.roomAcceptance=true','-Danya.roomResume=true',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'room-restart-server')
+        assert resume.wait(timeout=150)==0,'Room restart process failed'
+        failure();assert (control/'ROOM_RESTART_PASSED').exists(),'Room restart verification missing'
+        print('ANYA_PACKAGED_ROOM_ACCEPTANCE_OK',flush=True)
+    else:print('ANYA_PACKAGED_NETWORK_ACCEPTANCE_OK')
 finally:
     for p in processes:
         if p.poll() is None:

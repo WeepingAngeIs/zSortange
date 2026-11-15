@@ -202,7 +202,7 @@ public final class PocketService {
         if(!safe(target,p,point))throw new IOException("Pocket landing is obstructed; the return record is retained");
         teleport(p,target,point,0,0);
         if(!inPocket(p.level()))throw new IOException("Dimension transition was rejected; recovery record retained");
-        savePlayer(p);AnyaStorage.tell(p,"Experimental pocket: 32x32 bounded plot, four real protected chests. Right-click the lodestone or /anya pocket exit. Construction is locked in this safety milestone.");
+        savePlayer(p);AnyaStorage.tell(p,"Experimental pocket: 32x32 bounded plot, four real protected chests. Right-click the lodestone or /anya pocket exit. Use /anya pocket build for the separately gated editing subset. The exit and original chests remain protected.");
     }
     public static void tick(MinecraftServer server){
         clock++;lastPreparedBlocks=0;
@@ -300,14 +300,14 @@ public final class PocketService {
     public static boolean recovering(UUID player){return RECOVERY.containsKey(player);}
     public static boolean physicalAllowed(ServerPlayer p,StorageEntity chest){
         if(chest.pocketId==null||!inPocket(p.level())||chest.getLevel()!=p.level())return false;
-        try{var r=ledger(p.getServer()).get(chest.pocketId);var l=LEASES.get(p.getUUID());return r!=null&&l!=null&&l.kind()==PocketLeases.Kind.VISIT&&l.pocket().equals(r.id())&&l.epoch()==r.epoch()&&authorize(p,r,l.kind(),false,0).isEmpty()&&chestPositions(r).contains(chest.getBlockPos());}catch(IOException e){return false;}
+        try{var r=ledger(p.getServer()).get(chest.pocketId);var l=LEASES.get(p.getUUID());return r!=null&&l!=null&&l.kind()==PocketLeases.Kind.VISIT&&l.pocket().equals(r.id())&&l.epoch()==r.epoch()&&authorize(p,r,l.kind(),false,0).isEmpty()&&PocketRoomLayout.registeredPosition(r,chest.getBlockPos())&&p.distanceToSqr(Vec3.atCenterOf(chest.getBlockPos()))<=64;}catch(IOException e){return false;}
     }
     public static void openChest(ServerPlayer p,StorageEntity chest){
         try{if(!physicalAllowed(p,chest))throw new IOException("Pocket chest access denied");var r=ledger.get(chest.pocketId);StoreMenu.pocket(p,new PocketView(p,r,PocketLeases.Kind.VISIT,chest));}catch(Exception e){error(p,e);}
     }
     public static void stop(MinecraftServer server){
         for(Ticket t:TICKETS){ServerLevel l=server.getLevel(t.dimension());if(l!=null)l.getChunkSource().removeRegionTicket(TICKET,t.chunk(),2,t.pocket());}
-        TICKETS.clear();RECOVERY_TICKETS.clear();LEASES.clear();PENDING.clear();RECOVERY.clear();RETRY.clear();PREPARING.clear();TEST_PLAYERS.clear();ledger=null;failure=null;currentServer=null;clock=0;
+        TICKETS.clear();RECOVERY_TICKETS.clear();LEASES.clear();PENDING.clear();RECOVERY.clear();RETRY.clear();PREPARING.clear();TEST_PLAYERS.clear();RoomEditor.clear();ledger=null;failure=null;currentServer=null;clock=0;
     }
     // Explicit disposable-test hooks: never reachable through an item, command or client packet.
     private static final Map<UUID,ServerPlayer> TEST_PLAYERS=new HashMap<>();

@@ -18,6 +18,7 @@ public final class ExpansionRules {
         public int imagesPerPlayer=4, imagesTotal=128, imageWorldMiB=16;
         public String pocketCoreMaterial="minecraft:diamond";
         public int pocketSessionTicks=6000;
+        public boolean pocketEditing=false;
         public boolean pocketStorage=false, pocketActivityLog=false, pocketLogNames=false;
         public int pocketLimit=64, activePocketLimit=4, pocketContainers=32, pocketLogEntries=100;
     }
@@ -27,6 +28,7 @@ public final class ExpansionRules {
         require(o!=null,"Expansion settings cannot be null");
         range(o.activityLogEntries,1,128,"Base activity log entries");
         require(dormantLoad||!o.pocketStorage||Boolean.getBoolean("anyastorage.pocketPrototype"),"Pocket storage remains experimental: requires the explicit disposable-test JVM gate anyastorage.pocketPrototype");
+        require(dormantLoad||!o.pocketEditing||(o.pocketStorage&&Boolean.getBoolean("anyastorage.pocketPrototype")),"Room editing requires both pocketStorage and the disposable-test JVM gate");
         require(Config.validId(o.pocketCoreMaterial),"Pocket core material must be a registry ID");
         range(o.pocketSessionTicks,200,12000,"Pocket session ticks");
         finite(o.stoneArmor,0,4,"Stone armor");finite(o.diamondArmor,0,6,"Diamond armor");
