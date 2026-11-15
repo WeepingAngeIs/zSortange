@@ -9,6 +9,7 @@ import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.core.*;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.*;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -24,10 +25,50 @@ public final class ClientProbe {
     private static boolean connected;
     private static Wire.Signal work;
     private static int ticks,age;
+    private static int expectedOffset=-1,viewportRequestedAt,viewportAttempts,withdrawSentAt=-1;
     private static Packets.Action saved;
-    public static void receive(Wire.Signal s){work=s;ticks=0;AnyaStorage.LOG.info("ANYA_REAL_CLIENT_ACTION {} {}",s.sequence(),s.action());}
+    public static void receive(Wire.Signal s){
+        work=s;ticks=0;expectedOffset=-1;viewportRequestedAt=0;viewportAttempts=0;withdrawSentAt=-1;
+        AnyaStorage.LOG.info("ANYA_REAL_CLIENT_ACTION {} {}",s.sequence(),s.action());
+    }
     private static void ack(){PacketDistributor.sendToServer(new Wire.Signal(work.sequence(),"done"));work=null;}
     private static void shot(String name){var mc=Minecraft.getInstance();Screenshot.grab(mc.gameDirectory,"room-"+System.getProperty("anya.role")+"-"+name+".png",mc.getMainRenderTarget(),c->{});}
+
+    /** Scroll only through server-synchronized display slots; send the mutating intent exactly once. */
+    private static void withdrawLocatedSample(Minecraft mc){
+        Acceptance.require(mc.player.containerMenu instanceof StoreMenu,"Expected production StoreMenu while locating sample");
+        StoreMenu m=(StoreMenu)mc.player.containerMenu;
+        Acceptance.require(!m.privateView()&&!m.filteredView()&&m.capacity()==216,"Expected authorized unfiltered physical pocket view");
+        Acceptance.require(ticks<=360,"Timed out locating synchronized sample; offset="+m.firstSlot());
+        if(withdrawSentAt>=0){if(ticks-withdrawSentAt>=40){shot("after-located-withdrawal");ack();}return;}
+        if(expectedOffset>=0&&m.firstSlot()!=expectedOffset){
+            if(ticks-viewportRequestedAt>=20)requestViewport(m,expectedOffset);
+            return;
+        }
+        // Allow the complete snapshot following a viewport acknowledgement to arrive.
+        if(expectedOffset>=0&&ticks-viewportRequestedAt<2)return;
+        for(int i=0;i<Math.min(45,m.shownSlots());i++){
+            var stack=m.getSlot(i).getItem();
+            if(!stack.is(Items.DIAMOND)||!stack.getHoverName().getString().equals("Network conserved diamonds"))continue;
+            Acceptance.require(stack.getCount()==17,"Sample changed before the one-item withdrawal");
+            // ServerProbe deposits into chest #3, whose first physical slot is 108, not display slot zero.
+            Acceptance.require(m.firstSlot()+i==108,"Sample is not in the expected third-chest physical slot");
+            shot("located-third-chest-sample");
+            AnyaStorage.LOG.info("ANYA_ACCEPTANCE_LOCATED_SAMPLE offset={} display={} physical={} count={} revision={}",m.firstSlot(),i,m.firstSlot()+i,stack.getCount(),m.revision());
+            saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",i|256);
+            PacketDistributor.sendToServer(saved);withdrawSentAt=ticks;return;
+        }
+        int next=m.firstSlot()+m.visibleRows()*9;
+        int max=dev.anya.storage.ui.StorageGrid.maxStartRow(m.resultCount(),m.visibleRows())*9;
+        next=Math.min(next,max);
+        Acceptance.require(next>m.firstSlot(),"Named sample absent from all synchronized physical slots");
+        requestViewport(m,next);
+    }
+    private static void requestViewport(StoreMenu m,int offset){
+        Acceptance.require(++viewportAttempts<=24,"Viewport retry bound exceeded");
+        expectedOffset=offset;viewportRequestedAt=ticks;
+        PacketDistributor.sendToServer(new Packets.Action(m.containerId,m.session(),m.revision(),"viewport","",((offset/9)<<3)|m.visibleRows()));
+    }
     @SubscribeEvent public static void tick(ClientTickEvent.Post e){
         if(!Boolean.getBoolean("anya.acceptance"))return;
         var mc=Minecraft.getInstance();age++;
@@ -41,16 +82,16 @@ public final class ClientProbe {
             if(age>18000)throw new IllegalStateException("Client acceptance deadline exceeded");
             if(work==null||mc.player==null||mc.level==null||mc.getOverlay()!=null)return;
             ticks++;String[] a=work.action().split(" ");String action=a[0];
+            if(action.equals("withdrawone")){withdrawLocatedSample(mc);return;}
             if(ticks==1){
                 switch(action){
                     case "block" -> {BlockPos pos=new BlockPos(Integer.parseInt(a[1]),Integer.parseInt(a[2]),Integer.parseInt(a[3]));mc.gameMode.useItemOn(mc.player,InteractionHand.MAIN_HAND,new BlockHitResult(Vec3.atCenterOf(pos),Direction.UP,pos,false));}
                     case "remote" -> {mc.player.getInventory().selected=0;mc.gameMode.useItem(mc.player,InteractionHand.MAIN_HAND);}
                     case "exit" -> mc.player.connection.sendCommand("anya pocket exit");
                     case "close" -> mc.player.closeContainer();
-                    case "deposit", "withdraw", "withdrawone" -> {
+                    case "deposit", "withdraw" -> {
                         Acceptance.require(mc.player.containerMenu instanceof StoreMenu,"Expected production StoreMenu for "+action);
                         StoreMenu m=(StoreMenu)mc.player.containerMenu;int index=action.equals("deposit")?54:0;
-                        if(action.equals("withdrawone"))index|=256;
                         saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",index);
                         PacketDistributor.sendToServer(saved);
                     }
