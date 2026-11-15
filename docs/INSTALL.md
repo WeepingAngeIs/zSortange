@@ -1,8 +1,16 @@
 # Anya Storage beta: installation and first base
 
+## Expansion milestone 1
+
+This build adds the elemental wardrobe, redesigned interiors, optional private image uploads and **Ancient Technology**. See [EXPANSION](EXPANSION.md), [TUTORIAL](TUTORIAL.md) and [IMAGES](IMAGES.md). It does NOT add pocket dimensions or portals. Keep the prior beta JAR as a rollback artifact, but do not leave both versions in one mods directory. Never downgrade a valuable updated world without its matching backup.
+
+The first-login guide is automatic by default. Right-click it; `/anya guide recover` is the explicit lost-copy route while carrying one plain Book. `/give @s anyastorage:ancient_technology` is available for operator testing.
+
+This delivery does not modify any installed profile. Choose a disposable or backed-up test world deliberately; keep the same version on its server and clients.
+
 ## Environment and safe installation
 
-Use Minecraft 1.21.1, Java 21 and NeoForge 21.1.249 or a later compatible 21.1.x build. Install the same `anya-storage-plus-0.2.0-beta.1.jar` on the server and every connecting client. The sources JAR is not the game mod. Optional material mods are not required.
+Use Minecraft 1.21.1, Java 21 and NeoForge 21.1.249 or a later compatible 21.1.x build. Install the same `anya-storage-plus-0.3.0-beta.1.jar` on the server and every connecting client. The sources JAR is not the game mod. Optional material mods are not required.
 
 Start with a backed-up test world. Keep Tom's Simple Storage, Sophisticated Storage/Backpacks, their dependencies and QuickStack installed while validating this beta. There is no migration of their contents. Carry On and Shulker Box Tooltip are not replaced by this project. Do not delete Sophisticated Core until all remaining dependencies have been checked.
 
@@ -73,4 +81,4 @@ Custom chest labels cycle through heart, star, square, circle, diamond, leaf and
 
 ## Known limits
 
-This is a compiled beta, not a claim of full feature parity with the replaced mods. There is no wearable/Curios backpack slot, fluid/XP tank, magnet vacuum, arbitrary-container capability adapter, or EMI/JEI recipe plugin. Custom containers intentionally expose no unowned hopper/item-handler access. The exact live modpack, optional material mods, claim integration and a real multiplayer client session still need pack-level testing. Hard process-kill or disk-failure durability across vanilla player/chunk files is not guaranteed. See SAFETY.md and TESTING.md before removing existing storage mods.
+This is a compiled beta, not a claim of full feature parity with the replaced mods. There is no dedicated equipment/Curios backpack slot, fluid/XP tank, magnet vacuum, arbitrary-container capability adapter, or EMI/JEI recipe plugin. Custom containers intentionally expose no unowned hopper/item-handler access. The exact live modpack, optional material mods, claim integration and a real multiplayer client session still need pack-level testing. Hard process-kill or disk-failure durability across vanilla player/chunk files is not guaranteed. See SAFETY.md and TESTING.md before removing existing storage mods.

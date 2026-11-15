@@ -51,7 +51,7 @@ public final class Wearables {
         var look=publicLook(p);String signature=look.texture()+"|"+look.element();
         boolean changed=!Objects.equals(sent.put(p.getUUID(),signature),signature);
         if(p.getServer().getPlayerList().getPlayer(p.getUUID())==p){
-            if(changed)PacketDistributor.sendToPlayersTrackingEntityAndSelf(p,look);
+            if(changed||p.tickCount%100==0)PacketDistributor.sendToPlayersTrackingEntityAndSelf(p,look);
             else if(p.tickCount%40==0)PacketDistributor.sendToPlayer(p,look);
         }
     }
@@ -71,7 +71,7 @@ public final class Wearables {
     public static ExpansionPackets.Look publicLook(LivingEntity entity){
         ItemStack bag=entity instanceof ServerPlayer p?selected(p):ItemStack.EMPTY;String texture="",element="plain";
         if(entity instanceof ServerPlayer&&ExpansionRules.get().wearableModels&&!entity.isInvisible()&&!bag.isEmpty()){var l=Looks.of(bag);texture=l.texture();element=ExpansionRules.get().cosmeticParticles?l.element():"disabled";}
-        else if(entity instanceof Monster&&ExpansionRules.get().monsterBackpacks&&entity.getPersistentData().contains(WILD)&&!entity.isInvisible()){texture=entity.getPersistentData().getCompound(WILD).getString("Skin");if(!ExpansionRules.get().cosmeticParticles)element="disabled";}
+        else if(entity instanceof Monster&&ExpansionRules.get().wearableModels&&ExpansionRules.get().monsterBackpacks&&entity.getPersistentData().contains(WILD)&&!entity.isInvisible()){texture=entity.getPersistentData().getCompound(WILD).getString("Skin");if(!ExpansionRules.get().cosmeticParticles)element="disabled";}
         return new ExpansionPackets.Look(entity.getId(),entity.getUUID(),-1,0,texture,element,"atelier",ExpansionPackets.NONE,false);
     }
     public static void track(PlayerEvent.StartTracking event){if(event.getEntity() instanceof ServerPlayer p&&event.getTarget() instanceof LivingEntity living)PacketDistributor.sendToPlayer(p,publicLook(living));}

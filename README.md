@@ -1,35 +1,41 @@
-# anya's strorage plus
+# Anya Storage Plus
 
-**0.2.0-beta.1** for Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. Install the same playable JAR on server and clients. This is an original storage beta, not a source-only configuration mock-up and not a claim of complete feature parity with other storage mods.
+**0.3.0-beta.1, expansion milestone 1**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
 
-## Included
+The verified `0.2.0-beta.1` remains on `main` while this milestone is developed on `feature/elemental-pockets`. No installed profile, live server or valuable world is modified by producing this build. Use the same playable JAR on server and clients in a disposable or backed-up test world. Do not install two versions together.
 
-- Backpacks with saved-capacity progression, seven installable upgrade types and content-preserving tier recipes.
-- A physical-storage hub with search, favorites, a bound handheld remote, ore-fed radius upgrades and confirmation previews.
-- A 54-slot labelled chest with a hinged lid and split sticker; a 216-slot UwU cube with an optional endgame recipe.
-- Built-in QuickStack and broader matching Dump, protected inventory slots, per-item explanations and organization previews.
-- Named base profiles, trusted players, category/item routes, priorities and overflow rules.
-- Operator settings, private drafts, revision-safe Apply, recipe gates, tier editing, exact installed-material selection, compatibility diagnostics, item/tag category rules, presets, impact previews and performance limits.
+## Implemented in this milestone
 
-Open settings with `/anya storage` or the collision-safe `/as` alias. Normal players get their protected-slot preferences rather than server settings. The handheld remote is the primary storage interface. QuickStack, Dump and Open Backpack keys start unbound so they do not overwrite pack controls.
+- Independent elemental identity, cosmetic skin/interior and storage tier. Storage upgrades retain contents, item components, custom name, BagId, installed upgrades and appearance.
+- Leather starter plus eight leaf-species starters, craftable elemental bindings and nine cosmetic patches using existing vanilla materials. No ore generation.
+- One selected worn backpack, modest configurable armor/fire-reduction/swim/knockback effects, and bounded client-only cosmetic particles.
+- Twenty-two blocky model/texture variants, six built-in interior themes, custom upgrade icons and an in-game wardrobe. Bow Cat and Midnight Cat are original cat designs, not branded/licensed character assets.
+- NEW private, server-stored interior PNG uploads with strict validation, quotas, rate limits, explicit viewers and operator moderation. Uploads and sharing default OFF.
+- Optional decorative monster backpacks with fresh empty drops, default OFF. They never occupy or overwrite an equipment slot.
+- **Ancient Technology**, an illustrated tutorial item with live server recipes/settings, chapter navigation, a durable one-time automatic grant and explicit recovery.
 
-Optional Dragonsteel/Witherite tiers consume actual installed material items; they never manufacture those ingots or require the material mods as hard dependencies. Newly added optional tiers start disabled. The endgame cube recipe also defaults to OFF until an operator chooses a route.
+Existing hub/remote search, physical containers, QuickStack, routing, installable upgrades, configurable optional material tiers, safe settings drafts and previews remain. Exact installed Dragonsteel/Witherite progression must still be verified in the target pack; use Add Held Material rather than inventing IDs.
 
-## Documentation
+## Not implemented here
 
-- [Installation, controls and progression](docs/INSTALL.md)
-- [Inventory/permission safety and limits](docs/SAFETY.md)
-- [Automated tests and remaining manual acceptance](docs/TESTING.md)
-- [Verified pre-release build](docs/VERIFICATION.md)
+Pocket dimensions, pocket scenery, separate visit/view/deposit/withdraw permissions, shared pocket logs, home-to-pocket access, a portal preview block and live portal rendering are **not implemented**. `pocketStorage=true` is rejected. No Immersive Portals dependency is installed or bundled. The approved low-cost preview remains a future design requirement, not a shipped renderer.
 
-## Build and verification
+## Start here
 
-The read-only GitHub Actions workflow builds the exact checked-out commit using Java 21 and Gradle 8.14.3, runs configuration assertions, launches a real NeoForge GameTest server, and uploads playable JARs only after required steps succeed. The artifact includes the exact source commit, source archive, logs, documentation and SHA-256 checksums. Install `anya-storage-plus-0.2.0-beta.1.jar`, not the `-sources.jar`.
+Right-click **Ancient Technology**, normally given on the first login after installing this version. `/anya guide` opens an owned copy; `/anya guide recover` consumes one ordinary Book. A Book + Paper recovery craft is also available. Automatic grant/recovery are independently configurable in the operator expansion policy.
 
-The core implementation passed 28 required GameTests, including 500 deterministic randomized transfers, on source `fb7d74494c7d9e3e30abdd5fda41b400b23aee81` in workflow run `43654812369`. Subsequent commits must be judged by their own workflow result.
+Use `/anya storage` or collision-safe `/as` for settings. The bound handheld remote remains the everyday storage interface. Open a backpack and choose **Style** for its wardrobe. Craft a binding/patch, combine it with one backpack, then freely switch among that backpack's unlocked looks. Choose **Wear this backpack** for its worn effects/model.
 
-## Before replacing existing mods
+## Documentation and evidence
 
-Use a backed-up test world and keep existing storage mods until the complete pack passes acceptance. No migration is provided. Only exact vanilla chests/barrels/optional shulkers and this mod's containers are supported; arbitrary external item-handler storage is intentionally excluded. The OPAC adapter fails closed on API errors but still needs testing with the actual installed claim configuration.
+- [Installation and existing storage controls](docs/INSTALL.md)
+- [Elemental, cosmetic and progression details](docs/EXPANSION.md)
+- [Ancient Technology and grant persistence](docs/TUTORIAL.md)
+- [Image upload security and privacy](docs/IMAGES.md)
+- [Immersive Portals CE source audit and unimplemented pocket plan](docs/PORTAL_AUDIT.md)
+- [Automated checks and remaining acceptance tests](docs/TESTING.md)
+- [Inventory safety boundaries](docs/SAFETY.md)
 
-Transfers are server-thread snapshot transactions with component conservation and rollback attempts. They are NOT a distributed durable transaction across Minecraft's separate player/chunk save files. Hard crashes, disk failures or partial backup restores are not guaranteed safe. Client appearance, real multiplayer/disconnect behavior and the full installed modpack still require testing. See the documentation for narrower upgrade behavior and other beta limits.
+The read-only build workflow compiles, runs configuration/image/journal assertions, launches 40 required GameTests, starts the dedicated server twice against a disposable persistence world, and captures the actual Minecraft renderer. The artifact contains `SOURCE_COMMIT.txt`, logs, source, screenshots and SHA-256 checksums. Consult that exact run's result; source code alone is not evidence of a passing build.
+
+Full-pack multiplayer, real client disconnects, image upload round trips, wardrobe interaction, worn placement with Figura/Origins, Carry On, OPAC and the actual renderer stack still require acceptance testing. Do not remove the old storage mods or assume hard-crash consistency across separate Minecraft save files.
