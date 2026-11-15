@@ -37,15 +37,10 @@ jobs:
               assert hashlib.sha256(patch).hexdigest()=='f9596df61c3080a27dfba0c6da2e5f985425e764f935e56b80e5431bb17c54d4'
               subprocess.run(['git','apply','--check','-'],input=patch,check=True)
               subprocess.run(['git','apply','-'],input=patch,check=True)
-              workflow=Path('.github/workflows/build.yml')
-              text=workflow.read_text()
-              a=text.index('      - name: Apply reviewed interface')
-              b=text.index('      - name: Export exact source snapshot')
-              workflow.write_text((text[:a]+text[b:]).replace('contents: write','contents: read').replace('persist-credentials: true','persist-credentials: false'))
               for p in parts+[manifest]:p.unlink()
               subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
               subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
-              subprocess.run(['git','add','--',*expected.keys(),str(workflow),str(manifest),*[str(p) for p in parts]],check=True)
+              subprocess.run(['git','add','--',*expected.keys(),str(manifest),*[str(p) for p in parts]],check=True)
               subprocess.run(['git','commit','-m','Implement true-capacity scrolling, conflict-aware shortcut and native Accessories back support'],check=True)
               subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
           PYCODE
@@ -92,7 +87,7 @@ jobs:
           grep -q 'ANYA_GUIDE_PERSISTENCE_SEED' export/guide-persistence-seed.log
           timeout 180s gradle --no-daemon runServer -PguidePersistence=verify 2>&1 | tee export/guide-persistence-verify.log
           grep -q 'ANYA_GUIDE_PERSISTENCE_VERIFY' export/guide-persistence-verify.log
-          grep -q 'ANYA_SHARED_BASE_PERSISTENCE_SEED' export/guide-persistence-verify.log
+          grep -q 'ANYA_SHARED_BASE_PERSISTENCE_SEED' export/guide-persistence-seed.log
           grep -q 'ANYA_SHARED_BASE_PERSISTENCE_VERIFY' export/guide-persistence-verify.log
       - name: Install software-rendering display
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
