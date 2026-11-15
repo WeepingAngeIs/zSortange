@@ -56,7 +56,7 @@ public final class RoomProbe {
         Vec3 point=new Vec3(target.getX()+.5,target.getY()+(floor?.99:.5),target.getZ()+.5);
         double x=target.getX()+.5,y=floor?target.getY()+1:target.getY(),z=target.getZ()+2.5;
         double dy=point.y-(y+p.getEyeHeight());float pitch=(float)-Math.toDegrees(Math.atan2(dy,2));
-        p.connection.teleport(x,y,z,180,pitch);
+        p.connection.teleport(x,y,z,180,pitch);p.setYHeadRot(180);
         var hit=RoomEditor.looking(p);check(hit.getBlockPos().equals(target),"Fixture raycast missed intended target: expected="+target+" actual="+hit.getBlockPos()+" face="+hit.getDirection());return hit;
     }
     private static void rejected(ServerPlayer p,BlockHitResult hit,boolean removal,String label)throws Exception{
