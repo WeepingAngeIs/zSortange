@@ -48,7 +48,10 @@ tasks.named('runAcceptanceClient', JavaExec) {
             def role = project.findProperty('role') ?: 'Alpha'
             def target = project.file("build/acceptance/client-${role}.json")
             target.parentFile.mkdirs()
-            target.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([command: commandLine, cwd: workingDir.absolutePath]))
+            def launch = new ArrayList(commandLine)
+            launch[0] = javaLauncher.get().executablePath.asFile.absolutePath
+            assert launch.every { it != null }
+            target.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([command: launch, cwd: workingDir.absolutePath]))
             throw new StopExecutionException('Exported packaged client command without launching')
         }
     }
