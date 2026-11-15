@@ -26,9 +26,10 @@ public final class ClientProbe {
     private static Wire.Signal work;
     private static int ticks,age;
     private static int expectedOffset=-1,viewportRequestedAt,viewportAttempts,withdrawSentAt=-1;
+    private static int depositRevision=-1,depositSentAt=-1;
     private static Packets.Action saved;
     public static void receive(Wire.Signal s){
-        work=s;ticks=0;expectedOffset=-1;viewportRequestedAt=0;viewportAttempts=0;withdrawSentAt=-1;
+        work=s;ticks=0;depositRevision=-1;depositSentAt=-1;expectedOffset=-1;viewportRequestedAt=0;viewportAttempts=0;withdrawSentAt=-1;
         AnyaStorage.LOG.info("ANYA_REAL_CLIENT_ACTION {} {}",s.sequence(),s.action());
     }
     private static void ack(){PacketDistributor.sendToServer(new Wire.Signal(work.sequence(),"done"));work=null;}
@@ -63,6 +64,26 @@ public final class ClientProbe {
         next=Math.min(next,max);
         Acceptance.require(next>m.firstSlot(),"Named sample absent from all synchronized physical slots");
         requestViewport(m,next);
+    }
+    /** One deposit, issued on a fresh observed revision; never blindly retries a mutating intent. */
+    private static void depositRoomSample(Minecraft mc){
+        Acceptance.require(mc.player.containerMenu instanceof StoreMenu,"Room deposit lost its menu");
+        StoreMenu m=(StoreMenu)mc.player.containerMenu;
+        Acceptance.require(m.capacity()==54&&!m.privateView(),"Expected authorized single added chest");
+        var held=mc.player.getInventory().getItem(9);var stored=m.getSlot(0).getItem();
+        Acceptance.require(ticks<=180,"Room deposit deadline: inventory="+held.getCount()+" stored="+stored.getCount()+" revision="+m.revision());
+        if(depositSentAt<0){
+            Acceptance.require(held.is(Items.EMERALD)&&held.getCount()==13&&held.getHoverName().getString().equals("Room acceptance emeralds"),"Room deposit input was not synchronized");
+            if(depositRevision<0){depositRevision=m.revision();return;}
+            if(m.revision()==depositRevision)return;
+            PacketDistributor.sendToServer(new Wire.Signal(work.sequence(),"deposit-probe "+m.revision()));
+            saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",54);
+            PacketDistributor.sendToServer(saved);depositSentAt=ticks;
+            AnyaStorage.LOG.info("ANYA_ROOM_DEPOSIT_SENT revision={} inventory=13 stored={}",m.revision(),stored.getCount());return;
+        }
+        if(ticks-depositSentAt<20)return;
+        if(held.isEmpty()&&stored.is(Items.EMERALD)&&stored.getCount()==13){shot("conserved-room-deposit");ack();return;}
+        Acceptance.require(ticks-depositSentAt<60,"Single deposit not accepted: inventory="+held.getCount()+" stored="+stored.getCount()+" revision="+m.revision()+"; no retry performed");
     }
     /** New room scenario: prove the added physical chest reaches the unchanged production grid. */
     private static void inspectExpandedRoom(Minecraft mc){
@@ -99,6 +120,7 @@ public final class ClientProbe {
             if(work==null||mc.player==null||mc.level==null||mc.getOverlay()!=null)return;
             ticks++;String[] a=work.action().split(" ");String action=a[0];
             if(action.equals("withdrawone")){withdrawLocatedSample(mc);return;}
+            if(action.equals("roomdeposit")){depositRoomSample(mc);return;}
             if(action.equals("roomnetwork")){inspectExpandedRoom(mc);return;}
             if(ticks==1){
                 switch(action){

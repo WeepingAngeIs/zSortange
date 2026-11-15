@@ -46,7 +46,12 @@ public final class RoomProbe {
     private static void log(String message){AnyaStorage.LOG.info("ANYA_ROOM_ASSERT {}",message);}
     private static int count(ServerPlayer p,Item item){int n=0;for(int i=0;i<36;i++)if(p.getInventory().getItem(i).is(item))n+=p.getInventory().getItem(i).getCount();return n;}
     private static boolean inside(ServerPlayer p){return p!=null&&PocketService.inPocket(p.level());}
-    public static void ack(ServerPlayer p,Wire.Signal signal){if(signal.sequence()==sequence&&signal.action().equals("done"))ACKS.put(p.getUUID(),sequence);}
+    public static void ack(ServerPlayer p,Wire.Signal signal){
+        if(signal.sequence()!=sequence)return;
+        if(signal.action().equals("done"))ACKS.put(p.getUUID(),sequence);
+        else if(signal.action().startsWith("deposit-probe ")&&p.containerMenu instanceof StoreMenu m)
+            AnyaStorage.LOG.info("ANYA_ROOM_DEPOSIT_RECEIVED candidate={} current={} inventory={} stored={}",signal.action(),m.revision(),count(p,Items.EMERALD),added.getItem(0).getCount());
+    }
     private static boolean done(ServerPlayer p){return p!=null&&Objects.equals(ACKS.get(p.getUUID()),sequence);}
     private static void send(ServerPlayer p,String command){sequence++;ACKS.clear();PacketDistributor.sendToPlayer(p,new Wire.Signal(sequence,command));since=tick;}
     private static void next(){phase++;since=tick;}
@@ -154,7 +159,7 @@ public final class RoomProbe {
                 case 5 -> {if(done(b())){held(b(),new ItemStack(Content.CRATE.get()));aim(b(),PocketRoomLayout.pads(room()).getFirst().below(),true);send(b(),"command anya pocket build place");next();}}
                 case 6 -> {if(done(b())){check(b().level().isEmptyBlock(PocketRoomLayout.pads(room()).getFirst())&&count(b(),Content.CRATE.get().asItem())==1,"Build-only guest placed storage chest");hub.setMember(b().getUUID(),RIGHTS);send(b(),"command anya pocket build place");next();}}
                 case 7 -> {if(done(b())){var cp=PocketRoomLayout.pads(room()).getFirst();added=(StorageEntity)b().level().getBlockEntity(cp);check(added!=null&&id.equals(added.pocketId)&&a().getUUID().equals(added.owner)&&PocketRoomLayout.present(b().serverLevel(),room()).size()==5,"Pad identity/owner/layout failed");ItemStack sample=new ItemStack(Items.EMERALD,13);sample.set(DataComponents.CUSTOM_NAME,Component.literal("Room acceptance emeralds"));b().getInventory().setItem(9,sample);b().inventoryMenu.broadcastChanges();send(b(),"block "+cp.getX()+" 65 "+cp.getZ());next();}}
-                case 8 -> {if(done(b())){check(b().containerMenu instanceof StoreMenu m&&m.capacity()==54,"Added physical chest did not open");send(b(),"deposit");next();}}
+                case 8 -> {if(done(b())){check(b().containerMenu instanceof StoreMenu m&&m.capacity()==54,"Added physical chest did not open");send(b(),"roomdeposit");next();}}
                 case 9 -> {if(done(b())){check(added.getItem(0).getCount()==13&&count(b(),Items.EMERALD)==0,"Added chest deposit lost or duplicated sample");b().closeContainer();aim(b(),added.getBlockPos(),false);send(b(),"command anya pocket build remove");next();}}
                 case 10 -> {if(done(b())){check(b().level().getBlockEntity(added.getBlockPos())==added&&added.getItem(0).getCount()==13,"Occupied optional chest was removed");movers();layoutChanges();next();}}
                 case 11 -> {if(tick-since>10){var pad=PocketRoomLayout.pads(room()).get(1);check(RoomEditor.prepare(a(),aim(a(),pad,false),true).commit().isEmpty(),"Empty optional chest removal failed");check(a().level().isEmptyBlock(pad)&&count(a(),Content.CRATE.get().asItem())==1,"Empty chest returned incorrectly");held(b(),new ItemStack(Items.CHERRY_PLANKS,2));var planned=RoomEditor.prepare(b(),aim(b(),at(8,64,20),true),false);hub.setMember(b().getUUID(),BasePermissions.VISIT);check(!planned.commit().isEmpty()&&b().level().isEmptyBlock(at(8,65,20))&&count(b(),Items.CHERRY_PLANKS)==2,"Build revocation accepted stale edit");hub.setMember(b().getUUID(),RIGHTS);aim(b(),at(6,65,20),false);send(b(),"command anya pocket build remove");next();}}
