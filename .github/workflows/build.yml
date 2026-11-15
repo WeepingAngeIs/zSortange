@@ -74,6 +74,18 @@ jobs:
           timeout 300s xvfb-run -a -s '-screen 0 1600x1200x24' gradle --no-daemon runClient -PclientSmoke 2>&1 | tee export/client-smoke-output.log
           grep -q 'ANYA_CLIENT_SMOKE_OK' export/client-smoke-output.log
           cp run-client-smoke/screenshots/anya-*-client.png export/
+      - name: Inspect client with actual Accessories dependency
+        shell: bash
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          mkdir -p run-client-accessories-smoke
+          printf 'enableVsync:false\nguiScale:1\nmaxFps:30\n' > run-client-accessories-smoke/options.txt
+          timeout 300s xvfb-run -a -s '-screen 0 1600x1200x24' gradle --no-daemon runClient -PclientSmoke -PaccessoriesTest 2>&1 | tee export/client-accessories-output.log
+          grep -q 'ANYA_CLIENT_SMOKE_OK' export/client-accessories-output.log
+          grep -q 'ANYA_ACCESSORIES_CLIENT_OK' export/client-accessories-output.log
+          for file in run-client-accessories-smoke/screenshots/anya-*-client.png; do name=$(basename "$file"); cp "$file" "export/anya-accessories-${name#anya-}"; done
       - name: Checksums and exact source
         run: |
           cp export/* build/libs/

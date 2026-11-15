@@ -41,6 +41,8 @@ for name in ORDER:
    # Embroidered pictogram with a one-pixel offset shadow.
    emblem=LEAF if 'leaf' in name or name in ('oak','cherry','dark_oak') else CAT if 'cat' in name else GHOST if 'spooky' in name else STAR if name=='galaxy' else DIAMOND if name in ('diamond','stone') else HEART
    stamp(p,32,emblem,13,7,dark);stamp(p,32,emblem,12,6,accent)
+   if emblem==LEAF:
+    vein=shade(accent,-35);line(p,32,13,13,17,8,vein);line(p,32,15,10,14,8,vein);line(p,32,16,9,18,9,vein)
    if 'cat' in name:
     rect(p,32,14,9,1,1,dark);rect(p,32,17,9,1,1,dark)
     stamp(p,32,BOW,18,6,color('EE9EBE'))

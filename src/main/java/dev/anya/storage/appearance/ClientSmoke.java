@@ -27,6 +27,7 @@ public final class ClientSmoke {
         if(!Boolean.getBoolean("anyastorage.clientSmoke"))return;
         var mc=Minecraft.getInstance();
         if(phase==0&&mc.screen instanceof TitleScreen&&mc.getOverlay()==null){
+            if(BackpackAccess.accessories())dev.anya.storage.compat.AccessoriesClient.verify();
             mc.options.guiScale().set(1);mc.resizeDisplay();
             for(String name:ClientLooks.TEXTURES){
                 var model=mc.getItemRenderer().getModel(ClientLooks.shell(name),null,null,0);

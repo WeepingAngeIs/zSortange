@@ -1,8 +1,12 @@
 # Anya Storage Plus
 
-**0.3.0-beta.2, shared-base safety continuation**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
+**0.3.0-beta.3, true-capacity interface and optional native back slot**. Minecraft **1.21.1**, NeoForge **21.1.249+ within 21.1.x**, Java **21**. The mod ID remains `anyastorage`; this extends the existing storage mod, not a replacement project.
 
 The verified `0.2.0-beta.1` remains on `main` while this milestone is developed on `feature/elemental-pockets`. No installed profile, live server or valuable world is modified by producing this build. Use the same playable JAR on server and clients in a disposable or backed-up test world. Do not install two versions together.
+
+## Backpack interface update
+
+Beta.3 adds a true-capacity scrollable storage view, separate cosmetic/control rails, a conflict-aware configurable B shortcut, native optional Accessories back-slot access, and restrained pixel-art refinements. See [Controls, evidence and limits](docs/UI_BETA3.md). No profile or world is installed or migrated by this build.
 
 ## Implemented in this milestone
 
@@ -26,7 +30,7 @@ Pocket dimensions, pocket scenery, pocket visit/view/deposit/withdraw enforcemen
 
 Right-click **Ancient Technology**, normally given on the first login after installing this version. `/anya guide` opens an owned copy; `/anya guide recover` consumes one ordinary Book. A Book + Paper recovery craft is also available. Automatic grant/recovery are independently configurable in the operator expansion policy.
 
-Use `/anya storage` or collision-safe `/as` for settings. The bound handheld remote remains the everyday storage interface. Open a backpack and choose **Style** for its wardrobe. Craft a binding/patch, combine it with one backpack, then freely switch among that backpack's unlocked looks. Choose **Wear this backpack** for its worn effects/model.
+Use `/anya storage` or collision-safe `/as` for settings. The bound handheld remote remains the everyday storage interface. Open a backpack and choose **Wardrobe** for its wardrobe. Craft a binding/patch, combine it with one backpack, then freely switch among that backpack's unlocked looks. Choose **Wear this backpack** for its worn effects/model.
 
 ## Documentation and evidence
 
@@ -38,6 +42,6 @@ Use `/anya storage` or collision-safe `/as` for settings. The bound handheld rem
 - [Automated checks and remaining acceptance tests](docs/TESTING.md)
 - [Inventory safety boundaries](docs/SAFETY.md)
 
-The read-only build workflow compiles, runs configuration/image/journal assertions, launches 52 required GameTests, starts the dedicated server twice against a disposable persistence world, and captures the actual Minecraft renderer. The artifact contains `SOURCE_COMMIT.txt`, logs, source, screenshots and SHA-256 checksums. Consult that exact run's result; source code alone is not evidence of a passing build.
+The read-only build workflow compiles, runs configuration/image/journal/layout assertions, launches the required GameTests with and without the optional Accessories test dependency, starts the dedicated server twice against a disposable persistence world, and captures the actual Minecraft renderer with and without Accessories. The artifact contains `SOURCE_COMMIT.txt`, logs, source, screenshots and SHA-256 checksums. Consult that exact run's result; source code alone is not evidence of a passing build.
 
 Full-pack multiplayer, real client disconnects, image upload round trips, wardrobe interaction, worn placement with Figura/Origins, Carry On, OPAC and the actual renderer stack still require acceptance testing. Do not remove the old storage mods or assume hard-crash consistency across separate Minecraft save files.
