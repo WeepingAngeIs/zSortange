@@ -34,18 +34,18 @@ public final class RemoteMetrics {
     @SubscribeEvent public static void start(ServerStartedEvent e)throws Exception{
         server=e.getServer();dir=Path.of(System.getProperty("anya.control"));Files.createDirectories(dir);
         csv=Files.newBufferedWriter(dir.resolve("remote-ticks.csv"));
-        csv.write("tick,phase,period_ns,event_ns,thread_cpu_ns,process_cpu_ns,service_ns,measurement_ns,heap_used,gc_count,gc_ms,requests,weak_destination,strong_destination,home_recovery,cache,full_ready,block_ready,entity_ready,actual_chunk_ticks,transitions,shell_writes\n");
+        csv.write("tick,phase,period_ns,event_ns,thread_cpu_ns,process_cpu_ns,service_ns,measurement_ns,heap_used,gc_count,gc_ms,requests,weak_destination,strong_destination,home_recovery,cache,full_ready,block_ready,entity_ready,actual_chunk_ticks,transitions,shell_writes,syncs,selection_ns,lease_scans,pocket_scans,occupant_comparisons,policy_lookups\n");
         if(THREAD.isThreadCpuTimeSupported()&&!THREAD.isThreadCpuTimeEnabled())THREAD.setThreadCpuTimeEnabled(true);
         wallLast=System.nanoTime();processLast=OS.getProcessCpuTime();running=true;
     }
-    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void pre(ServerTickEvent.Pre e){if(!running)return;start=System.nanoTime();cpuStart=THREAD.getCurrentThreadCpuTime();serviceNs=0;chunkCalls=0;}
+    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void pre(ServerTickEvent.Pre e){if(!running)return;start=System.nanoTime();cpuStart=THREAD.getCurrentThreadCpuTime();serviceNs=0;chunkCalls=0;RemoteTickets.startTick();}
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void post(ServerTickEvent.Post e)throws Exception{
         if(!running||e.getServer()!=server)return;
         long now=System.nanoTime(),duration=now-start,cpu=THREAD.getCurrentThreadCpuTime()-cpuStart,process=OS.getProcessCpuTime(),period=now-wallLast,delta=process-processLast;
         processLast=process;wallLast=now;tick++;
         var heap=ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();
         var cache=PocketService.dimension(server).getChunkSource();int raw=cache.getLoadedChunksCount();
-        if(raw>6000||heap.getUsed()>heap.getMax()*.92){RemoteTickets.marker("FAILED-resource","Protective profile stop: cache="+raw+" heap="+heap+"\n",false);server.halt(false);return;}
+        if(raw>Integer.getInteger("anya.cacheLimit",6000)||heap.getUsed()>heap.getMax()*.92){RemoteTickets.marker("FAILED-resource","Protective profile stop: cache="+raw+" heap="+heap+"\n",false);server.halt(false);return;}
         int full=-1,block=-1,entity=-1;
         if(tick%20==0){
             RemoteTickets.auditEngine();full=block=entity=0;
@@ -58,7 +58,8 @@ public final class RemoteMetrics {
         int weak=0,strong=0,home=0;for(var item:RemoteTickets.applied().entrySet()){
             if(item.getKey().dimension().equals(PocketService.DIMENSION)){if(item.getValue()==0)weak++;else strong++;}else{home++;if(item.getValue()!=2)throw new IllegalStateException("Home/recovery altered");}
         }
-        csv.write(tick+","+phase+","+period+","+duration+","+cpu+","+delta+","+serviceNs+","+(System.nanoTime()-now)+","+heap.getUsed()+","+gc+","+gcMs+","+PocketService.ownedTicketRequests()+","+weak+","+strong+","+home+","+raw+","+full+","+block+","+entity+","+chunkCalls+","+RemoteTickets.transitions()+","+RemoteTickets.field("lastPreparedBlocks")+"\n");
+        var selection=RemoteTickets.selectionMetrics();
+        csv.write(tick+","+phase+","+period+","+duration+","+cpu+","+delta+","+serviceNs+","+(System.nanoTime()-now)+","+heap.getUsed()+","+gc+","+gcMs+","+PocketService.ownedTicketRequests()+","+weak+","+strong+","+home+","+raw+","+full+","+block+","+entity+","+chunkCalls+","+RemoteTickets.transitions()+","+RemoteTickets.field("lastPreparedBlocks")+","+selection[0]+","+selection[1]+","+selection[2]+","+selection[3]+","+selection[4]+","+selection[5]+"\n");
         if(tick%20==0)csv.flush();
     }
     @SubscribeEvent public static void stopped(ServerStoppedEvent e)throws Exception{running=false;if(csv!=null){csv.close();csv=null;}}

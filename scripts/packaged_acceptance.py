@@ -11,7 +11,9 @@ logdir=base/'evidence';logdir.mkdir(exist_ok=True)
 jar=next(p for p in (root/'build/libs').glob('anya-storage-plus-*.jar') if not p.name.endswith('-sources.jar'))
 fixture=next(base.glob('anya-storage-acceptance-fixture-*.jar'))
 mods=server/'mods';mods.mkdir()
-inputs=[jar,fixture,*sorted((base/'dependencies').glob('*.jar'))]
+efficient=os.environ.get('ANYA_ROOM_TICKET_EXPERIMENT')=='true'
+extra=[next((root/'build/ticket-experiment').glob('*.jar'))] if efficient else []
+inputs=[jar,fixture,*extra,*sorted((base/'dependencies').glob('*.jar'))]
 for path in inputs:shutil.copy2(path,mods/path.name)
 (logdir/'runtime-inputs.json').write_text(json.dumps({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},indent=2))
 installer=base/'neoforge-installer.jar'
@@ -53,7 +55,7 @@ def failure():
             tail='\n'.join((logdir/(name+'.log')).read_text(errors='replace').splitlines()[-45:])
             raise RuntimeError(f'Unexpected process exit: {name}, code={code}\n{tail}')
 try:
-    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.multiAcceptance={str(multi).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
+    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.remoteTickets={str(efficient).lower()}',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.multiAcceptance={str(multi).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
     deadline=time.monotonic()+180
     while not (control/'server-ready').exists():
         failure()
@@ -85,7 +87,7 @@ try:
         print('ANYA_PACKAGED_MULTI_POCKET_ACCEPTANCE_OK',flush=True)
     elif room:
         assert srv.wait(timeout=45)==0,'Room server did not stop cleanly'
-        resume=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true','-Danya.roomAcceptance=true','-Danya.roomResume=true',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'room-restart-server')
+        resume=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.remoteTickets={str(efficient).lower()}','-Danya.roomAcceptance=true','-Danya.roomResume=true',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'room-restart-server')
         assert resume.wait(timeout=150)==0,'Room restart process failed';expected_dead.add(resume.pid)
         failure();assert (control/'ROOM_RESTART_PASSED').exists(),'Room restart verification missing'
         print('ANYA_PACKAGED_ROOM_ACCEPTANCE_OK',flush=True)

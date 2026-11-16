@@ -1,6 +1,7 @@
 package dev.anya.storage.ticketexperiment;
 
 import dev.anya.storage.pocket.*;
+import dev.anya.storage.ticketexperiment.mixin.TicketKeyAccess;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.*;
@@ -32,44 +33,46 @@ public final class RemoteTickets {
         return f.get(null);
     }catch(Exception e){throw new IllegalStateException(e);}}
     public static PocketLeases leases(){return (PocketLeases)field("LEASES");}
-    private static Object call(Object o,String name){try{var m=o.getClass().getDeclaredMethod(name);m.setAccessible(true);return m.invoke(o);}catch(Exception e){throw new IllegalStateException(e);}}
-    private static Key key(Object ticket){return new Key((ResourceKey<Level>)call(ticket,"dimension"),(ChunkPos)call(ticket,"chunk"),(UUID)call(ticket,"pocket"));}
+    private static final Map<ServerChunkCache,ResourceKey<Level>> DIMENSIONS=new IdentityHashMap<>();
+    private static final Set<Key> RECOVERY_KEYS=new HashSet<>();
+    private static EligibilitySnapshot.Decision decision=new EligibilitySnapshot.Decision(Set.of(),Set.of(),0,0,0);
+    private static TicketType<UUID> ticketType;
+    private static long syncs,selectionNanos,leaseScans,pocketScans,occupantTests,lookups;
+    public static void startTick(){syncs=selectionNanos=leaseScans=pocketScans=occupantTests=lookups=0;}
+    public static long[] selectionMetrics(){return new long[]{syncs,selectionNanos,leaseScans,pocketScans,occupantTests,lookups};}
+    private static Key key(Object ticket){var t=(TicketKeyAccess)ticket;return new Key(t.anya$dimension(),t.anya$chunk(),t.anya$pocket());}
     private static Key key(ServerChunkCache cache,ChunkPos p,Object owner){
-        for(ServerLevel l:server.getAllLevels())if(l.getChunkSource()==cache)return new Key(l.dimension(),p,(UUID)owner);
-        throw new IllegalStateException("Unknown ticket dimension");
+        var dimension=DIMENSIONS.get(cache);if(dimension==null)throw new IllegalStateException("Unknown ticket dimension");return new Key(dimension,p,(UUID)owner);
     }
-    private static TicketType<UUID> type(){return (TicketType<UUID>)field("TICKET");}
+    private static TicketType<UUID> type(){return ticketType==null?(TicketType<UUID>)field("TICKET"):ticketType;}
     private static PocketLedger ledger(){return (PocketLedger)field("ledger");}
-    private static long clock(){return (long)field("clock");}
-    private static Set<Key> recovery(){
-        Set<Key> result=new HashSet<>();
-        ((Map<?,?>)field("RECOVERY_TICKETS")).forEach((t,end)->{if(clock()<(long)end)result.add(key(t));});return result;
-    }
-    private static boolean desired(Key k){return recovery().contains(k)||leases().active().contains(k.owner());}
+    private static boolean desired(Key k){return RECOVERY_KEYS.contains(k)||decision.active().contains(k.owner());}
     private static int policy(Key k,int original){
-        if(!candidate()||original!=2||!k.dimension().equals(PocketService.DIMENSION)||recovery().contains(k))return original;
-        PocketLedger l=ledger();var r=l==null?null:l.get(k.owner());
-        if(r==null||r.stage()!=PocketLedger.Stage.READY||((Map<?,?>)field("PREPARING")).containsKey(r.id()))return original;
-        var owned=leases().snapshot().stream().filter(v->v.pocket().equals(r.id())).toList();
-        if(owned.isEmpty()||owned.stream().anyMatch(v->v.kind()!=PocketLeases.Kind.REMOTE))return original;
-        // A released visitor may still be waiting for safe recovery. Never downgrade around them.
-        for(var p:server.getPlayerList().getPlayers())if(PocketService.inPocket(p.level())){
-            var c=p.chunkPosition();if(c.x>=(r.x()-1)>>4&&c.x<=(r.x()+32)>>4&&c.z>=(r.z()-1)>>4&&c.z<=(r.z()+32)>>4)return original;
-        }
-        return 0;
+        lookups++;
+        return candidate()&&original==2&&k.dimension().equals(PocketService.DIMENSION)
+                &&!RECOVERY_KEYS.contains(k)&&decision.remoteOnly().contains(k.owner())?0:original;
     }
-    public static void beforeSync(MinecraftServer s){
-        server=s;
+    public static void beforeSync(MinecraftServer s,PocketLeases leases,PocketLedger ledger,Set<UUID> preparing,Set<UUID> pendingPlayers,
+                                  Map<?,Long> recovery,long clock,TicketType<UUID> type){
+        if(server!=s){if(!APPLIED.isEmpty())throw new IllegalStateException("New server with old tickets");DIMENSIONS.clear();for(var level:s.getAllLevels())DIMENSIONS.put(level.getChunkSource(),level.dimension());}
+        server=s;ticketType=type;syncs++;
         if(!candidate())return;
-        // Existing shared remote leases can upgrade/downgrade without changing their keys/deadlines.
-        for(var entry:new ArrayList<>(APPLIED.entrySet())){
+        long started=System.nanoTime();RECOVERY_KEYS.clear();
+        recovery.forEach((t,end)->{if(clock<end)RECOVERY_KEYS.add(key(t));});
+        var occupants=new ArrayList<EligibilitySnapshot.Occupant>();
+        for(var player:s.getPlayerList().getPlayers())if(PocketService.inPocket(player.level())){
+            var pos=player.chunkPosition();occupants.add(new EligibilitySnapshot.Occupant(pos.x,pos.z));
+        }
+        decision=EligibilitySnapshot.compute(leases.snapshot(),id->ledger==null?null:ledger.get(id),preparing,pendingPlayers,occupants,clock);
+        selectionNanos+=System.nanoTime()-started;leaseScans+=decision.leaseVisits();pocketScans+=decision.pocketVisits();occupantTests+=decision.occupantComparisons();
+        // Recompute each synchronization, not each tick: requests/recovery can change between calls.
+        for(var entry:APPLIED.entrySet()){
             Key k=entry.getKey();if(!desired(k))continue;
             int next=policy(k,2);if(next==entry.getValue())continue;
             var level=s.getLevel(k.dimension());if(level==null)throw new IllegalStateException("Live request lost dimension");
-            // Add stronger/weaker replacement before removing the exact previous rank: no ticket gap.
             level.getChunkSource().addRegionTicket(type(),k.chunk(),next,k.owner());
             level.getChunkSource().removeRegionTicket(type(),k.chunk(),entry.getValue(),k.owner());
-            APPLIED.put(k,next);transitions++;
+            entry.setValue(next);transitions++;
         }
     }
     public static <T> void add(ServerChunkCache cache,TicketType<T> type,ChunkPos pos,int original,T owner){
@@ -81,8 +84,8 @@ public final class RemoteTickets {
         if(type!=type())throw new IllegalStateException("Wrong removal ticket type");Key k=key(cache,pos,owner);
         Integer applied=APPLIED.remove(k);cache.removeRegionTicket(type,pos,applied==null?original:applied,owner);removes++;
     }
-    public static void afterSync(){
-        Set<Key> expected=new HashSet<>();for(Object t:(Set<?>)field("TICKETS"))expected.add(key(t));
+    public static void afterSync(Set<?> tickets){
+        Set<Key> expected=new HashSet<>();for(Object t:tickets)expected.add(key(t));
         if(!expected.equals(APPLIED.keySet()))throw new IllegalStateException("Applied ticket keys differ from original service");
         for(var e:APPLIED.entrySet())if(e.getValue()!=policy(e.getKey(),2))throw new IllegalStateException("Incorrect remote/home/visitor/recovery rank");
     }
