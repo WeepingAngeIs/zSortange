@@ -18,6 +18,11 @@ def memory():return {k:int(v.split()[0])*1024 for k,v in (l.split(':',1) for l i
 def optional_text(name):
     try:return Path(name).read_text()
     except OSError as error:return 'unavailable: '+str(error)
+def process_text(path,process):
+    try:return path.read_text()
+    except (FileNotFoundError,ProcessLookupError):
+        if process.poll() is None:raise
+        return None # Process exited between poll and procfs read. Exit/markers are still verified below.
 order=os.environ['ANYA_ALLOCATION_ORDER'];first=['baseline','candidate'] if order=='baseline-first' else ['candidate','baseline']
 # Two timing cases followed by a reversed diagnostic pair. No diagnostic operation in lean cases.
 cases=[(x,False) for x in first]+[(x,True) for x in reversed(first)]
@@ -68,12 +73,14 @@ def run(index,policy,diagnostic):
         try:
             while p.poll() is None:
                 sample+=1;elapsed=time.monotonic()-start;available=memory()['MemAvailable']
-                status=Path(f'/proc/{p.pid}/status');d={k:v.strip() for k,v in (l.split(':',1) for l in status.read_text().splitlines())} if status.exists() else {}
+                status_text=process_text(Path(f'/proc/{p.pid}/status'),p)
+                if status_text is None:break
+                d={k:v.strip() for k,v in (l.split(':',1) for l in status_text.splitlines())}
                 used=int(d.get('VmRSS','0 kB').split()[0])*1024;anon=int(d.get('RssAnon','0 kB').split()[0])*1024;pss=dirty=-1
                 if sample%5==0:
-                    sp=Path(f'/proc/{p.pid}/smaps_rollup')
-                    if sp.exists():
-                        vals={k:int(v.split()[0])*1024 for k,v in (l.split(':',1) for l in sp.read_text().splitlines() if ':' in l)};pss=vals.get('Pss',-1);dirty=vals.get('Private_Dirty',-1)
+                    smaps=process_text(Path(f'/proc/{p.pid}/smaps_rollup'),p)
+                    if smaps is None:break
+                    vals={k:int(v.split()[0])*1024 for k,v in (l.split(':',1) for l in smaps.splitlines() if ':' in l)};pss=vals.get('Pss',-1);dirty=vals.get('Private_Dirty',-1)
                 heartbeat=(out/'light-heartbeat').read_text().split(',') if (out/'light-heartbeat').exists() else ['0','startup','false']
                 w.writerow([round(elapsed,3),time.time_ns(),*heartbeat,used,anon,pss,dirty,available]);rss.flush()
                 failed=list(out.glob('FAILED*'))
