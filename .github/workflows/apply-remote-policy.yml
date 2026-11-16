@@ -1,0 +1,38 @@
+name: Apply reviewed isolated remote policy fixture
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/reviewed-remote-policy.*.b64', '.github/workflows/apply-remote-policy.yml']
+permissions:
+  contents: write
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact preconditioned test files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,lzma,subprocess
+          parts=[Path(f'scripts/reviewed-remote-policy.{i}.b64') for i in range(4)]
+          assert all(p.is_file() for p in parts)
+          raw=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='c867431c0708ac8641e666f6b77d743751754bffe3f59e94b5210207a83f026a'
+          changes=json.loads(raw)
+          for name,item in changes.items():
+              path=Path(name)
+              assert not path.is_absolute() and '..' not in path.parts and not name.startswith('.github/') and not name.startswith('src/main/'), 'Refusing non-fixture path'
+              old=item['prior']
+              assert (not path.exists()) if old is None else (path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest()==old), 'Source changed: '+name
+          for name,item in changes.items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(item['text'])
+          for p in parts:p.unlink()
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','--',*changes.keys(),*[str(p) for p in parts]],check=True)
+          subprocess.run(['git','commit','-m','Add isolated remote-only ticket experiment and real-client restart scenario'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
