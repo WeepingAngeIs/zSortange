@@ -1,13 +1,13 @@
 // Test-only runtime intervention; never included in the playable jar.
-sourceSets { ticketExperiment }
-neoForge.addModdingDependenciesTo(sourceSets.ticketExperiment)
+sourceSets.create('ticketExperiment')
+neoForge.addModdingDependenciesTo(sourceSets.getByName('ticketExperiment'))
 dependencies {
     ticketExperimentCompileOnly sourceSets.main.output
-    acceptanceCompileOnly sourceSets.ticketExperiment.output
+    acceptanceCompileOnly sourceSets.getByName('ticketExperiment').output
 }
 tasks.register('ticketExperimentJar', Jar) {
     dependsOn tasks.named('ticketExperimentClasses')
-    from sourceSets.ticketExperiment.output
+    from sourceSets.getByName('ticketExperiment').output
     archiveBaseName = 'anya-remote-ticket-experiment'
     destinationDirectory = layout.buildDirectory.dir('ticket-experiment')
 }
