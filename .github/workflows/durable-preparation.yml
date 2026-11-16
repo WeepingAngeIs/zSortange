@@ -7,12 +7,16 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: durable-preparation-${{ github.ref }}
+  group: durable-preparation-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 jobs:
-  semantics:
+  fixture:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [baseline-first, candidate-first, failure-cancel, cuts-restart]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,19 +28,90 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
-      - name: Inspect exact completion and unload semantics
+      - name: Compile isolated experiment and check delayed-completion owner-thread state machine
         run: |
-          gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle durableAuditClasspath
-          python3 scripts/durable_api_audit.py
-      - name: Preserve exact source
+          mkdir -p build/durable-compile build/durable-fence-test
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/durable-init.gradle jar durableProbeJar 2>&1 | tee build/durable-compile/compile.log
+          javac -d build/durable-fence-test src/durableProbe/java/dev/anya/storage/durable/DurableFence.java scripts/DurableFenceCheck.java
+          java -cp build/durable-fence-test DurableFenceCheck | tee build/durable-compile/fence.log
+      - name: Packaged preparation, actual IO faults, selected process cuts and bounded measurement
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.lane }}
+        run: |
+          set -o pipefail
+          python3 scripts/durable_runtime.py 2>&1 | tee build/durable-compile/controller.log
+      - name: Preserve exact executable source and hashes
         if: always()
         run: |
-          mkdir -p build/durable-audit
-          git rev-parse HEAD > build/durable-audit/SOURCE_COMMIT.txt
-          git archive --format=zip HEAD > build/durable-audit/source.zip
+          mkdir -p build/durable-compile
+          git rev-parse HEAD > build/durable-compile/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/durable-compile/source.zip
+          sha256sum build/libs/*.jar build/durable/*.jar > build/durable-compile/SHA256SUMS.txt || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: durable-semantics-${{ github.sha }}
-          path: build/durable-audit/
+          name: durable-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            build/durable-compile/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
+  clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: room
+            script: scripts/packaged_acceptance.py
+            evidence: build/acceptance/evidence
+          - scenario: transitions-shutdown
+            script: scripts/remote_ticket_acceptance.py
+            evidence: build/remote-policy/evidence
+          - scenario: cold-recovery
+            script: scripts/cold_recovery_acceptance.py
+            evidence: build/cold-recovery/evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build exact experiment and actual-client fixtures
+        run: |
+          mkdir -p '${{ matrix.evidence }}'
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/durable-init.gradle jar durableProbeJar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PdurableProbe -PticketExperiment 2>&1 | tee '${{ matrix.evidence }}/compile.log'
+      - name: Install isolated software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Exact-candidate real-client room, cold recovery or active-session lifecycle regression
+        env:
+          JAVA_TOOL_OPTIONS: '-Danya.nonblockingPrepare=true'
+          ANYA_DURABLE_PROBE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: room
+          ANYA_ROOM_TICKET_EXPERIMENT: 'true'
+          ANYA_PAIR_ORDER: baseline-first
+          ANYA_COLD_POLICY: candidate
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 '${{ matrix.script }}' 2>&1 | tee '${{ matrix.evidence }}/controller.log'
+      - name: Preserve exact executable source and hashes
+        if: always()
+        run: |
+          mkdir -p '${{ matrix.evidence }}'
+          git rev-parse HEAD > '${{ matrix.evidence }}/SOURCE_COMMIT.txt'
+          git archive --format=zip HEAD > '${{ matrix.evidence }}/source.zip'
+          sha256sum build/libs/*.jar build/durable/*.jar build/ticket-experiment/*.jar > '${{ matrix.evidence }}/SHA256SUMS.txt' || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: durable-clients-${{ matrix.scenario }}-${{ github.sha }}
+          path: ${{ matrix.evidence }}/
           if-no-files-found: error
