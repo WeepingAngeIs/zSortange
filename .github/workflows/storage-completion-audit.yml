@@ -1,0 +1,37 @@
+name: Pinned auxiliary storage completion audit
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/storage_completion_audit.py', '.github/workflows/storage-completion-audit.yml']
+permissions:
+  contents: read
+jobs:
+  semantics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Inspect pinned POI persistence and error propagation
+        run: |
+          gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle durableAuditClasspath
+          python3 scripts/storage_completion_audit.py
+      - name: Source provenance
+        if: always()
+        run: |
+          mkdir -p build/durable-audit
+          git rev-parse HEAD > build/durable-audit/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: auxiliary-storage-semantics-${{ github.sha }}
+          path: build/durable-audit/
+          if-no-files-found: error
