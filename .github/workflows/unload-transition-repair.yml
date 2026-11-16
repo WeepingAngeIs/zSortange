@@ -1,0 +1,49 @@
+name: Targeted unload transition monitor repair
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/heartbeat_reader_test.py', 'scripts/remote_ticket_acceptance.py', 'scripts/unload_transition_retry.py', '.github/workflows/unload-transition-repair.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  candidate-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Validate incomplete telemetry and compile bit-identical experimental binaries
+        run: |
+          mkdir -p build/remote-policy/evidence
+          set -o pipefail
+          python3 scripts/heartbeat_reader_test.py | tee build/remote-policy/evidence/heartbeat-test.log
+          gradle --no-daemon --max-workers=2 -I scripts/durable-init.gradle jar durableProbeJar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PdurableProbe -PticketExperiment 2>&1 | tee build/remote-policy/evidence/compile.log
+          printf '%s\n' '5e920929800ac56b0a5640c4992622b9f01d6638e63be4b176c4767c5383ba11  build/libs/anya-storage-plus-0.3.0-beta.6.jar' '4a6822977c2136f1499adaef2f5d36d0f2dcba96b63318ebbc98f86a4f8de2e9  build/durable/anya-durable-preparation-experiment-0.3.0-beta.6.jar' '6aa9f312cc2b526a86b2122510d50021845a9b12aa8039298af2012748d30bcd  build/ticket-experiment/anya-remote-ticket-experiment-0.3.0-beta.6.jar' | sha256sum -c -
+      - name: Prepare isolated software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Verify only the interrupted real-client candidate lifecycle from a fresh world
+        env:
+          JAVA_TOOL_OPTIONS: '-Danya.nonblockingPrepare=true -Danya.unloadExperiment=true -Danya.deferUnload=true'
+          ANYA_DURABLE_PROBE: 'true'
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/unload_transition_retry.py 2>&1 | tee build/remote-policy/evidence/controller.log
+      - name: Preserve exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/remote-policy/evidence
+          git rev-parse HEAD > build/remote-policy/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/remote-policy/evidence/source.zip
+          sha256sum build/libs/*.jar build/durable/*.jar build/ticket-experiment/*.jar > build/remote-policy/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unload-transition-repair-${{ github.sha }}
+          path: build/remote-policy/evidence/
+          if-no-files-found: error

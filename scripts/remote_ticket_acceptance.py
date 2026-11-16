@@ -29,6 +29,17 @@ def terminate(p):
         try:p.wait(timeout=15)
         except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=10)
 
+def heartbeat_phase(path: Path) -> str:
+    """Best-effort telemetry label; missing/partial data never skips resource or timeout checks."""
+    try:
+        value=path.read_text()
+    except FileNotFoundError:
+        return 'heartbeat-missing'
+    parts=value.strip().split(',',1)
+    if len(parts)!=2 or not parts[0].isdigit() or not parts[1] or any(c in parts[1] for c in ',\r\n'):
+        return 'heartbeat-incomplete'
+    return parts[1]
+
 def run_case(name,candidate):
     case=BASE/name;assert not case.exists();case.mkdir();world=case/'server';world.mkdir();evidence=OUT/name;evidence.mkdir()
     shutil.copytree(RUNTIME/'libraries',world/'libraries',copy_function=os.link);(world/'mods').mkdir()
@@ -89,8 +100,8 @@ def run_case(name,candidate):
                     available=memory()['MemAvailable'];rows=[r.split() for r in output(['ps','-e','-o','pid=,pgid=,rss=']).splitlines()]
                     groups={p.pid for p in procs if p.poll() is None}
                     total=sum(int(r[2])*1024 for r in rows if int(r[1]) in groups);srss=sum(int(r[2])*1024 for r in rows if int(r[1])==srv.pid)
-                    beat=(ctrl/'heartbeat').read_text().split(',') if (ctrl/'heartbeat').exists() else ['0','startup']
-                    rss.write(f'{time.monotonic()-start:.3f},{beat[1]},{srss},{total},{available}\n');rss.flush()
+                    phase=heartbeat_phase(ctrl/'heartbeat')
+                    rss.write(f'{time.monotonic()-start:.3f},{phase},{srss},{total},{available}\n');rss.flush()
                     if available<2*1024**3 or total>6*1024**3 or srss>3*1024**3:raise RuntimeError('Protective resource ceiling reached; stop before exhausting runner')
                     if time.monotonic()>deadline:raise TimeoutError('Network scenario ceiling')
                     time.sleep(1)
