@@ -1,0 +1,35 @@
+name: Pinned unload generation-reference audit
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['.github/workflows/unload-semantics.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Export pinned reference lifecycle signatures and bytecode
+        run: |
+          gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle durableAuditClasspath
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('scripts/durable_api_audit.py').read_text()
+          text=text.replace("classes=['net.minecraft.server.level.ChunkMap'", "classes=['net.minecraft.server.level.ChunkGenerationTask','net.minecraft.server.level.GeneratingChunkMap','net.minecraft.util.StaticCache2D','net.minecraft.server.level.ChunkMap'")
+          exec(compile(text,'scripts/durable_api_audit.py','exec'))
+          PY
+          git rev-parse HEAD > build/durable-audit/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unload-reference-semantics-${{ github.sha }}
+          path: build/durable-audit/
+          if-no-files-found: error
