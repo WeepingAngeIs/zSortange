@@ -1,0 +1,59 @@
+name: Packaged unloaded-home and unsafe-fallback recovery
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/acceptance/java/dev/anya/storage/acceptance/ColdRecoveryProbe.java', 'src/ticketExperiment/**', 'scripts/cold_recovery_acceptance.py', '.github/workflows/cold-recovery.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cold-recovery-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        policy: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Compile unchanged playable JAR and separate recovery fixture
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build/cold-recovery/evidence
+          gradle --no-daemon --max-workers=2 jar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PticketExperiment 2>&1 | tee build/cold-recovery/evidence/compile.log
+      - name: Install disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Test cold home and spawn with actual clients and unresolved restart
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_COLD_POLICY: ${{ matrix.policy }}
+        shell: bash
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/cold_recovery_acceptance.py 2>&1 | tee build/cold-recovery/evidence/orchestrator.log
+      - name: Record exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/cold-recovery/evidence
+          git rev-parse HEAD > build/cold-recovery/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/cold-recovery/evidence/source.zip
+          sha256sum build/libs/*.jar build/ticket-experiment/*.jar > build/cold-recovery/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cold-recovery-${{ matrix.policy }}-${{ github.sha }}
+          path: build/cold-recovery/evidence/
+          if-no-files-found: error

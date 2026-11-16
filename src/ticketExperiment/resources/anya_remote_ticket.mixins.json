@@ -1,1 +1,1 @@
-{"required":true,"minVersion":"0.8","package":"dev.anya.storage.ticketexperiment.mixin","compatibilityLevel":"JAVA_21","mixins":["RemoteTicketMixin","RemoteChunkMixin"],"injectors":{"defaultRequire":1}}
+{"required":true,"minVersion":"0.8","package":"dev.anya.storage.ticketexperiment.mixin","compatibilityLevel":"JAVA_21","mixins":["RemoteTicketMixin","RemoteChunkMixin","ColdRecoveryMixin","ColdRouterMixin"],"injectors":{"defaultRequire":1}}
