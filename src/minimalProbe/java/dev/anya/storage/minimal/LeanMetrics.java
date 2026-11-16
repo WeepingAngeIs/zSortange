@@ -28,7 +28,7 @@ public final class LeanMetrics {
  private static Recording recording;
  private static TickSpan span;
  @Name("anya.MinimalDrainTick") @Label("Pocket drainage tick") @Category("Anya isolated profiling") @StackTrace(false)
- public static final class TickSpan extends Event {public long tick;public String phase;public long unloadNs;public long saveNs;public long serializeNs;public long distanceNs;public long cacheTickNs;public long levelUnloadNs;}
+ public static final class TickSpan extends jdk.jfr.Event {public long tick;public String phase;public long unloadNs;public long saveNs;public long serializeNs;public long distanceNs;public long cacheTickNs;public long levelUnloadNs;}
  public static void begin(int i){if(server==null||!server.isSameThread())return;if(depth[i]++==0)began[i]=System.nanoTime();}
  public static void end(int i){if(server==null||!server.isSameThread())return;if(--depth[i]==0){long n=System.nanoTime()-began[i];nanos[i]+=n;max[i]=Math.max(max[i],n);calls[i]++;}}
  @SubscribeEvent(priority=EventPriority.HIGHEST) public static void pre(ServerTickEvent.Pre e)throws Exception{
