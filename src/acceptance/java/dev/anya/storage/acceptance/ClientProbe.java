@@ -101,6 +101,31 @@ public final class ClientProbe {
         AnyaStorage.LOG.info("ANYA_ROOM_CLIENT_GRID_OK capacity={} offset={} display=0 physical=216 count={} revision={}",m.capacity(),m.firstSlot(),sample.getCount(),m.revision());
         ack();
     }
+    /** Multi-pocket fixture uses synced production menus and a single fresh-revision withdrawal. */
+    private static void multiView(Minecraft mc,String action,String name,int expected){
+        Acceptance.require(ticks<=200,"Multi-pocket client deadline: "+action);
+        if(!(mc.player.containerMenu instanceof StoreMenu m)||ticks<5)return;
+        Acceptance.require(!m.privateView()&&m.capacity()==216&&m.firstSlot()==0,"Wrong multi-pocket capacity/privacy/offset");
+        var sample=m.getSlot(0).getItem();String title="Pocket "+name+" sample";
+        if(action.equals("multiwithdraw")&&withdrawSentAt>=0){
+            if(ticks-withdrawSentAt<15)return;
+            if(sample.getCount()==expected-1&&sample.getHoverName().getString().equals(title)){
+                shot("multi-"+name+"-withdrawn");ack();return;
+            }
+            Acceptance.require(ticks-withdrawSentAt<60,"Single multi-pocket withdrawal failed; not retried");return;
+        }
+        Acceptance.require(sample.is(name.equals("Alpha")?Items.DIAMOND:Items.EMERALD)&&sample.getCount()==expected&&sample.getHoverName().getString().equals(title),"Cross-pocket content mismatch: "+title);
+        for(int i=0;i<m.shownSlots();i++){
+            var other=m.getSlot(i).getItem();
+            Acceptance.require(other.isEmpty()||other.getHoverName().getString().equals(title),"Another pocket leaked into displayed storage");
+        }
+        if(action.equals("multiview")){shot("multi-"+name+"-view-"+work.sequence());ack();return;}
+        if(depositRevision<0){depositRevision=m.revision();return;}
+        if(m.revision()==depositRevision)return;
+        saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",256);
+        PacketDistributor.sendToServer(saved);withdrawSentAt=ticks;
+        AnyaStorage.LOG.info("ANYA_MULTI_CLIENT_WITHDRAW_ONCE name={} count={} revision={}",name,expected,m.revision());
+    }
     private static void requestViewport(StoreMenu m,int offset){
         Acceptance.require(++viewportAttempts<=24,"Viewport retry bound exceeded");
         expectedOffset=offset;viewportRequestedAt=ticks;
@@ -119,6 +144,7 @@ public final class ClientProbe {
             if(age>18000)throw new IllegalStateException("Client acceptance deadline exceeded");
             if(work==null||mc.player==null||mc.level==null||mc.getOverlay()!=null)return;
             ticks++;String[] a=work.action().split(" ");String action=a[0];
+            if(action.equals("multiview")||action.equals("multiwithdraw")){multiView(mc,action,a[1],Integer.parseInt(a[2]));return;}
             if(action.equals("withdrawone")){withdrawLocatedSample(mc);return;}
             if(action.equals("roomdeposit")){depositRoomSample(mc);return;}
             if(action.equals("roomnetwork")){inspectExpandedRoom(mc);return;}
@@ -135,6 +161,7 @@ public final class ClientProbe {
                         saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",index);
                         PacketDistributor.sendToServer(saved);
                     }
+                    case "multicapture" -> {Acceptance.require(mc.player.containerMenu instanceof StoreMenu,"No menu to capture");StoreMenu m=(StoreMenu)mc.player.containerMenu;saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",256);}
                     case "stale" -> {Acceptance.require(saved!=null,"No captured stale packet");PacketDistributor.sendToServer(saved);}
                     case "walk" -> {mc.player.closeContainer();mc.player.setYRot(180);mc.player.setXRot(12);mc.options.keyUp.setDown(true);shot("walk-start");}
                     case "respawn" -> mc.player.respawn();

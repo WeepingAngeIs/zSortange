@@ -22,6 +22,7 @@ with (logdir/'installer.log').open('w') as log:
 (server/'eula.txt').write_text('eula=true\n')
 (server/'server.properties').write_text('level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nonline-mode=false\nview-distance=3\nsimulation-distance=2\nspawn-protection=0\nserver-ip=127.0.0.1\nserver-port=25577\nallow-flight=true\nmax-tick-time=120000\n')
 room=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='room'
+multi=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='multi'
 processes=[];handles=[]
 def launch(cmd,cwd,name):
     log=(logdir/(name+'.log')).open('w');handles.append(log)
@@ -36,16 +37,23 @@ def failure():
     found=list(control.glob('FAILED*'))
     if found:raise RuntimeError('\n'.join(p.read_text() for p in found))
 try:
-    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
+    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.multiAcceptance={str(multi).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
     deadline=time.monotonic()+180
     while not (control/'server-ready').exists():
         failure()
         if srv.poll() is not None:raise RuntimeError('Packaged server exited before ready')
         if time.monotonic()>deadline:raise TimeoutError('Packaged server startup')
         time.sleep(1)
-    alpha=client('Alpha');beta=client('Beta');killed=False;restarted=False;deadline=time.monotonic()+720
+    alpha=client('Alpha');beta=client('Beta');killed=False;restarted=False;cycles_killed=set();cycles_restarted=set();deadline=time.monotonic()+720
     while not (control/'PASSED').exists():
         failure()
+        if multi:
+            for cycle in (1,2):
+                if (control/f'kill-beta-{cycle}').exists() and cycle not in cycles_killed:
+                    os.killpg(beta.pid,signal.SIGKILL);beta.wait(timeout=15);cycles_killed.add(cycle)
+                    (logdir/f'socket-kill-{cycle}.txt').write_text('SIGKILL real Beta Minecraft client process group; not an API logout.\n')
+                if cycle in cycles_killed and cycle not in cycles_restarted and (control/f'restart-beta-{cycle}').exists():
+                    beta=client('Beta',f'-reconnect-{cycle}');cycles_restarted.add(cycle)
         if (control/'kill-beta').exists() and not killed:
             os.killpg(beta.pid,signal.SIGKILL);beta.wait(timeout=15);killed=True
             (logdir/'socket-kill.txt').write_text('Killed real Beta Minecraft JVM process group with SIGKILL, not an API logout callback.\n')
@@ -54,8 +62,14 @@ try:
         if alpha.poll() is not None:raise RuntimeError('Alpha real client exited')
         if time.monotonic()>deadline:raise TimeoutError('Real client acceptance')
         time.sleep(1)
-    assert killed and restarted, 'Socket test not exercised'
-    if room:
+    assert (cycles_killed=={1,2} and cycles_restarted=={1,2}) if multi else (killed and restarted), 'Socket test not exercised'
+    if multi:
+        assert srv.wait(timeout=45)==0,'Multi-pocket server did not stop cleanly'
+        resume=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true','-Danya.multiAcceptance=true','-Danya.multiResume=true',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'multi-restart-server')
+        assert resume.wait(timeout=150)==0,'Multi-pocket restart process failed'
+        failure();assert (control/'MULTI_RESTART_PASSED').exists(),'Multi-pocket restart verification missing'
+        print('ANYA_PACKAGED_MULTI_POCKET_ACCEPTANCE_OK',flush=True)
+    elif room:
         assert srv.wait(timeout=45)==0,'Room server did not stop cleanly'
         resume=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true','-Danya.roomAcceptance=true','-Danya.roomResume=true',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'room-restart-server')
         assert resume.wait(timeout=150)==0,'Room restart process failed'

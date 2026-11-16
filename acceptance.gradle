@@ -56,3 +56,9 @@ tasks.register('exportAcceptanceLaunches') {
 }
 // Match the accepted playable binary across independent CI lanes.
 tasks.withType(Jar).configureEach { preserveFileTimestamps = false; reproducibleFileOrder = true }
+
+tasks.register('multiPocketLeaseTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.MultiPocketLeaseTests'
+}
