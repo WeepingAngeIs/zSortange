@@ -12,6 +12,7 @@ assert hashlib.sha256(JAR.read_bytes()).hexdigest()==EXPECTED,'Do not change pro
 FIXTURE=next(LAUNCH.glob('anya-storage-acceptance-fixture-*.jar'))
 EXPERIMENT=next((ROOT/'build/ticket-experiment').glob('*.jar'))
 INPUTS=[JAR,FIXTURE,EXPERIMENT,*sorted((LAUNCH/'dependencies').glob('*.jar'))]
+if os.environ.get('ANYA_DURABLE_PROBE')=='true':INPUTS.append(next((ROOT/'build/durable').glob('*.jar')))
 (OUT/'runtime-inputs.json').write_text(json.dumps({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in INPUTS},indent=2))
 def output(cmd): return subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=True).stdout
 def memory(): return {k:int(v.split()[0])*1024 for k,v in (l.split(':',1) for l in Path('/proc/meminfo').read_text().splitlines())}

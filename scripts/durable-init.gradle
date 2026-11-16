@@ -1,0 +1,4 @@
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.apply from:p.file('durable.gradle')
+}

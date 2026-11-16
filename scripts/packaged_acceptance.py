@@ -14,6 +14,7 @@ mods=server/'mods';mods.mkdir()
 efficient=os.environ.get('ANYA_ROOM_TICKET_EXPERIMENT')=='true'
 extra=[next((root/'build/ticket-experiment').glob('*.jar'))] if efficient else []
 inputs=[jar,fixture,*extra,*sorted((base/'dependencies').glob('*.jar'))]
+if os.environ.get('ANYA_DURABLE_PROBE')=='true':inputs.append(next((root/'build/durable').glob('*.jar')))
 for path in inputs:shutil.copy2(path,mods/path.name)
 (logdir/'runtime-inputs.json').write_text(json.dumps({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs},indent=2))
 installer=base/'neoforge-installer.jar'
