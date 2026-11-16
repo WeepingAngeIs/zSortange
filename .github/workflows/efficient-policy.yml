@@ -1,0 +1,116 @@
+name: Efficient per-pocket selection and maximum-cap churn
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/ticketExperiment/**', 'src/ticketExperimentTest/**', 'scripts/efficient_churn.py', 'scripts/packaged_acceptance.py', '.github/workflows/efficient-policy.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: efficient-policy-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  churn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [baseline-first, candidate-first]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Compile exact unchanged playable and isolated candidate
+        run: |
+          mkdir -p build/efficient-churn/evidence build/eligibility-tests
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 jar ticketExperimentJar 2>&1 | tee build/efficient-churn/evidence/compile.log
+          javac -d build/eligibility-tests src/main/java/dev/anya/storage/pocket/PocketLeases.java src/main/java/dev/anya/storage/pocket/PocketLedger.java src/ticketExperiment/java/dev/anya/storage/ticketexperiment/EligibilitySnapshot.java src/ticketExperimentTest/java/dev/anya/storage/ticketexperiment/EligibilityTests.java
+          java -cp build/eligibility-tests dev.anya.storage.ticketexperiment.EligibilityTests | tee build/efficient-churn/evidence/selector-test.log
+      - name: Counterbalanced bounded eight-pocket mixed churn and recovery contention
+        env:
+          ANYA_CHURN_ORDER: ${{ matrix.order }}
+        run: |
+          set -o pipefail
+          python3 scripts/efficient_churn.py 2>&1 | tee build/efficient-churn/evidence/controller.log
+      - name: Record exact executable provenance
+        if: always()
+        run: |
+          mkdir -p build/efficient-churn/evidence
+          git rev-parse HEAD > build/efficient-churn/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/efficient-churn/evidence/source.zip
+          sha256sum build/libs/*.jar build/ticket-experiment/*.jar > build/efficient-churn/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: efficient-churn-${{ matrix.order }}-${{ github.sha }}
+          path: build/efficient-churn/evidence/
+          if-no-files-found: error
+  clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: room-candidate
+            script: scripts/packaged_acceptance.py
+            evidence: build/acceptance/evidence
+          - scenario: transitions-paired
+            script: scripts/remote_ticket_acceptance.py
+            evidence: build/remote-policy/evidence
+          - scenario: cold-baseline
+            script: scripts/cold_recovery_acceptance.py
+            evidence: build/cold-recovery/evidence
+          - scenario: cold-candidate
+            script: scripts/cold_recovery_acceptance.py
+            evidence: build/cold-recovery/evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build identical candidate with actual-client fixture
+        run: |
+          mkdir -p "${{ matrix.evidence }}"
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 jar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PticketExperiment 2>&1 | tee "${{ matrix.evidence }}/compile.log"
+      - name: Install isolated software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Required actual-client candidate regression
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: room
+          ANYA_ROOM_TICKET_EXPERIMENT: 'true'
+          ANYA_PAIR_ORDER: baseline-first
+          ANYA_COLD_POLICY: ${{ matrix.scenario == 'cold-candidate' && 'candidate' || 'baseline' }}
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 "${{ matrix.script }}" 2>&1 | tee "${{ matrix.evidence }}/controller.log"
+      - name: Record exact executable provenance
+        if: always()
+        run: |
+          mkdir -p "${{ matrix.evidence }}"
+          git rev-parse HEAD > "${{ matrix.evidence }}/SOURCE_COMMIT.txt"
+          git archive --format=zip HEAD > "${{ matrix.evidence }}/source.zip"
+          sha256sum build/libs/*.jar build/ticket-experiment/*.jar > "${{ matrix.evidence }}/SHA256SUMS.txt" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: efficient-regression-${{ matrix.scenario }}-${{ github.sha }}
+          path: ${{ matrix.evidence }}/
+          if-no-files-found: error
