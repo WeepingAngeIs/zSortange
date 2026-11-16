@@ -35,7 +35,7 @@ public final class ColdRecoveryProbe {
     private static Step step;
     private static int tick,since,sequence,completed;
     private static long betaDeadline;
-    private static boolean running,resume;
+    private static boolean running,resume,restoreFallbackAtLogin;
     public static boolean active(){return Boolean.getBoolean("anya.coldRecoveryAcceptance");}
     private static ServerPlayer a(){return server.getPlayerList().getPlayerByName("AnyaQAAlpha");}
     private static ServerPlayer b(){return server.getPlayerList().getPlayerByName("AnyaQABeta");}
@@ -81,7 +81,24 @@ public final class ColdRecoveryProbe {
         check(absent(returnPos()),"Home is not genuinely unloaded");check(absent(SPAWN),"Fallback spawn is not genuinely unloaded");
         ColdRecoveryAudit.phase=label;ColdRecoveryAudit.expectCold(server.overworld(),returnPos(),alphaId);
         if(spawn)ColdRecoveryAudit.expectCold(server.overworld(),SPAWN,alphaId);
+        // A ServerPlayer login may prepare the shared spawn before its saved dimension is restored.
+        // Stage login elsewhere; restoring the fallback on login must not itself load that target.
+        server.overworld().setDefaultSpawnPos(HB,0);restoreFallbackAtLogin=true;
+        check(absent(returnPos())&&absent(SPAWN),"Login staging loaded a recovery target");
         Acceptance.marker("COLD-"+label,"homeAbsent=true spawnAbsent=true; no observer chunk load; "+returnPos()+" / "+SPAWN);
+    }
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void loggedIn(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent event){
+        if(!active()||!(event.getEntity() instanceof ServerPlayer p)||p.getServer()!=server)return;
+        try{
+            if(p.getGameProfile().getName().equals("AnyaQABeta"))Acceptance.marker("BETA_LOGGED_IN","Actual Beta joined before Alpha is launched");
+            if(restoreFallbackAtLogin&&p.getUUID().equals(alphaId)){
+                check(absent(SPAWN),"Login warmed the fallback despite separate staging");
+                server.overworld().setDefaultSpawnPos(SPAWN,0);
+                check(absent(SPAWN),"Changing shared spawn loaded the fallback before recovery");
+                restoreFallbackAtLogin=false;
+                Acceptance.marker("FALLBACK-RESTORED-"+tick,"Fixture restored shared spawn after login; target remained unloaded. Recovery itself is unmodified.");
+            }
+        }catch(Throwable error){running=false;Acceptance.marker("FAILED-cold-login-staging",error.toString());AnyaStorage.LOG.error("ANYA_COLD_LOGIN_STAGING_FAILED",error);server.halt(false);}
     }
     private static void cycle(int n,String label,boolean spawn){
         add("kill-visitor-"+n,()->{server.saveEverything(true,true,true);Acceptance.marker("kill-alpha-"+n,"SIGKILL actual visiting Alpha client");},()->a()==null,()->{check(PocketService.lease(alphaId)==null&&ledger().returning(alphaId)!=null,"Logout lost recovery marker or retained lease");beta();});

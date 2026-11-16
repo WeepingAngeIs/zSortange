@@ -55,7 +55,14 @@ for leg,marker in [('seed','UNSAFE_STOP_ARMED'),('resume','PASSED')]:
             failed();assert srv.poll() is None,'Server exited before ready'
             if time.monotonic()>deadline:raise TimeoutError('Cold fixture startup/drain')
             time.sleep(1)
-        alpha=client('Alpha');beta=client('Beta');killed=set();restarted=set();start=time.monotonic();deadline=start+720
+        # Complete Beta login before Alpha can restore the still-cold fallback spawn.
+        # This avoids a second constructor warming that fallback in the same tick.
+        beta=client('Beta');login_deadline=time.monotonic()+180
+        while not (ctrl/'BETA_LOGGED_IN').exists():
+            failed();assert srv.poll() is None and beta.poll() is None,'Server/Beta exited before login'
+            if time.monotonic()>login_deadline:raise TimeoutError('Beta login staging')
+            time.sleep(1)
+        alpha=client('Alpha');killed=set();restarted=set();start=time.monotonic();deadline=start+720
         with (out/'rss.csv').open('w') as rss:
             rss.write('elapsed_s,server_rss_bytes,process_group_rss_bytes,host_available_bytes\n')
             while srv.poll() is None:
