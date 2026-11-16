@@ -1,0 +1,1 @@
+{"required": true, "minVersion": "0.8", "package": "dev.anya.storage.pressure.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["AdmissionMixin", "ReceiptMixin", "PressureFaultMixin", "RecoveryFairnessMixin"], "injectors": {"defaultRequire": 1}}
