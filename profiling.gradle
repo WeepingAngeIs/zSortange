@@ -1,0 +1,10 @@
+// Isolated load-profiling fixture. Nothing here is included in the playable JAR.
+sourceSets { profiling }
+neoForge.addModdingDependenciesTo(sourceSets.profiling)
+dependencies { profilingCompileOnly sourceSets.main.output }
+tasks.register('profilingJar', Jar) {
+    dependsOn tasks.named('profilingClasses')
+    from sourceSets.profiling.output
+    archiveBaseName = 'anya-storage-profile-fixture'
+    destinationDirectory = layout.buildDirectory.dir('profiling')
+}

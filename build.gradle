@@ -119,3 +119,5 @@ tasks.register('roomBoundsTest', JavaExec) {
     mainClass = 'dev.anya.storage.RoomBoundsTests'
 }
 tasks.named('check') { dependsOn tasks.named('roomBoundsTest') }
+
+apply from: 'profiling.gradle'

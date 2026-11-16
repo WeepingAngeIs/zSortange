@@ -1,0 +1,51 @@
+name: Bounded packaged pocket resource profiling
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/profiling/**', 'profiling.gradle', 'scripts/pocket_profile.py', '.github/workflows/profile.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pocket-profile-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build unchanged beta.6 and separate profiling fixture
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build/profiling/evidence
+          gradle --no-daemon --max-workers=2 jar profilingJar 2>&1 | tee build/profiling/evidence/compile.log
+          sha256sum build/libs/anya-storage-plus-0.3.0-beta.6.jar
+      - name: Bounded baseline and test-only ticket experiment
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 scripts/pocket_profile.py 2>&1 | tee build/profiling/evidence/orchestrator.log
+      - name: Export exact source and checksums
+        if: always()
+        run: |
+          mkdir -p build/profiling/evidence
+          git rev-parse HEAD > build/profiling/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/profiling/evidence/source.zip
+          sha256sum build/libs/*.jar build/profiling/*.jar > build/profiling/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bounded-profile-${{ github.sha }}
+          path: build/profiling/evidence/
+          if-no-files-found: error
