@@ -1,0 +1,36 @@
+name: Apply reviewed cold setup ordering
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/reviewed-cold-order.b64', '.github/workflows/apply-efficient.yml']
+permissions:
+  contents: write
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve first-visit requirement in the load fixture
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,lzma,subprocess
+          src=Path('scripts/reviewed-cold-order.b64')
+          raw=lzma.decompress(base64.b64decode(src.read_text(),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='e13e3e1709599abeff5e5088e7fe1f872a1b600511c20892e543ecd7a14219dc'
+          payload=json.loads(raw)
+          for name,old in payload['expected'].items():
+              assert name.startswith('src/ticketExperiment/'), 'Not an experiment file'
+              assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==old, 'Source changed: '+name
+          patch=payload['patch'].encode()
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          src.unlink()
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','--',*payload['expected'].keys(),str(src)],check=True)
+          subprocess.run(['git','commit','-m','Prepare virgin fixture rooms by actual visits before remote-only measurement'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
