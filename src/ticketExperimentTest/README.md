@@ -9,3 +9,5 @@ The engine churn fixture visits RESERVED rooms before requesting remote storage.
 Use the exact final source's `Efficient per-pocket selection and maximum-cap churn` workflow artifacts. Its two fresh-world/JVM baseline/candidate pairs have reversed run order. The stress jobs use 17 embedded-connection server identities, with at most 16 leases and eight active pockets, not 17 real clients. Separate jobs use actual client JVMs for room editing, cold recovery and remote/visitor/socket/shutdown transitions against the identical experiment artifact.
 
 The early ordering and deadline-expectation failures are retained as fixture failures, not erased or counted as passing production evidence. No mutating item-transfer retry is introduced. Production source, beta.6 format and experimental gates are unchanged.
+
+All actual-client launchers isolate native extraction per JVM/leg/reconnect. The transition launcher now uses the same scoped isolation as the repaired room harness and supervises both clients, preserving explicit planned SIGKILLs. This fixes the native-loader infrastructure gap without changing any game action or assertion.

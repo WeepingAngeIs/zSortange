@@ -40,9 +40,9 @@ def run_case(name,candidate):
         out=evidence/leg;out.mkdir();ctrl=out/'control';ctrl.mkdir()
         if control.is_symlink():control.unlink()
         assert not control.exists();control.symlink_to(ctrl,target_is_directory=True)
-        procs=[];logs=[]
-        def launch(cmd,cwd,label):
-            h=(out/(label+'.log')).open('w');logs.append(h);p=subprocess.Popen(cmd,cwd=cwd,stdout=h,stderr=subprocess.STDOUT,start_new_session=True);procs.append(p);return p
+        procs=[];logs=[];clients=[];planned_kills=set();native_launches=[]
+        def launch(cmd,cwd,label,env=None):
+            h=(out/(label+'.log')).open('w');logs.append(h);p=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=h,stderr=subprocess.STDOUT,start_new_session=True);procs.append(p);return p
         def failed():
             files=list(ctrl.glob('FAILED*'))
             if files:raise RuntimeError('\n'.join(p.name+': '+p.read_text() for p in files))
@@ -51,7 +51,15 @@ def run_case(name,candidate):
             gd.mkdir(exist_ok=True);(gd/'options.txt').write_text('enableVsync:false\nmaxFps:25\nrenderDistance:3\nsimulationDistance:2\nguiScale:2\npauseOnLostFocus:false\n')
             # Remove only screenshots created by earlier legs of this same disposable harness.
             if (gd/'screenshots').exists():shutil.rmtree(gd/'screenshots')
-            return launch(cfg['command'],gd,'client-'+role+suffix)
+            # Each case, leg and reconnect gets fresh native/temp directories, never a user's path.
+            private=case/'client-native'/leg/(role+(suffix or '-initial'))
+            private.mkdir(parents=True,exist_ok=False);tmp=private/'tmp';tmp.mkdir();native=private/'lwjgl';native.mkdir()
+            options=f'-Djava.io.tmpdir={tmp} -Dorg.lwjgl.system.SharedLibraryExtractPath={native} -Dorg.lwjgl.util.DebugLoader=true'
+            env=os.environ.copy();env['JAVA_TOOL_OPTIONS']=(env.get('JAVA_TOOL_OPTIONS','')+' '+options).strip()
+            label='client-'+role+suffix
+            native_launches.append({'role':role,'suffix':suffix,'tmp':str(tmp),'extraction':str(native),'options':options})
+            (out/'client-native-launches.json').write_text(json.dumps(native_launches,indent=2))
+            process=launch(cfg['command'],gd,label,env);clients.append((process,label));return process
         cmd=['java','-Xms256m','-Xmx2048m','-XX:+UseG1GC','-XX:ActiveProcessorCount=2','-Danya.acceptance=true','-Danyastorage.pocketPrototype=true','-Danya.remoteAcceptance=true',f'-Danya.remoteTickets={str(candidate).lower()}',f'-Danya.remoteLeg={leg}',f'-Danya.remoteCut={str(leg=="after-stop").lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={JAR}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui']
         (out/'command.json').write_text(json.dumps(cmd,indent=2))
         try:
@@ -68,11 +76,15 @@ def run_case(name,candidate):
                     if leg=='seed':
                         for cycle in (1,2):
                             if (ctrl/f'kill-beta-{cycle}').exists() and cycle not in killed:
-                                os.killpg(beta.pid,signal.SIGKILL);beta.wait(timeout=15);killed.add(cycle)
+                                planned_kills.add(beta.pid);os.killpg(beta.pid,signal.SIGKILL);beta.wait(timeout=15);killed.add(cycle)
                                 (out/f'socket-kill-{cycle}.txt').write_text('SIGKILL real Minecraft Beta process group; no API logout substitute\n')
                             if cycle in killed and cycle not in restarted and (ctrl/f'restart-beta-{cycle}').exists():
                                 beta=client('Beta',f'-reconnect-{cycle}');restarted.add(cycle)
-                    assert alpha.poll() is None,'Alpha client exited before server completion'
+                    for process,label in clients:
+                        code=process.poll()
+                        if code is not None and process.pid not in planned_kills:
+                            tail='\n'.join((out/(label+'.log')).read_text(errors='replace').splitlines()[-45:])
+                            raise RuntimeError(f'Unexpected client exit: {label}, code={code}\n{tail}')
                     available=memory()['MemAvailable'];rows=[r.split() for r in output(['ps','-e','-o','pid=,pgid=,rss=']).splitlines()]
                     groups={p.pid for p in procs if p.poll() is None}
                     total=sum(int(r[2])*1024 for r in rows if int(r[1]) in groups);srss=sum(int(r[2])*1024 for r in rows if int(r[1])==srv.pid)
@@ -97,6 +109,8 @@ def run_case(name,candidate):
                 gd=ROOT/f'run-packaged-client-{role}'
                 for part in ['logs','screenshots']:
                     if (gd/part).exists():shutil.copytree(gd/part,out/f'client-{role}-{part}',dirs_exist_ok=True)
+            native_root=case/'client-native'/leg
+            (out/'extracted-native-hashes.json').write_text(json.dumps({str(p.relative_to(native_root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in native_root.rglob('*.so')},indent=2))
             for part in ['logs','crash-reports']:
                 if (world/part).exists():shutil.copytree(world/part,out/f'server-{part}',dirs_exist_ok=True)
     (evidence/'CASE_PASSED').write_text('Real network lifecycle passed; production JAR unchanged; candidate is a separate test-only mixin\n')
