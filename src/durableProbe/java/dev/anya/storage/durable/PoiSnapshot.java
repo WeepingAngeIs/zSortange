@@ -12,6 +12,14 @@ import java.util.*;
 import java.util.function.Function;
 /** Pinned test adapter. Main-thread, strict encoding of already loaded POI sections; no dirty flag clearing. */
 public final class PoiSnapshot {
+ public static void verifyFixedPalette(net.minecraft.server.MinecraftServer server)throws IOException{
+  Preparation.main(server);
+  // Only the exit lodestone changes POI data in this fixed-room prototype. Other registered
+  // POI blocks would require a tracked touched-column set, not erasing unknown empty columns.
+  for(var block:List.of(net.minecraft.world.level.block.Blocks.SMOOTH_SANDSTONE,net.minecraft.world.level.block.Blocks.POLISHED_BLACKSTONE,net.minecraft.world.level.block.Blocks.BLACK_CONCRETE,net.minecraft.world.level.block.Blocks.LIGHT_BLUE_STAINED_GLASS,net.minecraft.world.level.block.Blocks.BROWN_STAINED_GLASS,net.minecraft.world.level.block.Blocks.PURPLE_STAINED_GLASS,net.minecraft.world.level.block.Blocks.BARRIER,net.minecraft.world.level.block.Blocks.SEA_LANTERN,dev.anya.storage.Content.CRATE.get()))
+   for(var state:block.getStateDefinition().getPossibleStates())if(net.minecraft.world.entity.ai.village.poi.PoiTypes.hasPoi(state))throw new IOException("Unsupported additional POI-producing room block; completion scope refused");
+  if(!net.minecraft.world.entity.ai.village.poi.PoiTypes.forState(net.minecraft.world.level.block.Blocks.LODESTONE.defaultBlockState()).map(h->h.is(net.minecraft.world.entity.ai.village.poi.PoiTypes.LODESTONE)).orElse(false))throw new IOException("Pinned lodestone POI registration differs");
+ }
  private static final Field STORAGE=field("storage"),CODEC=field("codec"),REGION=field("simpleRegionStorage");
  private static Field field(String name){try{Field f=SectionStorage.class.getDeclaredField(name);f.setAccessible(true);return f;}catch(Exception e){throw new ExceptionInInitializerError(e);}}
  public static SimpleRegionStorage region(ServerLevel level){Preparation.main(level.getServer());try{return (SimpleRegionStorage)REGION.get(level.getPoiManager());}catch(Exception e){throw new IllegalStateException(e);}}

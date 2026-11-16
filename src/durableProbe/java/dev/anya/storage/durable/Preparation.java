@@ -36,7 +36,7 @@ public final class Preparation {
   main(s);if(JOBS.containsKey(p.id())||JOBS.size()>=8)throw new IOException("Duplicate or over-budget preparation fence");
   var current=PocketService.ledger(s).get(p.id());
   if(current==null||current.stage()!=PocketLedger.Stage.BUILDING||!preparing().containsKey(p.id()))throw new IOException("Missing write-ahead BUILDING marker");
-  JOBS.put(p.id(),new Job(current));Trace.note("SAVE_STARTED",p.id(),"16 bounded chunk+POI snapshots, one column per server tick");
+  PoiSnapshot.verifyFixedPalette(s);JOBS.put(p.id(),new Job(current));Trace.note("SAVE_STARTED",p.id(),"16 bounded chunk snapshots plus the changed exit POI column; one column per server tick");
  }
  private static boolean valid(MinecraftServer s,Job j)throws IOException{
   var p=PocketService.ledger(s).get(j.identity.id());
@@ -56,19 +56,20 @@ public final class Preparation {
     ChunkPos pos=j.positions.get(j.snapshot);var chunk=level.getChunkSource().getChunkNow(pos.x,pos.z);var holder=map.getVisibleChunkIfPresent(pos.toLong());
     if(chunk==null||holder==null||!holder.isReadyForSaving())return false;
     if(holder.getSaveSyncFuture().isCompletedExceptionally())throw new IOException("Chunk save dependencies failed");
-    var poiTag=PoiSnapshot.capture(level,pos);if(poiTag==null)return false;
+    boolean exitColumn=pos.equals(new ChunkPos(PocketService.exitPosition(j.identity)));
+    var poiTag=exitColumn?PoiSnapshot.capture(level,pos):null;if(exitColumn&&poiTag==null)return false;
     long before=System.nanoTime();
     var tag=ChunkSerializer.write(level,chunk);
     NeoForge.EVENT_BUS.post(new ChunkDataEvent.Save(chunk,level,tag));
     if(tag.sizeInBytes()>2*1024*1024)throw new IOException("Prototype snapshot exceeds two MiB limit");
     // Deep detachment prevents IO tasks from observing later game-thread NBT mutations.
     var detached=tag.copy();Fixture.snapshotFault(detached);j.writes.add(map.write(pos,detached));
-    var detachedPoi=poiTag.copy();Fixture.poiSnapshotFault(detachedPoi);j.writes.add(PoiSnapshot.region(level).write(pos,detachedPoi));j.snapshot++;
+    if(exitColumn){var detachedPoi=poiTag.copy();Fixture.poiSnapshotFault(detachedPoi);j.writes.add(PoiSnapshot.region(level).write(pos,detachedPoi));}j.snapshot++;
     Trace.snapshotNanos+=System.nanoTime()-before;Trace.snapshots++;
     if(j.snapshot==16){
      if(!(map.chunkScanner() instanceof IOWorker worker))throw new IOException("Pinned IOWorker completion API unavailable");
      j.fence=new DurableFence(j.writes,()->{
-      main(s);Trace.note("FLUSH_SUBMITTED",j.identity.id(),"all 16 chunk and 16 POI write receipts succeeded");
+      main(s);Trace.note("FLUSH_SUBMITTED",j.identity.id(),"all 16 chunk and changed-exit POI write receipts succeeded");
       Fixture.beforeFlush(j.identity.id());CompletableFuture<Void> actual=CompletableFuture.allOf(worker.synchronize(true),PoiSnapshot.region(level).synchronize(true));
       actual.thenRun(()->j.actualFlushed=true); // scalar evidence only, never world/ledger access
       return Fixture.hold(j.identity.id())?actual.thenCombine(j.testGate,(a,b)->null):actual;
