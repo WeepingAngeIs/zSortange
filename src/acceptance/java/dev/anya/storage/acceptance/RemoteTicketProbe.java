@@ -67,7 +67,6 @@ public final class RemoteTicketProbe {
     private static void hold(String name,int ticks,Work verify){add(name,()->{},()->tick-since>=ticks,verify);}
     private static void actionA(String name,String action,Work verify){add(name,()->send(a(),action),()->done(a()),verify);}
     private static void actionB(String name,String action,Work verify){add(name,()->send(b(),action),()->done(b()),verify);}
-    private static void log(String text){Acceptance.marker("steps.log","");}
     @SubscribeEvent public static void start(ServerStartedEvent event)throws Exception{
         if(!active())return;server=event.getServer();Acceptance.verifyJar("remote-server-"+System.getProperty("anya.remoteLeg","seed"));
         check(Files.isRegularFile(Path.of(".anya-remote-fixture")),"Requires a disposable fixture directory");
@@ -90,9 +89,18 @@ public final class RemoteTicketProbe {
         if(leg.equals("seed"))seed();else resume(leg.equals("after-cut"));
         running=true;Acceptance.marker("server-ready","leg="+leg+" candidate="+RemoteTickets.candidate());
     }
+    private static void fixtureHomes(){
+        // Setup only: spawn tickets are intentionally disabled, so startup references may be stale.
+        var level=server.overworld();level.getChunk(0,0);
+        ha=(StorageEntity)level.getBlockEntity(HA);hb=(StorageEntity)level.getBlockEntity(HB);
+        ea=(PocketContent.EntranceEntity)level.getBlockEntity(EA);eb=(PocketContent.EntranceEntity)level.getBlockEntity(EB);
+        check(ha!=null&&hb!=null&&ea!=null&&eb!=null,"Fixture home blocks missing after loading setup chunk");
+    }
     private static void initialize()throws Exception{
+        fixtureHomes();
         check(a()!=null&&b()!=null,"Clients missing");betaId=b().getUUID();
         ha.owner=a().getUUID();ea.owner=a().getUUID();hb.owner=b().getUUID();eb.owner=b().getUUID();
+        ha.setChanged();hb.setChanged();ea.setChanged();eb.setChanged();
         home(a(),EA);home(b(),EB);a().getInventory().clearContent();b().getInventory().clearContent();
         ra=remote(HA);rb=remote(HB);PocketService.link(a(),ea,ra);PocketService.link(b(),eb,rb);aid=ea.pocket;bid=eb.pocket;
         check(aid!=null&&bid!=null&&!aid.equals(bid),"Independent identities missing");held(a(),ra);held(b(),rb);
@@ -137,6 +145,7 @@ public final class RemoteTicketProbe {
     }
     private static void resume(boolean afterCut){
         add("reconnected-real-clients",()->{},()->a()!=null&&b()!=null&&outside(a())&&outside(b())&&PocketService.ledger(server).returnCount()==0,()->{
+            fixtureHomes();
             Properties saved=new Properties();try(var in=Files.newInputStream(Path.of("fixture-identities.properties"))){saved.load(in);}
             aid=UUID.fromString(saved.getProperty("alpha"));bid=UUID.fromString(saved.getProperty("beta"));betaId=b().getUUID();
             check(aid.equals(ea.pocket)&&bid.equals(eb.pocket)&&room(aid).cell()==Integer.parseInt(saved.getProperty("alphaCell"))&&room(bid).cell()==Integer.parseInt(saved.getProperty("betaCell")),"Restart changed room identities");
