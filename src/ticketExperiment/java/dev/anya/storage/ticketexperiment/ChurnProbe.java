@@ -108,9 +108,10 @@ public final class ChurnProbe {
         hold("empty-baseline",200,()->check(PocketService.dimension(server).getChunkSource().getLoadedChunksCount()==0,"Empty destination not zero"));
         add("setup-seventeen-fixtures",ChurnProbe::setup,()->true,()->{});
         hold("home-baseline",200,()->{});
-        add("cold-maxcap-mixed",()->{for(int i=0;i<8;i++){remote(OWNERS.get(i),i);enter(GUESTS.get(i),i);}denyContender();},()->{for(int i=0;i<8;i++)if(!ready(OWNERS.get(i),i)||!ready(GUESTS.get(i),i))return false;return true;},()->{for(int i=0;i<8;i++){chest(i).setItem(0,sample(i));rank(i,true);}ownerViews();check(WAITING.isEmpty(),"A queued fixture starved");});
-        hold("cold-mixed-steady",300,ChurnProbe::allContents);
-        add("initial-guests-return",()->GUESTS.forEach(PocketService::recover),ChurnProbe::guestsOutside,ChurnProbe::ownerViews);
+        add("cold-maxcap-visits",()->{for(int i=0;i<8;i++){enter(OWNERS.get(i),i);enter(GUESTS.get(i),i);}denyContender();},()->{for(int i=0;i<8;i++)if(!ready(OWNERS.get(i),i)||!ready(GUESTS.get(i),i))return false;return true;},()->{for(int i=0;i<8;i++){chest(i).setItem(0,sample(i));rank(i,true);}check(WAITING.isEmpty(),"A queued fixture starved");});
+        hold("cold-visit-steady",300,ChurnProbe::allContents);
+        add("initial-visitors-return",()->{GUESTS.forEach(PocketService::recover);OWNERS.subList(0,8).forEach(PocketService::recover);},()->{if(!guestsOutside())return false;for(int i=0;i<8;i++)if(!outside(OWNERS.get(i)))return false;return true;},()->{for(int i=0;i<8;i++)remote(OWNERS.get(i),i);});
+        add("initial-owner-remotes",()->{},()->{for(int i=0;i<8;i++)if(!ready(OWNERS.get(i),i))return false;return true;},ChurnProbe::ownerViews);
         hold("remote-steady-0",500,()->{ownerViews();allContents();for(int i=0;i<8;i++)rank(i,false);takePut();});
         for(int cycle=1;cycle<=3;cycle++){final int c=cycle;
             add("churn-visits-"+c,()->{for(int i=0;i<8;i++)enter(GUESTS.get(i),i);},ChurnProbe::guestsInside,()->{ownerViews();for(int i=0;i<8;i++)rank(i,true);});
