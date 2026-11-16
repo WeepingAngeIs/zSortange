@@ -1,0 +1,42 @@
+name: Apply guarded isolated preparation prototype
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/reviewed-durable.*.b64', '.github/workflows/apply-durable.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply only reviewed test sources against exact preconditions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,hashlib,json,lzma,subprocess
+          parts=[Path(f'scripts/reviewed-durable.{i}.b64') for i in range(3)]
+          raw=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='e42f096fbf4794f00dec6a2d3830dce75ae309f8cc042e6630c94415c271f54f'
+          data=json.loads(raw)
+          for name in data['new']:
+              p=Path(name)
+              assert not p.is_absolute() and '..' not in p.parts and not p.exists()
+              assert name.startswith(('src/durableProbe/','scripts/')) or name=='durable.gradle'
+          for name,digest in data['old'].items():
+              assert name.startswith('scripts/')
+              assert hashlib.sha256(Path(name).read_bytes()).hexdigest()==digest, 'Changed source: '+name
+          patch=data['patch'].encode()
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          for name,text in data['new'].items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
+          for p in parts:p.unlink()
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','--',*data['new'].keys(),*data['old'].keys(),*[str(p) for p in parts]],check=True)
+          subprocess.run(['git','commit','-m','Add isolated main-thread preparation fence and failure/interruption probes'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
