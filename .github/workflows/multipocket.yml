@@ -1,0 +1,64 @@
+name: Packaged multi-pocket isolation acceptance
+on:
+  push:
+    branches: [feature/elemental-pockets]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: multipocket-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  packaged:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build production JAR and separate test fixture
+        id: compile
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build/acceptance/evidence
+          gradle --no-daemon --max-workers=2 jar acceptanceJar stageAcceptanceDependencies multiPocketLeaseTest 2>&1 | tee build/acceptance/evidence/compile.log
+      - name: Export isolated packaged client commands
+        shell: bash
+        run: |
+          gradle --no-daemon exportAcceptanceLaunches
+      - name: Install software display on disposable runner
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Exercise two-owner pockets, budgets, repeated reconnects and restart
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: multi
+        shell: bash
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/packaged_acceptance.py 2>&1 | tee build/acceptance/evidence/orchestrator.log
+      - name: Export exact source and checksums
+        if: always()
+        run: |
+          mkdir -p build/acceptance/evidence
+          git rev-parse HEAD > build/acceptance/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/acceptance/evidence/source.zip
+          sha256sum build/libs/*.jar > build/acceptance/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multipocket-acceptance-${{ github.sha }}
+          path: |
+            build/acceptance/evidence/
+            build/acceptance/client-*.json
+            build/libs/*.jar
+            run-packaged-client-*/logs/
+            build/acceptance/server/crash-reports/
+          if-no-files-found: error
