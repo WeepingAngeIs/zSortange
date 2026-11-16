@@ -11,6 +11,7 @@ gradle.projectsEvaluated {
    exclude 'dev/anya/storage/durable/unload/**'
    exclude 'dev/anya/storage/durable/mixin/UnloadAuditMixin.class'
    exclude 'anya_durable.mixins.json'
+   exclude 'META-INF/neoforge.mods.toml'
   }
   from p.sourceSets.getByName('minimalProbe').output
   archiveBaseName='anya-minimal-ownership-experiment'

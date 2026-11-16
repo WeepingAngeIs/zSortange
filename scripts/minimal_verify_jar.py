@@ -4,8 +4,8 @@ jar=next(Path('build/minimal').glob('*.jar'))
 with zipfile.ZipFile(jar) as z:
     names=z.namelist()
     assert not any('/durable/unload/' in n or n.endswith('UnloadAuditMixin.class') for n in names),'Old queue/observer was bundled'
-    cfg=json.loads(z.read('anya_durable.mixins.json'))
-    assert 'minimal.mixin.MinimalOwnershipMixin' in cfg['mixins']
+    cfg=json.loads(z.read('anya_minimal.mixins.json'))
+    assert 'MinimalOwnershipMixin' in cfg['mixins']
     assert not any('UnloadAudit' in s for s in cfg['mixins'])
     assert 'dev/anya/storage/minimal/DirtyCycles.class' in names
 play=Path('build/libs/anya-storage-plus-0.3.0-beta.6.jar')
