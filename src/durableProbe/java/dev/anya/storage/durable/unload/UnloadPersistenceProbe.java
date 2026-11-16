@@ -44,6 +44,10 @@ public final class UnloadPersistenceProbe {
     @SuppressWarnings("unchecked") private static Map<Long,ChunkHolder> map(Object object,String name)throws Exception{
         var field=ChunkMap.class.getDeclaredField(name);field.setAccessible(true);return (Map<Long,ChunkHolder>)field.get(object);
     }
+    private static boolean drained(ChunkMap map,UnloadControl control)throws Exception{
+        var f=ChunkMap.class.getDeclaredField("unloadQueue");f.setAccessible(true);
+        return control.anyaRetryCount()==0&&map(map,"pendingUnloads").isEmpty()&&((java.util.Queue<?>)f.get(map)).isEmpty();
+    }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void tick(ServerTickEvent.Pre event)throws Exception{
         if(MODE.isEmpty()||finished)return;
         var server=event.getServer();var level=PocketService.dimension(server);if(level==null)return;
@@ -93,13 +97,13 @@ public final class UnloadPersistenceProbe {
                     Trace.note("SYNTHETIC_DEPENDENCY_RELEASED",null,"balanced reference; real reactivation="+reactivated);
                 }
             }
-            if(Fixture.phase.equals("drain")&&seeded&&released&&PocketService.ownedTicketRequests()==0&&level.getChunkSource().getLoadedChunksCount()==0){
+            if(Fixture.phase.equals("drain")&&seeded&&released&&PocketService.ownedTicketRequests()==0&&level.getChunkSource().getLoadedChunksCount()==0&&drained(level.getChunkSource().chunkMap,control)){
                 check(control.anyaRetryCount()==0&&!testTicket,"Unresolved deferred/fixture request");
                 long[] stats=control.anyaRetryStats();check(ReferenceTrace.accepted>0,"Owned retry path never executed");
                 check(MODE.equals("hold")?stats[1]>0:stats[0]>0,"Expected owned rearm or resurrected retirement missing");
                 if(flush==null){check(level.getChunkSource().chunkMap.chunkScanner() instanceof IOWorker,"Pinned worker missing");flush=((IOWorker)level.getChunkSource().chunkMap.chunkScanner()).synchronize(true);return;}
                 if(!flush.isDone())return;flush.join(); // Already complete, no blocking wait. Fresh-process inspection verifies actual saved contents.
-                Trace.audit(server);Trace.marker("CUT_AFTER_DIRTY_UNLOAD","items=104 original rooms=8 synthetic="+MODE+" accepted="+ReferenceTrace.accepted+" rearmed="+stats[1]+" retired="+stats[0]+" exact_owned_requests=0 deferred=0; no clean shutdown");
+                Trace.audit(server);Trace.marker("CUT_AFTER_DIRTY_UNLOAD","items=104 original rooms=8 synthetic="+MODE+" accepted="+ReferenceTrace.accepted+" rearmed="+stats[1]+" retired="+stats[0]+" exact_owned_requests=0 deferred=0 pending_unloads=0 engine_unload_queue=0; no clean shutdown");
                 Runtime.getRuntime().halt(77);
             }
         }catch(Throwable failure){finished=true;Trace.marker("FAILED","Unload persistence fixture: "+failure);AnyaStorage.LOG.error("ANYA_UNLOAD_PERSISTENCE_FAILED",failure);server.halt(false);}
