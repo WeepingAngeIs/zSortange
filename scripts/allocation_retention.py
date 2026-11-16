@@ -15,10 +15,13 @@ def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 assert digest(JAR)==EXPECTED and digest(TEST)==CANDIDATE,'Production or prior safety-tested candidate binary changed'
 def output(cmd,timeout=20):return subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout,check=True).stdout
 def memory():return {k:int(v.split()[0])*1024 for k,v in (l.split(':',1) for l in Path('/proc/meminfo').read_text().splitlines())}
+def optional_text(name):
+    try:return Path(name).read_text()
+    except OSError as error:return 'unavailable: '+str(error)
 order=os.environ['ANYA_ALLOCATION_ORDER'];first=['baseline','candidate'] if order=='baseline-first' else ['candidate','baseline']
 # Two timing cases followed by a reversed diagnostic pair. No diagnostic operation in lean cases.
 cases=[(x,False) for x in first]+[(x,True) for x in reversed(first)]
-(OUT/'host.json').write_text(json.dumps({'uname':platform.uname()._asdict(),'cpu':output(['lscpu']),'java':output(['java','-version']),'initial_memory':memory(),'order':order,'cases':cases,'cpu_max':Path('/sys/fs/cgroup/cpu.max').read_text(),'runner':{k:os.environ.get(k) for k in ['ImageOS','ImageVersion','GITHUB_SHA','GITHUB_RUN_ID']},'heap_xms_xmx_mib':[256,3072],'view':3,'simulation':2,'fixture_players':17,'real_client_jvms':0,'hashes':{p.name:digest(p) for p in [JAR,TEST,OBSERVER]},'method':'fresh world and JVM per case; OS caches reused; zero readiness scans except existing stage safety assertions; 1Hz RSS; 0.2Hz PSS; diagnostic-only JFR/NMT and three live class histograms; no forced GC in lean cases'},indent=2))
+(OUT/'host.json').write_text(json.dumps({'uname':platform.uname()._asdict(),'cpu':output(['lscpu']),'java':output(['java','-version']),'initial_memory':memory(),'order':order,'cases':cases,'cpu_max':optional_text('/sys/fs/cgroup/cpu.max'),'runner':{k:os.environ.get(k) for k in ['ImageOS','ImageVersion','GITHUB_SHA','GITHUB_RUN_ID']},'heap_xms_xmx_mib':[256,3072],'view':3,'simulation':2,'fixture_players':17,'real_client_jvms':0,'hashes':{p.name:digest(p) for p in [JAR,TEST,OBSERVER]},'method':'fresh world and JVM per case; OS caches reused; zero readiness scans except existing stage safety assertions; 1Hz RSS; 0.2Hz PSS; diagnostic-only JFR/NMT and three live class histograms; no forced GC in lean cases'},indent=2))
 RUNTIME=BASE/'runtime';RUNTIME.mkdir(); installer=BASE/'neoforge-installer.jar'
 urllib.request.urlretrieve('https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.249/neoforge-21.1.249-installer.jar',installer)
 with (OUT/'installer.log').open('w') as f:subprocess.run(['java','-Xmx768m','-jar',str(installer),'--installServer',str(RUNTIME)],stdout=f,stderr=subprocess.STDOUT,timeout=240,check=True)
