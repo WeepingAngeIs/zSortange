@@ -121,3 +121,5 @@ tasks.register('roomBoundsTest', JavaExec) {
 tasks.named('check') { dependsOn tasks.named('roomBoundsTest') }
 
 apply from: 'profiling.gradle'
+
+apply from: 'remote-ticket.gradle'
