@@ -145,21 +145,46 @@ public final class ProfileProbe {
     private static boolean all(int n)throws Exception{for(int i=0;i<n;i++)if(!arrived(owners.get(i),i)||!arrived(guests.get(i),i))return false;return true;}
     private static ItemStack sample(int i){var s=new ItemStack(Items.EMERALD,i+1);s.set(DataComponents.CUSTOM_NAME,Component.literal("Profile sample "+i));return s;}
     private static StorageEntity chest(int i)throws Exception{var pos=PocketService.chestPositions(room(i)).getFirst();var l=PocketService.dimension(server);check(l.getChunkSource().getChunkNow(pos.getX()>>4,pos.getZ()>>4)!=null,"Inspection must not load absent room");return (StorageEntity)l.getBlockEntity(pos);}
-    private static void verifyRooms(int n)throws Exception{for(int i=0;i<n;i++){
+    private static void verifyRooms(int n)throws Exception{for(int i=0;i<n;i++)verifyRoom(i);}
+    private static void verifyRoom(int i)throws Exception{
         check(room(i).stage()==PocketLedger.Stage.READY&&ringLoaded(i)==16,"Room not fully prepared");var c=chest(i);check(c!=null&&c.pocketId.equals(ids.get(i)),"Wrong physical chest identity");
         if(seeded.add(ids.get(i)))c.setItem(0,sample(i));check(Transactions.same(c.getItem(0),sample(i)),"Conservation failed in pocket "+i);
-    }}
+    }
     private static void denied(int i)throws Exception{var p=owners.get(i);home(p,i);PocketService.enter(p,entrances.get(i));check(PocketService.lease(p.getUUID())==null,"Over-cap room admitted");event("OVER_CAP_REFUSED pocket="+i);}
     private static boolean recovering(){for(ServerPlayer p:server.getPlayerList().getPlayers())if(PocketService.inPocket(p.level())||PocketService.recovering(p.getUUID()))return true;return false;}
-    private static void drain(){for(ServerPlayer p:server.getPlayerList().getPlayers()){if(PocketService.inPocket(p.level()))PocketService.recover(p);else p.closeContainer();}}
+    private static void drain(){for(ServerPlayer p:server.getPlayerList().getPlayers()){if(PocketService.inPocket(p.level()))PocketService.recover(p);else {p.closeContainer();PocketService.logout(p);}}}
     private static boolean drained()throws Exception{return leases().snapshot().isEmpty()&&!recovering()&&PocketService.ownedTicketRequests()==0;}
     private static void clean()throws Exception{check(drained(),"Residual user/recovery lease");for(int i=0;i<ids.size();i++)check(ringLoaded(i)==0,"Destination ring still loaded "+i);check(PocketService.dimension(server).getChunkSource().getLoadedChunksCount()==0,"Destination cache retained after cleanup");event("CLEAN_ZERO all destination cache/rings/Anya requests");}
+    private static void transferProbe()throws Exception{
+        for(int i=0;i<8;i++){
+            var p=guests.get(i);var c=chest(i);var main=new MainInventory(p);var view=new PocketView(p,room(i),PocketLeases.Kind.REMOTE);
+            var take=new Transactions.Plan(List.of(c,main),view.guard(BasePermissions.VIEW|BasePermissions.WITHDRAW));
+            check(take.move(c,0,List.of(main),1)==1&&take.commit(server).isEmpty(),"Profiled remote withdrawal failed");
+            int slot=-1;for(int j=0;j<36;j++)if(main.getItem(j).is(Items.EMERALD))slot=j;check(slot>=0,"Withdrawn sample missing");
+            var put=new Transactions.Plan(List.of(c,main),view.guard(BasePermissions.DEPOSIT));
+            check(put.move(main,slot,List.of(c),1)==1&&put.commit(server).isEmpty(),"Profiled remote redeposit failed");verifyRoom(i);
+        }
+        event("Eight guarded remote withdrawal/redeposit pairs conserved named stacks");
+    }
+    private static void reserveFreshBatch()throws Exception{
+        var w=server.overworld();for(int x=32;x<49;x++)for(int z=0;z<12;z++)w.setBlockAndUpdate(new BlockPos(x,80,z),Blocks.STONE.defaultBlockState());
+        for(int j=0;j<8;j++){
+            var p=owners.get(j);BlockPos hp=new BlockPos(33+(j%4)*4,81,1+(j/4)*4),ep=hp.east();
+            w.setBlockAndUpdate(hp,Content.HUB.get().defaultBlockState());w.setBlockAndUpdate(ep,PocketContent.ENTRANCE.get().defaultBlockState());
+            var h=(StorageEntity)w.getBlockEntity(hp);h.owner=p.getUUID();h.setMember(guests.get(j).getUUID(),BasePermissions.VISIT|BasePermissions.LEGACY);
+            var en=(PocketContent.EntranceEntity)w.getBlockEntity(ep);en.owner=p.getUUID();hubs.add(h);entrances.add(en);home(p,9+j);
+            var r=new ItemStack(Content.REMOTE.get());var d=BagInventory.data(r);d.putString("HubDimension","minecraft:overworld");d.putLong("HubPos",hp.asLong());BagInventory.data(r,d);p.getInventory().setItem(0,r);
+            PocketService.link(p,en,r);check(en.pocket!=null,"Fresh cell allocation failed");remotes.add(r);ids.add(en.pocket);
+            check(ringLoaded(9+j)==0&&room(9+j).stage()==PocketLedger.Stage.RESERVED,"Fresh batch not cold");
+        }
+        event("Eight new never-prepared physical cells reserved; older rooms retained, JVM already warm");
+    }
     @SubscribeEvent public static void start(ServerStartedEvent e)throws Exception{
         server=e.getServer();out=Path.of(System.getProperty("anya.profileOut")).toAbsolutePath();Files.createDirectories(out);
         check(!Files.exists(server.getWorldPath(LevelResource.ROOT).resolve("anya_storage/pockets.v1.dat")),"Refusing nonfresh profiling world");
         Path jar=ModList.get().getModFileById("anyastorage").getFile().getFilePath();check(Files.isRegularFile(jar)&&jar.toString().endsWith(".jar"),"Not a packaged production JAR");String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(jar)));check(hash.equals(System.getProperty("anya.expectedHash")),"Playable JAR differs from beta.6");
         Files.writeString(out.resolve("runtime.txt"),"sha256="+hash+"\njava="+System.getProperty("java.runtime.version")+"\nvmArgs="+ManagementFactory.getRuntimeMXBean().getInputArguments()+"\nprocessors="+OS.getAvailableProcessors()+"\nphysicalMemory="+OS.getTotalMemorySize()+"\nheapMax="+Runtime.getRuntime().maxMemory()+"\nvariant="+(Boolean.getBoolean("anya.profileFullOnly")?"test-only full tickets":"unmodified beta.6 tickets")+"\nclientJVMs=0\ntransport=embedded sinks; ordinary ServerPlayer engine identities\n");
-        var o=ExpansionRules.get();o.pocketStorage=true;o.pocketEditing=false;o.pocketLimit=9;o.activePocketLimit=1;o.pocketSessionTicks=12000;
+        var o=ExpansionRules.get();o.pocketStorage=true;o.pocketEditing=false;o.pocketLimit=17;o.activePocketLimit=1;o.pocketSessionTicks=12000;
         server.getGameRules().getRule(GameRules.RULE_DOMOBSPAWNING).set(false,server);server.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0,server);
         ticksFile=Files.newBufferedWriter(out.resolve("ticks.csv"));ticksFile.write("tick,phase,period_ns,event_tick_ns,thread_cpu_ns,process_cpu_ns,service_ns,measurement_ns,heap_used,heap_committed,gc_count,gc_ms,active,leases,requests,cache,actual_tickChunk_calls,shell_writes,pending,preparing\n");
         holdersFile=Files.newBufferedWriter(out.resolve("holders.csv"));holdersFile.write("tick,phase,cache,visible_holders,full_ready,block_ticking_ready,entity_ticking_ready,sample_ns\n");eventsFile=Files.newBufferedWriter(out.resolve("events.csv"));eventsFile.write("tick,phase,event\n");
@@ -179,7 +204,7 @@ public final class ProfileProbe {
         add("mixed-admit-8",()->{for(int i=0;i<8;i++)remote(guests.get(i),i);},()->all(8),()->verifyRooms(8));
         hold("mixed-steady-8",600,()->verifyRooms(8));
         add("owners-return-remotes-retained",()->{for(int i=0;i<8;i++)PocketService.recover(owners.get(i));},()->{for(int i=0;i<8;i++)if(PocketService.inPocket(owners.get(i).level())||PocketService.recovering(owners.get(i).getUUID()))return false;return true;},()->{for(int i=0;i<8;i++)check(arrived(guests.get(i),i),"Owner return broke remote");});
-        hold("remote-steady-8",600,()->verifyRooms(8));
+        hold("remote-steady-8",600,()->{verifyRooms(8);transferProbe();});
         add("capacity-released-contender-admission",()->{guests.get(0).closeContainer();enter(owners.get(8),8);},()->arrived(owners.get(8),8),()->{check(room(8).stage()==PocketLedger.Stage.READY,"Contender did not finish");denied(0);for(int i=1;i<8;i++)check(arrived(guests.get(i),i),"Contender interrupted unrelated remote");});
         hold("contender-plus-seven-remotes",200,()->{});
         add("drain-first-cycle",ProfileProbe::drain,ProfileProbe::drained,()->{});
@@ -188,8 +213,14 @@ public final class ProfileProbe {
             add("warm-reopen-"+c,()->{ExpansionRules.get().activePocketLimit=8;for(int i=0;i<8;i++){remote(owners.get(i),i);remote(guests.get(i),i);}},()->all(8),()->verifyRooms(8));
             hold("warm-remote-steady-"+c,600,()->{verifyRooms(8);check((int)field("lastPreparedBlocks")==0,"Warm reopen regenerated shell");});
             add("lower-cap-share-"+c,()->{ExpansionRules.get().activePocketLimit=1;owners.get(0).closeContainer();},()->PocketService.lease(owners.get(0).getUUID())==null,()->{check(arrived(guests.get(0),0),"First viewer close invalidated shared pocket");remote(owners.get(0),0);denied(8);});
+            add("shared-readmission-ready-"+c,()->{},()->all(8),()->verifyRooms(8));
             add("drain-warm-"+c,ProfileProbe::drain,ProfileProbe::drained,()->{});
             hold("idle-warm-"+c,650,ProfileProbe::clean);
         }
+        add("fresh-eight-batch-setup",ProfileProbe::reserveFreshBatch,()->true,()->{});
+        add("cold-eight-simultaneous",()->{ExpansionRules.get().activePocketLimit=8;for(int j=0;j<8;j++){enter(owners.get(j),9+j);enter(guests.get(j),9+j);}},()->{for(int j=0;j<8;j++)if(!arrived(owners.get(j),9+j)||!arrived(guests.get(j),9+j))return false;return true;},()->{for(int j=9;j<17;j++)verifyRoom(j);check(waiting.isEmpty(),"A queued identity starved");});
+        hold("fresh-eight-steady",600,()->{for(int j=9;j<17;j++)verifyRoom(j);});
+        add("drain-fresh-batch",ProfileProbe::drain,ProfileProbe::drained,()->{});
+        hold("final-idle",650,ProfileProbe::clean);
     }
 }
