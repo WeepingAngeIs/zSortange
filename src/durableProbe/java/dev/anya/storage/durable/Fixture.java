@@ -31,16 +31,18 @@ public final class Fixture {
  private static final List<StorageEntity> HUBS=new ArrayList<>();
  private static final List<UUID> IDS=new ArrayList<>();
  private static int step;private static long since,flushedAt=-1;private static Preparation.Job cancelled;
+ private static java.util.concurrent.CompletableFuture<Optional<net.minecraft.nbt.CompoundTag>> rawPoi;
  private static boolean running;private static final AtomicInteger WRITE_FAILURES=new AtomicInteger(),FLUSH_FAILURES=new AtomicInteger();
  public static boolean hold(UUID id){return !MODE.isEmpty()&&(MODE.equals("delayed")||MODE.equals("cancel")||MODE.equals("revoke")||MODE.equals("shutdown"));}
  public static void beforeReady(UUID id){if(MODE.equals("cut-before-ready"))cut("CUT_BEFORE_READY",id);}
  public static void beforeArrival(UUID id){if(MODE.equals("cut-after-ready"))cut("CUT_AFTER_READY_BEFORE_ENTRY",id);}
  public static void beforeFlush(UUID id){if(MODE.equals("cut-before-flush"))cut("CUT_BEFORE_FLUSH",id);if(MODE.equals("failflush"))BAD_FLUSH.set(true);}
+ public static void poiSnapshotFault(net.minecraft.nbt.CompoundTag tag){if(MODE.equals("failpoi"))tag.putBoolean("AnyaFixtureFailWrite",true);}
  public static void snapshotFault(net.minecraft.nbt.CompoundTag tag){if(MODE.equals("failwrite"))tag.putBoolean("AnyaFixtureFailWrite",true);}
  public static void ioWrite(RegionFileStorage storage,ChunkPos pos,net.minecraft.nbt.CompoundTag tag)throws IOException{
   if(tag!=null&&tag.getBoolean("AnyaFixtureFailWrite")){
    if(server.isSameThread())throw new IllegalStateException("IO write incorrectly on server thread");
-   WRITE_FAILURES.incrementAndGet();Trace.note("INJECTED_WRITE_FAILURE",null,"thread="+Thread.currentThread().getName()+" pos="+pos);throw new IOException("Injected disposable write failure");
+   WRITE_FAILURES.incrementAndGet();Trace.note("INJECTED_WRITE_FAILURE",null,"thread="+Thread.currentThread().getName()+" type="+storage.info().type()+" pos="+pos);throw new IOException("Injected disposable write failure");
   }
  }
  public static void ioFlush(RegionFileStorage storage)throws IOException{
@@ -127,8 +129,8 @@ public final class Fixture {
     PocketService.reanchor(p,id,en,p.getInventory().getItem(0));check(record(id).epoch()>before.epoch()&&record(id).cell()==before.cell(),"Reanchor lost original cell");cancelled.testGate.complete(null);next("stale-completion");
    }
    if(step==3&&(MODE.equals("cancel")||MODE.equals("revoke"))&&Trace.tick-since>=60){check(record(id).stage()==PocketLedger.Stage.BUILDING&&!inside(p),"Stale completion published after reanchor");next("drain");}
-   if(step==1&&(MODE.equals("failwrite")||MODE.equals("failflush"))&&PocketService.lease(p.getUUID())==null&&Trace.tick-since>40){
-    check(record(id).stage()==PocketLedger.Stage.BUILDING&&!inside(p)&&!Preparation.has(id),"IO failure did not fail closed");check(MODE.equals("failwrite")?WRITE_FAILURES.get()>0:FLUSH_FAILURES.get()>0,"No actual IO fault observed");PocketService.enter(p,ENTRANCES.getFirst());check(PocketService.lease(p.getUUID())==null,"Interrupted BUILDING replayed");step=4;since=Trace.tick;phase="drain";
+   if(step==1&&(MODE.equals("failwrite")||MODE.equals("failpoi")||MODE.equals("failflush"))&&PocketService.lease(p.getUUID())==null&&Trace.tick-since>40){
+    check(record(id).stage()==PocketLedger.Stage.BUILDING&&!inside(p)&&!Preparation.has(id),"IO failure did not fail closed");check(!MODE.equals("failflush")?WRITE_FAILURES.get()>0:FLUSH_FAILURES.get()>0,"No actual IO fault observed");PocketService.enter(p,ENTRANCES.getFirst());check(PocketService.lease(p.getUUID())==null,"Interrupted BUILDING replayed");step=4;since=Trace.tick;phase="drain";
    }
    if(step==2&&MODE.equals("delayed")&&inside(p)){check(record(id).stage()==PocketLedger.Stage.READY,"Entry not READY");chests(id);PocketService.recover(p);step=4;since=Trace.tick;phase="drain";}
    if(step==4&&Trace.tick-since>=650){check(!inside(p)&&PocketService.ownedTicketRequests()==0&&PocketService.dimension(server).getChunkSource().getLoadedChunksCount()==0,"Failed final cleanup");finish("completion, cancellation and no premature entry checked");}
@@ -137,6 +139,16 @@ public final class Fixture {
  private static void resume()throws Exception{
   var p=PLAYERS.getFirst();UUID id=IDS.getFirst();var r=record(id);boolean ready=MODE.equals("resume-cut-after-ready");
   if(step==0&&Trace.tick>10){
+   if(!MODE.equals("resume-cut-before-flush")){
+    var level=PocketService.dimension(server);var exit=PocketService.exitPosition(r);var cp=new ChunkPos(exit);
+    check(level.getChunkSource().getChunkNow(cp.x,cp.z)==null,"POI must be checked before chunk loading can reconstruct it");
+    if(rawPoi==null){rawPoi=PoiSnapshot.region(level).read(cp);return;}
+    if(!rawPoi.isDone())return;
+    var data=rawPoi.getNow(Optional.empty()).orElseThrow(()->new IllegalStateException("Durable POI column absent on fresh process"));
+    var records=data.getCompound("Sections").getCompound(Integer.toString(SectionPos.blockToSectionCoord(exit.getY()))).getList("Records",10);
+    boolean found=false;for(int i=0;i<records.size();i++){var poi=records.getCompound(i);if(poi.getString("type").equals("minecraft:lodestone")&&Arrays.equals(poi.getIntArray("pos"),new int[]{exit.getX(),exit.getY(),exit.getZ()}))found=true;}
+    check(found,"Lodestone POI not durably present before chunk reconstruction");Trace.note("RAW_POI_RESTART_CONFIRMED",id,"IO read before destination load; type and coordinates matched");
+   }
    check(r.stage()==(ready?PocketLedger.Stage.READY:PocketLedger.Stage.BUILDING),"Wrong durable stage after cut/stop");check(!inside(p)&&PocketService.ledger(server).returnCount()==0,"Premature entry/return record");
    if(!MODE.equals("resume-cut-before-flush")){for(var pos:PocketService.chestPositions(r))PocketService.dimension(server).getChunk(pos.getX()>>4,pos.getZ()>>4);chests(id);}
    p.teleportTo(server.overworld(),2.5,81,3.5,180,0);PocketService.enter(p,ENTRANCES.getFirst());

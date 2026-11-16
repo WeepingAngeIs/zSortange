@@ -53,7 +53,7 @@ if lane in ['baseline-first','candidate-first']:
  policies=[False,True] if lane=='baseline-first' else [True,False]
  for i,candidate in enumerate(policies):run(world(str(i)+('-candidate' if candidate else '-baseline')),'measure',candidate)
 elif lane=='failure-cancel':
- for mode in ['delayed','failwrite','failflush','cancel','revoke']:run(world(mode),mode,True)
+ for mode in ['delayed','failwrite','failpoi','failflush','cancel','revoke']:run(world(mode),mode,True)
 elif lane=='cuts-restart':
  for mode,marker in [('shutdown','SHUTDOWN_PENDING'),('cut-before-flush','CUT_BEFORE_FLUSH'),('cut-before-ready','CUT_BEFORE_READY'),('cut-after-ready','CUT_AFTER_READY_BEFORE_ENTRY')]:
   w=world(mode);run(w,mode,True,marker,0 if mode=='shutdown' else 77);run(w,'resume-'+mode,True)

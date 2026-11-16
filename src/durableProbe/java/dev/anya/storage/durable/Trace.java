@@ -20,7 +20,7 @@ public final class Trace {
  public static long tick,prepareNanos,serviceNanos,snapshotNanos,ledgerNanos,nonblockingMisses,snapshots;
  private static long tickStart,serviceStart,prepareStart,callbacks,refsOnly,futureOnly,both,ready,repeated,totalCallbacks,totalRefs,totalRepeated;
  private static int examples;
- private static Object lastHolder,lastFuture;
+ private static final Map<ChunkHolder,Object> SEEN=new IdentityHashMap<>();
  private static MinecraftServer server;
  private static BufferedWriter rows,notes,unloads;
  private static final Set<String> APPLIED=new HashSet<>();
@@ -35,7 +35,7 @@ public final class Trace {
    rows.write("tick,phase,event_ns,service_ns,prepare_ns,snapshot_ns,ledger_ns,snapshots,misses,cache,requests,heap_used,heap_committed,callbacks,refs_only,future_only,both,ready,repeated_completed_future\n");
    unloads.write("tick\tchunk\tgeneration_refs\tsave_future_done\tsame_completed_future\tticket_level\trepeats_this_tick\n");
   }
-  tick++;tickStart=System.nanoTime();prepareNanos=serviceNanos=snapshotNanos=ledgerNanos=snapshots=nonblockingMisses=0;callbacks=refsOnly=futureOnly=both=ready=repeated=0;lastHolder=lastFuture=null;prepareStart=0;
+  tick++;tickStart=System.nanoTime();prepareNanos=serviceNanos=snapshotNanos=ledgerNanos=snapshots=nonblockingMisses=0;callbacks=refsOnly=futureOnly=both=ready=repeated=0;SEEN.clear();prepareStart=0;
  }
  public static void prepareBegin(){prepareStart=System.nanoTime();}
  public static void prepareEnd(){if(prepareStart!=0){prepareNanos+=System.nanoTime()-prepareStart;prepareStart=0;}}
@@ -43,7 +43,7 @@ public final class Trace {
  public static void serviceEnd(){prepareEnd();serviceNanos+=System.nanoTime()-serviceStart;}
  public static void unload(ServerLevel level,ChunkHolder holder,long key){
   if(server==null||!PocketService.inPocket(level))return;
-  int refs=holder.getGenerationRefCount();Object f=holder.getSaveSyncFuture();boolean done=holder.getSaveSyncFuture().isDone();boolean repeat=lastHolder==holder&&lastFuture==f&&done;lastHolder=holder;lastFuture=f;
+  int refs=holder.getGenerationRefCount();Object f=holder.getSaveSyncFuture();boolean done=holder.getSaveSyncFuture().isDone();boolean repeat=SEEN.get(holder)==f&&done;if(SEEN.containsKey(holder)||SEEN.size()<64)SEEN.put(holder,f);
   callbacks++;totalCallbacks++;if(refs!=0&&done){refsOnly++;totalRefs++;}else if(refs==0&&!done)futureOnly++;else if(refs!=0)both++;else ready++;
   if(repeat&&refs!=0){repeated++;totalRepeated++;}
   if(refs!=0&&done&&examples<32&&(repeated==16||repeated==256||repeated==4096))try{
