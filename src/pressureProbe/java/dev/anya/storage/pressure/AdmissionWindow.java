@@ -17,6 +17,9 @@ public final class AdmissionWindow {
  public boolean admit(UUID player,UUID pocket,boolean alreadyActive,long now){
   own();if(alreadyActive){waiting.remove(player);return true;}
   Wait old=waiting.get(player);
+  // No artificial throttle when there is no backlog or earlier waiting claimant.
+  // Queued admissions still drain fairly at one distinct pocket per tick.
+  if(old==null&&waiting.isEmpty()&&!blocked){lastGrant=now;return true;}
   if(old==null&&waiting.size()>=32)return false;
   if(old==null||!old.pocket().equals(pocket)){waiting.remove(player);waiting.put(player,new Wait(pocket,now,now+200));}
   else waiting.put(player,new Wait(pocket,old.first(),now+200));
