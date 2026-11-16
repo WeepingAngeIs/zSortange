@@ -28,6 +28,7 @@ public abstract class UnloadAuditMixin implements UnloadControl {
  private void callback(ChunkHolder holder,long key,CallbackInfo c){
   if(!ReferenceTrace.ACTIVE){Trace.unload(level,holder,key);return;}if(!anya$scope())return;
   if(!level.getServer().isSameThread())throw new IllegalStateException("Unload callback not on owner thread");
+  UnloadPersistenceProbe.beforeCallback(level,holder,key,pendingUnloads.get(key)==holder);
   ReferenceTrace.callback(holder,pendingUnloads.get(key)==holder,updatingChunkMap.get(key)==holder);
   if(ReferenceTrace.DEFER&&anya$blocked(holder)){
    if(pendingUnloads.get(key)!=holder){ReferenceTrace.staleRetired++;c.cancel();return;}

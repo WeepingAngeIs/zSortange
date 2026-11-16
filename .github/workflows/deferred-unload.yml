@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [baseline-first, candidate-first, failure-cancel, cuts-restart]
+        lane: [baseline-first, candidate-first, failure-cancel, cuts-restart, owned-save]
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -36,7 +36,11 @@ jobs:
           ANYA_DURABLE_LANE: ${{ matrix.lane }}
         run: |
           set -o pipefail
-          python3 scripts/unload_runtime.py 2>&1 | tee build/durable-compile/controller.log
+          if [ "$ANYA_DURABLE_LANE" = owned-save ]; then
+            python3 scripts/unload_persistence.py 2>&1 | tee build/durable-compile/controller.log
+          else
+            python3 scripts/unload_runtime.py 2>&1 | tee build/durable-compile/controller.log
+          fi
       - name: Preserve exact source and checksums
         if: always()
         run: |
