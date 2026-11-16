@@ -1,0 +1,108 @@
+name: Sustained admission and dirty-save backpressure
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/pressureProbe/**', 'src/pressureTest/**', 'scripts/pressure*', '.github/workflows/backpressure.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: backpressure-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [baseline-first, candidate-first, failure, stop-force]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile isolated admission module and unchanged beta.6
+        run: |
+          mkdir -p build/pressure-evidence build/pressure-core
+          set -o pipefail
+          javac -d build/pressure-core src/pressureProbe/java/dev/anya/storage/pressure/AdmissionWindow.java src/pressureTest/java/dev/anya/storage/pressure/AdmissionChecks.java
+          java -cp build/pressure-core dev.anya.storage.pressure.AdmissionChecks | tee build/pressure-evidence/core-checks.log
+          gradle --no-daemon --max-workers=2 -I scripts/pressure-init.gradle jar pressureProbeJar 2>&1 | tee build/pressure-evidence/compile.log
+          python3 scripts/pressure_verify.py | tee build/pressure-evidence/module-check.log
+      - name: Sustained arrivals, write receipts, recovery fairness or fault/stop restart
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.lane }}
+        run: |
+          set -o pipefail
+          python3 scripts/pressure_runtime.py 2>&1 | tee build/pressure-evidence/controller.log
+      - name: Preserve exact source and checksums
+        if: always()
+        run: |
+          mkdir -p build/pressure-evidence
+          git rev-parse HEAD > build/pressure-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/pressure-evidence/source.zip
+          sha256sum build/libs/*.jar build/pressure/*.jar > build/pressure-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backpressure-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            build/pressure-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
+  clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: room
+            evidence: build/acceptance/evidence
+          - scenario: cold-recovery
+            evidence: build/cold-recovery/evidence
+          - scenario: transitions
+            evidence: build/remote-policy/evidence
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile exact candidate and unchanged actual-client fixtures
+        run: |
+          mkdir -p '${{ matrix.evidence }}'
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/pressure-init.gradle jar pressureProbeJar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PpressureProbe -PticketExperiment 2>&1 | tee '${{ matrix.evidence }}/compile.log'
+          python3 scripts/pressure_verify.py | tee '${{ matrix.evidence }}/module-check.log'
+      - name: Prepare disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Two actual clients with admission candidate and unchanged recovery shutdown checks
+        env:
+          JAVA_TOOL_OPTIONS: '-Danya.nonblockingPrepare=true -Danya.minimalOwnership=true -Danya.serializationBudget=true -Danya.backpressure=true -Danya.pressureClient=true'
+          ANYA_DURABLE_PROBE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: room
+          ANYA_ROOM_TICKET_EXPERIMENT: 'true'
+          ANYA_COLD_POLICY: candidate
+          ANYA_PRESSURE_CLIENT_SCENARIO: ${{ matrix.scenario }}
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/pressure_clients.py 2>&1 | tee '${{ matrix.evidence }}/controller.log'
+      - name: Preserve exact source and checksums
+        if: always()
+        run: |
+          mkdir -p '${{ matrix.evidence }}'
+          git rev-parse HEAD > '${{ matrix.evidence }}/SOURCE_COMMIT.txt'
+          git archive --format=zip HEAD > '${{ matrix.evidence }}/source.zip'
+          sha256sum build/libs/*.jar build/pressure/*.jar build/ticket-experiment/*.jar > '${{ matrix.evidence }}/SHA256SUMS.txt' || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backpressure-clients-${{ matrix.scenario }}-${{ github.sha }}
+          path: ${{ matrix.evidence }}/
+          if-no-files-found: error
