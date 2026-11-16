@@ -2,13 +2,13 @@ name: Remote-only ticket lifecycle and measurements
 on:
   push:
     branches: [feature/elemental-pockets]
-    paths: ['src/ticketExperiment/**', 'remote-ticket.gradle', 'src/acceptance/java/dev/anya/storage/acceptance/RemoteTicketProbe.java', 'scripts/remote_ticket_acceptance.py', '.github/workflows/remote-policy.yml']
+    paths: ['src/ticketExperiment/**', 'remote-ticket.gradle', 'src/acceptance/java/dev/anya/storage/acceptance/RemoteTicketProbe.java', 'src/acceptance/java/dev/anya/storage/acceptance/ClientProbe.java', 'scripts/remote_ticket_acceptance.py', '.github/workflows/remote-policy.yml']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: remote-policy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   paired:
     runs-on: ubuntu-latest
