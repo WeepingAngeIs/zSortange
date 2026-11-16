@@ -1,0 +1,59 @@
+name: Remote-only ticket lifecycle and measurements
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/ticketExperiment/**', 'remote-ticket.gradle', 'src/acceptance/java/dev/anya/storage/acceptance/RemoteTicketProbe.java', 'scripts/remote_ticket_acceptance.py', '.github/workflows/remote-policy.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: remote-policy-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  paired:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [baseline-first, candidate-first]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Compile unchanged beta.6 and isolated test intervention
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build/remote-policy/evidence
+          gradle --no-daemon --max-workers=2 jar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PticketExperiment 2>&1 | tee build/remote-policy/evidence/compile.log
+      - name: Install disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Counterbalanced two-client lifecycle, active shutdown and recovery interruption
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_PAIR_ORDER: ${{ matrix.order }}
+        shell: bash
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/remote_ticket_acceptance.py 2>&1 | tee build/remote-policy/evidence/orchestrator.log
+      - name: Exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/remote-policy/evidence
+          git rev-parse HEAD > build/remote-policy/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/remote-policy/evidence/source.zip
+          sha256sum build/libs/*.jar build/ticket-experiment/*.jar > build/remote-policy/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: remote-policy-${{ matrix.order }}-${{ github.sha }}
+          path: build/remote-policy/evidence/
+          if-no-files-found: error
