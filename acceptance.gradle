@@ -9,6 +9,11 @@ repositories {
 tasks.register('acceptanceJar', Jar) {
     dependsOn tasks.named('acceptanceClasses')
     from sourceSets.acceptance.output
+    // Cold audit method references require the opt-in experiment JAR. Ordinary room
+    // runs must not discover its subscriber or acquire a new runtime dependency.
+    if (!project.hasProperty('ticketExperiment')) {
+        exclude 'dev/anya/storage/acceptance/ColdRecoveryProbe*.class'
+    }
     archiveBaseName = 'anya-storage-acceptance-fixture'
     destinationDirectory = layout.buildDirectory.dir('acceptance')
 }

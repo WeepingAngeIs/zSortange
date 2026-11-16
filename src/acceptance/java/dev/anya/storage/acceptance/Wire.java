@@ -19,7 +19,7 @@ public final class Wire {
     @SubscribeEvent public static void register(RegisterPayloadHandlersEvent e){
         PayloadRegistrar r=e.registrar("1");
         r.playBidirectional(Signal.TYPE,Signal.CODEC,(s,c)->c.enqueueWork(()->{
-            if(c.player() instanceof net.minecraft.server.level.ServerPlayer p){if(ColdRecoveryProbe.active())ColdRecoveryProbe.ack(p,s);else ServerProbe.ack(p,s);}
+            if(c.player() instanceof net.minecraft.server.level.ServerPlayer p){if(Boolean.getBoolean("anya.coldRecoveryAcceptance"))ColdRecoveryProbe.ack(p,s);else ServerProbe.ack(p,s);}
             else ClientProbe.receive(s);
         }));
     }
