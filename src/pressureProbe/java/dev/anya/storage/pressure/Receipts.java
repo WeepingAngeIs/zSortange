@@ -31,21 +31,29 @@ public final class Receipts {
  public static long confirmedCount,maxDelay,maxDelayMs,flushCount,writeFailures,flushFailures;
  private static volatile String fault="";
  private static volatile boolean fired;
+ private static volatile long faultKey;
  public static void register(UUID room,ChunkPos pos){if(SAMPLES.size()>=16)throw new IllegalStateException("Sample budget");SAMPLES.put(pos.toLong(),new Sample(room,pos.toLong()));}
  public static void dirty(Sample s,int version){
   if(!server.isSameThread()||s.version>s.confirmed&&s.write!=null)throw new IllegalStateException("Overwrite of unconfirmed sample");
+  if(!fault.isEmpty()&&!fired&&faultKey==Long.MIN_VALUE){faultKey=s.key;Trace.note("PRESSURE_FAULT_TARGET",s.room,"key="+s.key+" version="+version);}
   s.version=version;s.dirtyTick=server.getTickCount();s.dirtyNano=System.nanoTime();s.write=null;s.writeTick=s.writeNano=-1;s.error=false;
  }
  public static long oldest(long now){long age=0;for(var s:SAMPLES.values())if(s.confirmed<s.version)age=Math.max(age,now-s.dirtyTick);return age;}
  public static boolean allConfirmed(){return SAMPLES.values().stream().allMatch(s->s.confirmed==s.version);}
- public static void arm(String kind){fault=kind;fired=false;}
+ public static void arm(String kind){faultKey=Long.MIN_VALUE;fired=false;fault=kind;Trace.note("PRESSURE_FAULT_ARMED",null,"kind="+kind+" target=next-monitored-dirty-chunk");}
  public static boolean fired(){return fired;}
+ private static boolean chunkStore(RegionFileStorage storage){return storage.info().dimension().equals(dev.anya.storage.pocket.PocketService.DIMENSION)&&storage.info().type().equals("chunk");}
  public static void ioWrite(RegionFileStorage storage,ChunkPos pos,CompoundTag tag)throws IOException{
-  if(!fault.equals("write")||fired||!storage.info().toString().contains("anyastorage:pockets")||tag==null)return;
-  if(tag.toString().contains("Pressure ")){fired=true;throw new IOException("Injected pressure receipt write failure");}
+  if(!fault.equals("write")||fired||!chunkStore(storage)||pos.toLong()!=faultKey||tag==null)return;
+  if(server.isSameThread())throw new IllegalStateException("Expected actual IO worker, not fixture main thread");
+  fired=true;Trace.note("PRESSURE_WRITE_FAULT_FIRED",null,"store="+storage.info()+" key="+pos.toLong()+" legacy_name_match="+tag.toString().contains("Pressure "));
+  throw new IOException("Injected pressure receipt write failure");
  }
  public static void ioFlush(RegionFileStorage storage)throws IOException{
-  if(fault.equals("flush")&&!fired&&storage.info().toString().contains("anyastorage:pockets")){fired=true;throw new IOException("Injected pressure flush failure");}
+  if(fault.equals("flush")&&!fired&&chunkStore(storage)){
+   if(server.isSameThread())throw new IllegalStateException("Expected actual IO worker flush");
+   fired=true;Trace.note("PRESSURE_FLUSH_FAULT_FIRED",null,"store="+storage.info());throw new IOException("Injected pressure flush failure");
+  }
  }
  public static void stored(IOWorker w,ChunkPos pos,CompoundTag tag,CompletableFuture<Void> receipt){
   if(w!=worker||tag==null||server==null)return;
