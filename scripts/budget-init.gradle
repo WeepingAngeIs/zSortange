@@ -25,7 +25,11 @@ gradle.projectsEvaluated {
  p.dependencies.add('budgetProbeCompileOnly',p.sourceSets.getByName('minimalProbe').output)
  p.tasks.register('budgetProbeJar', Jar) {
   dependsOn p.tasks.named('budgetProbeClasses'),p.tasks.named('minimalProbeJar')
-  from({ p.zipTree(p.tasks.named('minimalProbeJar').get().archiveFile.get().asFile) }) { exclude 'META-INF/neoforge.mods.toml'; exclude 'META-INF/MANIFEST.MF' }
+  from({ p.zipTree(p.tasks.named('minimalProbeJar').get().archiveFile.get().asFile) }) {
+   exclude 'META-INF/neoforge.mods.toml'
+   exclude 'META-INF/MANIFEST.MF'
+   exclude 'dev/anya/storage/minimal/DirtyCycles.class'
+  }
   from p.sourceSets.getByName('budgetProbe').output
   archiveBaseName='anya-unload-save-budget-experiment'
   destinationDirectory=p.layout.buildDirectory.dir('budget')
