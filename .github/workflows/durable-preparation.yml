@@ -1,0 +1,42 @@
+name: Durable preparation semantics and bounded prototype
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/durable*', 'src/durableProbe/**', 'durable.gradle', '.github/workflows/durable-preparation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: durable-preparation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  semantics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Inspect exact completion and unload semantics
+        run: |
+          gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle durableAuditClasspath
+          python3 scripts/durable_api_audit.py
+      - name: Preserve exact source
+        if: always()
+        run: |
+          mkdir -p build/durable-audit
+          git rev-parse HEAD > build/durable-audit/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/durable-audit/source.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: durable-semantics-${{ github.sha }}
+          path: build/durable-audit/
+          if-no-files-found: error
