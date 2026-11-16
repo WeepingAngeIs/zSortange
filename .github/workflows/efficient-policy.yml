@@ -1,4 +1,5 @@
 name: Efficient per-pocket selection and maximum-cap churn
+# Every final source receives its own bounded jobs; retain earlier failure evidence.
 on:
   push:
     branches: [feature/elemental-pockets]
@@ -7,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: efficient-policy-${{ github.ref }}
+  group: efficient-policy-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   churn:
