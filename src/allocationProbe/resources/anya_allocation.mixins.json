@@ -1,0 +1,1 @@
+{"required":true,"minVersion":"0.8","package":"dev.anya.storage.allocation.mixin","compatibilityLevel":"JAVA_21","mixins":["ObserverMixin","ServerMixin","PocketMixin","EngineMixin","FixtureMixin","LedgerMixin","AuditMixin"],"injectors":{"defaultRequire":1}}

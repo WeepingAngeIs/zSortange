@@ -1,0 +1,56 @@
+name: Bounded allocation and cold-transition investigation
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/allocationProbe/**', 'allocation.gradle', 'scripts/allocation*', '.github/workflows/allocation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: allocation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  paired:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [baseline-first, candidate-first]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build unchanged binaries and isolated observer
+        run: |
+          mkdir -p build/allocation-compile
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/allocation-init.gradle jar ticketExperimentJar allocationProbeJar 2>&1 | tee build/allocation-compile/compile.log
+      - name: Bounded lean and diagnostic pairs with reversed order
+        env:
+          ANYA_ALLOCATION_ORDER: ${{ matrix.order }}
+        run: |
+          set -o pipefail
+          python3 scripts/allocation_retention.py 2>&1 | tee build/allocation-compile/run.log
+      - name: Preserve exact source and unchanged binary hashes
+        if: always()
+        run: |
+          mkdir -p build/allocation-compile
+          git rev-parse HEAD > build/allocation-compile/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/allocation-compile/source.zip
+          sha256sum build/libs/*.jar build/ticket-experiment/*.jar build/allocation/*.jar > build/allocation-compile/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: allocation-${{ matrix.order }}-${{ github.sha }}
+          path: |
+            build/allocation-compile/
+            build/allocation-investigation/evidence/
+          if-no-files-found: error
