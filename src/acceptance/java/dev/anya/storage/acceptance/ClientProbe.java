@@ -24,12 +24,12 @@ import java.util.*;
 public final class ClientProbe {
     private static boolean connected;
     private static Wire.Signal work;
-    private static int ticks,age;
+    private static int ticks,age,readyTicks,waitingTicks;
     private static int expectedOffset=-1,viewportRequestedAt,viewportAttempts,withdrawSentAt=-1;
     private static int depositRevision=-1,depositSentAt=-1;
     private static Packets.Action saved;
     public static void receive(Wire.Signal s){
-        work=s;ticks=0;depositRevision=-1;depositSentAt=-1;expectedOffset=-1;viewportRequestedAt=0;viewportAttempts=0;withdrawSentAt=-1;
+        work=s;ticks=0;readyTicks=0;waitingTicks=0;depositRevision=-1;depositSentAt=-1;expectedOffset=-1;viewportRequestedAt=0;viewportAttempts=0;withdrawSentAt=-1;
         AnyaStorage.LOG.info("ANYA_REAL_CLIENT_ACTION {} {}",s.sequence(),s.action());
     }
     private static void ack(){PacketDistributor.sendToServer(new Wire.Signal(work.sequence(),"done"));work=null;}
@@ -143,7 +143,19 @@ public final class ClientProbe {
             }
             if(age>18000)throw new IllegalStateException("Client acceptance deadline exceeded");
             if(work==null||mc.player==null||mc.level==null||mc.getOverlay()!=null)return;
-            ticks++;String[] a=work.action().split(" ");String action=a[0];
+            String[] a=work.action().split(" ");String action=a[0];
+            if(ticks==0&&(action.equals("block")||action.equals("remote"))){
+                Acceptance.require(++waitingTicks<=240,"Client never became ready for single interaction: "+work.action());
+                boolean ready=mc.gameMode!=null&&!(mc.screen instanceof ReceivingLevelScreen);
+                if(action.equals("block")){
+                    BlockPos pos=new BlockPos(Integer.parseInt(a[1]),Integer.parseInt(a[2]),Integer.parseInt(a[3]));
+                    ready=ready&&mc.level.hasChunkAt(pos)&&!mc.level.getBlockState(pos).isAir()&&mc.player.distanceToSqr(Vec3.atCenterOf(pos))<=64;
+                }else ready=ready&&mc.player.getInventory().getItem(0).is(Content.REMOTE.get());
+                if(!ready){readyTicks=0;return;}
+                if(++readyTicks<12)return;
+                AnyaStorage.LOG.info("ANYA_SINGLE_INTENT_READY action={} position={} waitedTicks={}",work.action(),mc.player.position(),waitingTicks);
+            }
+            ticks++;
             if(action.equals("multiview")||action.equals("multiwithdraw")){multiView(mc,action,a[1],Integer.parseInt(a[2]));return;}
             if(action.equals("withdrawone")){withdrawLocatedSample(mc);return;}
             if(action.equals("roomdeposit")){depositRoomSample(mc);return;}
