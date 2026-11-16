@@ -7,3 +7,4 @@ import org.spongepowered.asm.mixin.injection.callback.*;
 public abstract class AuditMixin {
  @Inject(method="auditEngine",at=@At("HEAD")) private static void a(CallbackInfo c){Probe.begin(11);}
  @Inject(method="auditEngine",at=@At("RETURN")) private static void b(CallbackInfo c){Probe.end(11);}
+}
