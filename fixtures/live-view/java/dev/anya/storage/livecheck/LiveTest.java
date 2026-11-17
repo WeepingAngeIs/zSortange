@@ -51,7 +51,19 @@ public final class LiveTest {
  static ServerPlayer p(String role){return server.getPlayerList().getPlayerByName(role);}
  static PocketLedger.Pocket room(int i)throws Exception{return PocketService.ledger(server).get(ROOMS[i]);}
  static ServerLevel dest(){return PocketService.dimension(server);}
- static void send(String role,String action){seq++;acks.clear();PacketDistributor.sendToPlayer(p(role),new TestWire.Signal(seq,action));}
+ static void send(String role,String action){
+  if(action.startsWith("block ")){
+   var words=action.split(" ");var pos=new BlockPos(Integer.parseInt(words[1]),Integer.parseInt(words[2]),Integer.parseInt(words[3]));var actor=p(role);
+   boolean before=actor.canInteractWithBlock(pos,0);double distance=actor.getEyePosition().distanceToSqr(Vec3.atCenterOf(pos));
+   // Disposable actor staging only. Keep actual survival reach and send one
+   // ordinary use packet after the client independently observes readiness.
+   check(actor.serverLevel().hasChunkAt(pos),"Fixture interaction target is not loaded");
+   actor.teleportTo(actor.serverLevel(),pos.getX()+.5,pos.getY(),pos.getZ()-1.5,0,0);
+   check(actor.canInteractWithBlock(pos,0),"Fixture staging did not establish ordinary block reach");
+   AnyaStorage.LOG.info("LIVE_BLOCK_REACH role={} target={} before={} old_eye_distance_sq={} after={}",role,pos,before,distance,actor.canInteractWithBlock(pos,0));
+  }
+  seq++;acks.clear();PacketDistributor.sendToPlayer(p(role),new TestWire.Signal(seq,action));
+ }
  static boolean ack(String role){return Objects.equals(acks.get(role),seq);}
  public static void receive(ServerPlayer p,TestWire.Signal s){if(s.action().equals("ready")){ready.add(p.getGameProfile().getName());return;}if(s.sequence()==seq&&s.action().equals("done"))acks.put(p.getGameProfile().getName(),seq);}
  static void add(String name,Action action,Test done,int limit){steps.add(new Step(name,action,done,limit));}

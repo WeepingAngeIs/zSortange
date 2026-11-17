@@ -84,7 +84,7 @@ public final class LiveClient {
   if(ticks==0&&mc.screen instanceof ReceivingLevelScreen)return;
   if(!hello){inventory();hello=true;PacketDistributor.sendToServer(new TestWire.Signal(0,"ready"));}
   if(work==null)return;String[] words=work.action().split(" ");String action=words[0];
-  if(ticks==0&&action.equals("block")){BlockPos pos=new BlockPos(Integer.parseInt(words[1]),Integer.parseInt(words[2]),Integer.parseInt(words[3]));check(++waited<240,"Readiness deadline before one use packet");if(!mc.level.hasChunkAt(pos)||mc.player.distanceToSqr(Vec3.atCenterOf(pos))>64)return;if(++stable<8)return;}
+  if(ticks==0&&action.equals("block")){BlockPos pos=new BlockPos(Integer.parseInt(words[1]),Integer.parseInt(words[2]),Integer.parseInt(words[3]));check(++waited<240,"Readiness deadline before one use packet");if(!mc.level.hasChunkAt(pos)||!mc.player.canInteractWithBlock(pos,0))return;if(++stable<8)return;}
   ticks++;
   if(ticks==1){
    dev.anya.storage.AnyaStorage.LOG.info("LIVE_CLIENT_DISPATCH role={} sequence={} action={} dimension={}",role(),work.sequence(),work.action(),mc.level.dimension().location());
