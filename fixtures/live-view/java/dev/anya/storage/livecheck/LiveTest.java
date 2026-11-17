@@ -57,6 +57,7 @@ public final class LiveTest {
  static void add(String name,Action action,Test done,int limit){steps.add(new Step(name,action,done,limit));}
  static void once(String name,Action action){add(name,action,()->true,80);}
  static void command(String role,String cmd){add(role+" command "+cmd,()->send(role,"cmd "+cmd),()->ack(role),180);}
+ static void returnedClient(String role){add(role+" usable home client after return",()->send(role,"return-ready"),()->ack(role),300);}
  static void inspect(String role,int mask){add(role+" applied mask "+mask,()->send(role,"inspect "+mask),()->ack(role),240);}
  static boolean inside(String role){return p(role)!=null&&PocketService.inPocket(p(role).level());}
  static void home(String role){var player=p(role);double x=role.equals("Alpha")?3.5:9.5;player.teleportTo(server.overworld(),x,81,1.5,0,0);}
@@ -108,9 +109,9 @@ public final class LiveTest {
   for(String role:List.of("Alpha","Beta","Gamma")){home(role);p(role).setGameMode(GameType.SURVIVAL);p(role).getInventory().clearContent();p(role).getInventory().setItem(9,new ItemStack(Items.COAL,5));p(role).inventoryMenu.broadcastChanges();}
   for(int i=0;i<2;i++){var owner=p(i==0?"Alpha":"Beta");HUBS[i].owner=owner.getUUID();ENTRANCES[i].owner=owner.getUUID();ItemStack remote=new ItemStack(Content.REMOTE.get());var t=BagInventory.data(remote);t.putString("HubDimension","minecraft:overworld");t.putLong("HubPos",HP[i].asLong());BagInventory.data(remote,t);owner.getInventory().setItem(0,remote);PocketService.link(owner,ENTRANCES[i],remote);ROOMS[i]=ENTRANCES[i].pocket;check(ROOMS[i]!=null,"Original link failed");owner.inventoryMenu.broadcastChanges();}
   add("prepare first through real entrance",()->send("Alpha","block 3 81 5"),()->ack("Alpha")&&inside("Alpha"),1400);
-  once("seed first conserved inventory",()->seed(0));command("Alpha","anya pocket exit");add("first safe return",()->{},()->!inside("Alpha")&&PocketService.lease(p("Alpha").getUUID())==null,300);
+  once("seed first conserved inventory",()->seed(0));command("Alpha","anya pocket exit");add("first safe return",()->{},()->!inside("Alpha")&&PocketService.lease(p("Alpha").getUUID())==null,300);returnedClient("Alpha");
   add("prepare second through real entrance",()->send("Beta","block 15 81 5"),()->ack("Beta")&&inside("Beta"),1400);
-  once("seed second conserved inventory",()->seed(1));command("Beta","anya pocket exit");add("second safe return",()->{},()->!inside("Beta")&&PocketService.lease(p("Beta").getUUID())==null,300);
+  once("seed second conserved inventory",()->seed(1));command("Beta","anya pocket exit");add("second safe return",()->{},()->!inside("Beta")&&PocketService.lease(p("Beta").getUUID())==null,300);returnedClient("Beta");
   once("durable setup and view-only trust",()->{server.saveEverything(true,true,true);HUBS[0].setMember(p("Beta").getUUID(),BasePermissions.VIEW);HUBS[1].setMember(p("Alpha").getUUID(),BasePermissions.VIEW);home("Alpha");home("Beta");});
   add("settled setup receipts",()->{},()->RepairService.idle()&&!RepairService.roomBlocked(ROOMS[0])&&!RepairService.roomBlocked(ROOMS[1]),400);
   command("Alpha","anyaliveview open "+ROOMS[0]);inspect("Alpha",1);
@@ -137,7 +138,7 @@ public final class LiveTest {
   once("return to home without auto reopening",()->home("Alpha"));command("Alpha","anyaliveview open "+ROOMS[0]);inspect("Alpha",1);
   once("entrance loss invalidates only its own view",()->server.overworld().setBlockAndUpdate(EP[0],Blocks.AIR.defaultBlockState()));inspect("Alpha",0);
   once("other visitor retained on anchor loss",()->check(inside("Gamma")&&PocketService.lease(p("Gamma").getUUID())!=null,"Other pocket visitor lost"));
-  command("Gamma","anya pocket exit");add("normal Visit recovery intact",()->{},()->!inside("Gamma")&&PocketService.ledger(server).returnCount()==0,300);
+  command("Gamma","anya pocket exit");add("normal Visit recovery intact",()->{},()->!inside("Gamma")&&PocketService.ledger(server).returnCount()==0,300);returnedClient("Gamma");
   inspect("Gamma",0);inspect("Alpha",0);inspect("Beta",0);
   add("all clients remain connected through complete drainage",()->since=server.getTickCount(),()->server.getTickCount()-since>=650&&exactEmpty(),1000);
   once("force-save physical data without changing inventories",()->{checkItems(true);server.saveEverything(true,true,true);for(int i=0;i<2;i++)oracle.setProperty("id."+i,ROOMS[i].toString());try(var out=Files.newOutputStream(Path.of("live-view-oracle.properties"))){oracle.store(out,"Disposable acceptance oracle");}write("FORCE_SAVE_ITEMS",Map.of("items",30,"rooms",2,"chests",8));});
