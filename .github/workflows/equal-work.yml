@@ -1,0 +1,56 @@
+name: Equal completed work with current journal safety
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/equalWork/**','scripts/equal-work*','.github/workflows/equal-work.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: equal-work-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [baseline-first-force, candidate-first-stop]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile unchanged beta.6 safety stack and equal-work observer
+        run: |
+          mkdir -p build/equal-evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/equal-work-init.gradle jar equalWorkJar 2>&1 | tee build/equal-evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/equal-evidence/preservation.log
+      - name: Equal useful updates all protections enabled stop force and independent restart
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.lane }}
+        run: |
+          set -o pipefail
+          python3 scripts/equal-work-runtime.py 2>&1 | tee build/equal-evidence/controller.log
+      - name: Export identical bounded recordings
+        if: always()
+        run: python3 scripts/equal-work-export.py
+      - name: Exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/equal-evidence
+          git rev-parse HEAD > build/equal-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/equal-evidence/source.zip
+          sha256sum build/libs/*.jar build/operator/*.jar build/equal-work/*.jar > build/equal-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: equal-work-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            build/equal-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error

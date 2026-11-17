@@ -1,0 +1,12 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/operator-init.gradle')
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.sourceSets.create('equalWork');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('equalWork'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe','operatorProbe'])p.dependencies.add('equalWorkCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('equalWorkJar',Jar){
+  dependsOn p.tasks.named('equalWorkClasses'),p.tasks.named('operatorProbeJar')
+  from({p.zipTree(p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/MANIFEST.MF';exclude 'META-INF/neoforge.mods.toml'}
+  from p.sourceSets.getByName('equalWork').output
+  archiveBaseName='anya-equal-work-budget-probe';destinationDirectory=p.layout.buildDirectory.dir('equal-work');preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+}
