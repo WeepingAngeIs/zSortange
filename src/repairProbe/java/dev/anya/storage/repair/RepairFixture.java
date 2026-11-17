@@ -85,7 +85,7 @@ public final class RepairFixture {
    try(var in=Files.newInputStream(Path.of("repair-expected.properties"))){expected.load(in);}for(int i=0;i<8;i++)ids.add(UUID.fromString(expected.getProperty("room."+i).split("/")[0]));
    targetKey=new ChunkPos(PocketService.chestPositions(room(2)).getFirst()).toLong();check(absent(),"Restart fixture already loaded target before repair");started=true;
    if(RepairService.ENABLED){
-    if(MODE.equals("verify-dual")){check(RepairService.globalBad,"Missing persistent unknown-latest fault");try{RepairService.reset(targetKey,UUID.randomUUID());throw new IllegalStateException("Fatal reset was allowed");}catch(IOException correct){}phase(23,"unrecoverable-newest-not-promised");}
+    if(MODE.equals("verify-dual")||MODE.equals("verify-journal")){check(RepairService.globalBad,"Missing persistent unknown-latest fault");try{RepairService.reset(targetKey,UUID.randomUUID());throw new IllegalStateException("Fatal reset was allowed");}catch(IOException correct){}phase(23,"unrecoverable-newest-not-promised");}
     else {check(!RepairService.globalBad,"Unexpected corrupt journal");pending=RepairService.journal.all().stream().filter(r->RepairService.journal.blocked(r.key())).toList();
      if(MODE.equals("verify-cut")){RepairService.faultKey=targetKey;RepairService.cut="repair-after-region";}
      for(var r:pending)if(r.state()!=SnapshotJournal.State.REPAIRED)RepairService.schedule(r.key(),r.token());phase(20,"restart-repair");}
@@ -141,23 +141,23 @@ public final class RepairFixture {
     version=1;chest(2).setItem(0,item(2,version));var p=players.get(2);var main=new MainInventory(p);var view=new PocketView(p,room(2),MODE.equals("live")?PocketLeases.Kind.VISIT:PocketLeases.Kind.REMOTE);
     stale=new Transactions.Plan(List.of(chest(2),main),view.guard(BasePermissions.VIEW|BasePermissions.WITHDRAW));check(stale.move(chest(2),0,List.of(main),1)==1,"Stale intent preparation failed");
     int want=RepairService.ENABLED&&!MODE.equals("dual")?1:0;saveExpected(want);
-    if(MODE.startsWith("cut-")){RepairService.faultKey=targetKey;RepairService.cut=MODE.substring(4);}else if(!MODE.equals("measure"))RepairService.arm(MODE.equals("flush")?"flush":MODE.equals("dual")?"dual":"persistent",targetKey);
+    if(MODE.startsWith("cut-")){RepairService.faultKey=targetKey;RepairService.cut=MODE.substring(4);}else if(!MODE.equals("measure"))RepairService.arm(MODE.equals("flush")?"flush":MODE.equals("dual")?"dual":MODE.equals("journal")?"journal":"persistent",targetKey);
     ordinarySave();phase(3,"ordinary-async-write");
    }else if(phase==3){
     if(observed==null||!observed.isDone())return;
     if(MODE.equals("measure")){observed.join();flush=RepairService.worker().synchronize(true);phase(14,"measure-flush");return;}
-    check(observed.isCompletedExceptionally()&&RepairService.ioFaults.get()>0,"Expected actual worker failure missing");
+    check(observed.isCompletedExceptionally()&&(MODE.equals("journal")?RepairService.globalBad:RepairService.ioFaults.get()>0),"Expected actual worker failure missing");
     if(RepairService.ENABLED){check(!stale.commit(server).isEmpty(),"Existing writer crossed failed snapshot");var p=players.get(2);var main=new MainInventory(p);var denied=new Transactions.Plan(List.of(chest(2),main),()->true);check(denied.move(chest(2),0,List.of(main),1)==1&&!denied.commit(server).isEmpty(),"New intent crossed quarantine");check(Transactions.same(chest(2).getItem(0),item(2,1)),"Denied transfer mutated latest sample");}
-    safePlayers();if(!MODE.equals("dual"))transferUnaffected();
+    safePlayers();if(!MODE.equals("dual")&&!MODE.equals("journal"))transferUnaffected();
     if(MODE.equals("live")){
      int x=entrances.get(2).getBlockPos().getX();for(int dx=-3;dx<=3;dx++)for(int z=4;z<=10;z++)for(int y=81;y<=90;y++)server.overworld().setBlockAndUpdate(new BlockPos(x+dx,y,z),Blocks.OBSIDIAN.defaultBlockState());
      for(int xx=196;xx<=204;xx++)for(int zz=196;zz<=204;zz++)server.overworld().setBlockAndUpdate(new BlockPos(xx,80,zz),Blocks.MAGMA_BLOCK.defaultBlockState());server.overworld().setDefaultSpawnPos(new BlockPos(200,81,200),0);
      for(int i=2;i<8;i++)PocketService.recover(players.get(i));phase(6,"recovery-during-persistent-write-failure");
     }else{for(var q:players)q.closeContainer();phase(4,"failed-unload");}
    }else if(phase==4&&now-since>=650&&drained()){
-    if(RepairService.ENABLED&&!MODE.equals("dual"))check(RepairService.journal.blocked(targetKey),"Failure lost persistent quarantine");Trace.audit(server);
+    if(RepairService.ENABLED&&!MODE.equals("dual")&&!MODE.equals("journal"))check(RepairService.journal.blocked(targetKey),"Failure lost persistent quarantine");Trace.audit(server);
     if(MODE.equals("stop")){Trace.marker("STOP_PENDING_REPAIR","normal shutdown with latest failed region snapshot in journal");done=true;server.halt(false);}
-    else {Trace.marker("CUT_FAILED_WRITE","target latest is "+(RepairService.ENABLED&&!MODE.equals("dual")?"durable journal":"NOT protected by durable newest copy")+"; no clean shutdown rescue");Runtime.getRuntime().halt(77);}
+    else {Trace.marker("CUT_FAILED_WRITE","target latest is "+(MODE.equals("journal")?"primary-only, journal unavailable":RepairService.ENABLED&&!MODE.equals("dual")?"durable journal":"NOT protected by durable newest copy")+"; no clean shutdown rescue");Runtime.getRuntime().halt(77);}
    }else if(phase==6){
     healthy();check(((Map<?,?>)Preparation.field("RECOVERY")).size()==6,"Unsafe guests left recovery unexpectedly");check(RepairService.journal.blocked(targetKey),"Unresolved journal disappeared");if(now%40==0)transferUnaffected();
     if(now-since>=250){check(recoveries.size()==6,"Recovery fairness not exercised");int x=entrances.get(2).getBlockPos().getX();server.overworld().setBlockAndUpdate(new BlockPos(x,81,7),Blocks.AIR.defaultBlockState());server.overworld().setBlockAndUpdate(new BlockPos(x,82,7),Blocks.AIR.defaultBlockState());phase(7,"repair-safe-landings-only");}

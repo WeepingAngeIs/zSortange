@@ -75,8 +75,10 @@ public final class RepairService {
  public static void write(RegionFileStorage storage,ChunkPos pos,CompoundTag tag)throws IOException {
   if(!ENABLED||!target(storage.info())||!supported(tag)){((RegionAccess)(Object)storage).anyaWrite(pos,tag);return;}
   if(server!=null&&server.isSameThread())throw new IllegalStateException("Region IO worker required");
-  SnapshotJournal.Record r=null;boolean repair=false;byte[] data=encode(tag);long start=System.nanoTime();
+  SnapshotJournal.Record r=null;boolean repair=false;byte[] data=null;long start=System.nanoTime();
   try{
+   if(fault.equals("journal")&&pos.toLong()==faultKey&&!globalBad){Trace.note("REPAIR_JOURNAL_ENCODING_FAILURE",null,"primary save still required");throw new IOException("Injected secondary snapshot encoding failure");}
+   data=encode(tag);
    if(globalBad||journal==null)throw new IOException("Journal needs inspection; no snapshot overwrite allowed");
    r=replay.remove(tag);repair=r!=null;restoring.set(repair);
    if(repair){var now=journal.get(pos.toLong());if(now==null||!now.token().equals(r.token()))throw new IOException("Stale repair token");}
@@ -90,7 +92,7 @@ public final class RepairService {
    failures.incrementAndGet();transientFaults.add(pos.toLong());
    if(r!=null){try{journal.lock(pos.toLong(),r.token());}catch(Exception nested){globalBad=true;e.addSuppressed(nested);}}
    else {
-    globalBad=true;if(emergency.size()<64)emergency.put(pos.toLong(),data);
+    globalBad=true;if(data!=null&&emergency.size()<64)emergency.put(pos.toLong(),data);
     try{if(journal!=null)journal.failClosed("No confirmed latest journal snapshot: "+e);}catch(Exception nested){e.addSuppressed(nested);}
     // Do not remove the original save obligation when the secondary journal fails. Try the original store/flush, but never call it journal-protected.
     try{((RegionAccess)(Object)storage).anyaWrite(pos,tag);storage.flush();Trace.note("REPAIR_PRIMARY_ONLY",null,"key="+pos.toLong()+" journal unavailable; remains quarantined");}catch(Exception primary){e.addSuppressed(primary);}

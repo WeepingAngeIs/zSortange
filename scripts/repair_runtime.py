@@ -29,5 +29,6 @@ elif lane=='cuts-stop':
     w=world('stop-pending');run(w,'stop',True,'STOP_PENDING_REPAIR',0);run(w,'verify',True)
 elif lane=='no-durable-copy':
     w=world('dual');run(w,'dual',True,'CUT_FAILED_WRITE',77);run(w,'verify-dual',True)
+    w=world('journal-only');run(w,'journal',True,'CUT_FAILED_WRITE',77);run(w,'verify-journal',True)
 else:raise ValueError(lane)
 print('ANYA_REPAIR_LANE_PASSED',lane,flush=True)
