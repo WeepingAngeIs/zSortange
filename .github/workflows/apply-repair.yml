@@ -1,0 +1,35 @@
+name: Apply reviewed repair fixture changes
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['scripts/reviewed-repair.*.b64', '.github/workflows/apply-repair.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact fixture content with prior hashes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import base64,lzma,json,hashlib,subprocess
+          parts=[Path(f'scripts/reviewed-repair.{i}.b64') for i in range(2)]
+          raw=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
+          assert hashlib.sha256(raw).hexdigest()=='c4ffaddc8fe00b71aa0fd5a38eec31aa3c6a75278963eeb57c0cf8a3763b6316'
+          changes=json.loads(raw)
+          for name,x in changes.items():
+              p=Path(name)
+              assert not p.is_absolute() and '..' not in p.parts and name.startswith(('src/repairProbe/','src/repairTest/','scripts/repair'))
+              assert (not p.exists()) if x['prior'] is None else (p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==x['prior']), 'Changed source: '+name
+          for name,x in changes.items():
+              p=Path(name);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(x['text'])
+          for p in parts:p.unlink()
+          subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
+          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
+          subprocess.run(['git','add','--',*changes.keys(),*[str(p) for p in parts]],check=True)
+          subprocess.run(['git','commit','-m','Add bounded ordinary-write repair, live quarantine and restart fixtures'],check=True)
+          subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
+          PY
