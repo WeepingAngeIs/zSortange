@@ -126,8 +126,10 @@ public final class LiveViews {
  public static void reconcile(){
   if(!ENABLED||server==null)return;owner();
   var map=watches().get(PocketService.DIMENSION);
-  if(map!=null){var chunks=map.entrySet().iterator();while(chunks.hasNext()){var row=chunks.next();var players=row.getValue().entrySet().iterator();while(players.hasNext()){var en=players.next();if(!allowedColumn(en.getKey(),row.getKey())){
-   var rec=en.getValue();rec.isValid=false;players.remove();if(rec.isLoadedToPlayer&&en.getKey().connection!=null)PacketFence.forget(en.getKey(),row.getKey());
+  if(map!=null){var chunks=map.entrySet().iterator();while(chunks.hasNext()){var row=chunks.next();long chunkKey=row.getKey();var players=row.getValue().entrySet().iterator();while(players.hasNext()){var en=players.next();var recipient=en.getKey();if(!allowedColumn(recipient,chunkKey)){
+   // fastutil invalidates its MapEntry when iterator.remove() runs. Keep stable
+   // recipient/column values before removal; never read the removed entry again.
+   var rec=en.getValue();rec.isValid=false;players.remove();if(rec.isLoadedToPlayer&&recipient.connection!=null)PacketFence.forget(recipient,chunkKey);
   }}if(row.getValue().isEmpty())chunks.remove();}}
   for(var p:server.getPlayerList().getPlayers()){
    var info=ImmPtlChunkTracking.getPlayerInfo(p);info.additionalChunkLoaders.removeIf(l->protectedDimension(l.dimension()));

@@ -42,6 +42,8 @@ def main():
   p=launch(v['command'],v['cwd'],'client-'+role+suffix,env);roles[role]=p;return p
  def check():
   if (C/'FAILED').exists():raise RuntimeError((C/'FAILED').read_text())
+  crashes=list((S/'crash-reports').glob('crash-*.txt'))
+  if crashes:raise RuntimeError('Dedicated server crash before acceptance completed; retained crash report: '+crashes[-1].name)
   elapsed=time.monotonic()-start
   if elapsed>1100:raise TimeoutError('1100-second game/restart wall limit')
   available=int(next(v for v in pathlib.Path('/proc/meminfo').read_text().splitlines() if v.startswith('MemAvailable:')).split()[1])*1024
@@ -85,4 +87,5 @@ def main():
    for name in ['logs','crash-reports','screenshots','config']:
     if (d/name).exists():shutil.copytree(d/name,E/('client-'+role)/name,dirs_exist_ok=True)
   if (S/'logs').exists():shutil.copytree(S/'logs',E/'server-logs',dirs_exist_ok=True)
+  if (S/'crash-reports').exists():shutil.copytree(S/'crash-reports',E/'server-crash-reports',dirs_exist_ok=True)
 if __name__=='__main__':main()
