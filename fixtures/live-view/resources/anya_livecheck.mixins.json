@@ -1,0 +1,1 @@
+{"required":true,"minVersion":"0.8","package":"dev.anya.storage.livecheck.mixin","compatibilityLevel":"JAVA_21","client":["AppliedPacketAudit"],"injectors":{"defaultRequire":1}}

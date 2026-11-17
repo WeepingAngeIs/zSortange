@@ -1,0 +1,28 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/operator-init.gradle')
+gradle.beforeProject { p -> p.afterEvaluate {
+ p.sourceSets.create('liveView');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveView)
+ p.dependencies.add('liveViewCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('liveViewCompileOnly',p.files(p.provider{p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile}).builtBy('operatorProbeJar'))
+ p.dependencies.add('liveViewCompileOnly',p.files('build/ce-control/approved-ce.jar'))
+ p.tasks.register('liveViewJar',Jar){dependsOn 'liveViewClasses','operatorProbeJar';from p.sourceSets.liveView.output;archiveBaseName='anya-live-view-experiment';destinationDirectory=p.layout.buildDirectory.dir('live-view');preserveFileTimestamps=false;reproducibleFileOrder=true}
+ p.sourceSets.create('liveAcceptance');p.sourceSets.liveAcceptance.java.srcDir p.file('fixtures/live-view/java');p.sourceSets.liveAcceptance.resources.srcDir p.file('fixtures/live-view/resources');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveAcceptance)
+ p.dependencies.add('liveAcceptanceCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('liveAcceptanceCompileOnly',p.sourceSets.liveView.output)
+ p.dependencies.add('liveAcceptanceCompileOnly',p.files(p.provider{p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile}).builtBy('operatorProbeJar'))
+ p.dependencies.add('liveAcceptanceCompileOnly',p.files('build/ce-control/approved-ce.jar'))
+ p.tasks.register('liveAcceptanceJar',Jar){dependsOn 'liveAcceptanceClasses','liveViewJar';from p.sourceSets.liveAcceptance.output;archiveBaseName='anya-live-view-fixture';destinationDirectory=p.layout.buildDirectory.dir('live-view');preserveFileTimestamps=false;reproducibleFileOrder=true}
+ p.sourceSets.create('liveRuntime');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveRuntime)
+ for(task in ['jar','operatorProbeJar','liveViewJar','liveAcceptanceJar'])p.dependencies.add('liveRuntimeRuntimeOnly',p.files(p.provider{p.tasks.named(task).get().archiveFile.get().asFile}).builtBy(task))
+ for(role in ['Alpha','Beta','Gamma']){
+  def name='live'+role
+  p.neoForge.runs.create(name){client();sourceSet=p.sourceSets.liveRuntime;loadedMods=[];gameDirectory=p.file('build/live-view/client-'+role)
+   systemProperty 'anya.liveControl',p.file('build/live-view/control').absolutePath;systemProperty 'anya.control',p.file('build/live-view/control').absolutePath;systemProperty 'anya.role',role
+   for(key in ['anyastorage.liveViewPrototype','anyastorage.pocketPrototype','anya.nonblockingPrepare','anya.minimalOwnership','anya.serializationBudget','anya.backpressure','anya.repairJournal'])systemProperty key,'true'
+   programArguments.addAll '--username',role,'--width','800','--height','600';jvmArguments.addAll '-Xmx1000m','-Xms256m'
+  }
+ }
+ p.tasks.register('exportLiveLaunches'){dependsOn 'jar','operatorProbeJar','liveViewJar','liveAcceptanceJar','createLiveAlphaLaunchScript','createLiveBetaLaunchScript','createLiveGammaLaunchScript';doLast{
+  def result=[:];for(role in ['Alpha','Beta','Gamma']){def f=p.tasks.named('createLive'+role+'LaunchScript').get().launchScript.get().asFile;result[role]=[command:['bash',f.absolutePath],cwd:p.file('build/live-view/client-'+role).absolutePath]}
+  def out=p.file('build/live-view/client-launches.json');out.parentFile.mkdirs();out.text=groovy.json.JsonOutput.toJson(result)
+ }}
+}}

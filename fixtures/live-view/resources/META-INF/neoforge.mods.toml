@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="anyalivecheck"
+version="1.0"
+displayName="Anya disposable live-view tests"
+[[dependencies.anyalivecheck]]
+modId="anyaliveview"
+type="required"
+versionRange="[0.1.0-experimental]"
+ordering="AFTER"
+side="BOTH"
+[[mixins]]
+config="anya_livecheck.mixins.json"

@@ -1,0 +1,72 @@
+name: Experimental scoped live-view isolation
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/liveView/**', 'fixtures/live-view/**', '.github/workflows/live-view.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: scoped-live-view-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Preserve exact publisher target inputs
+        run: |
+          mkdir -p build/live-view/evidence build/ce-control/evidence
+          python3 -m py_compile fixtures/live-view/run.py
+          set -o pipefail
+          python3 fixtures/renderer-prereq/provenance.py build/renderer-prereq/provenance 2>&1 | tee build/live-view/evidence/publisher-preflight.log
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: UpperMoon0/ImmersivePortals
+          ref: ad2e7ee5d73e4ff78bd0befade4f797265e65939
+          path: build/ce-source
+          persist-credentials: false
+      - name: Verify unchanged approved upstream
+        run: python3 fixtures/ce-control/provenance.py prepare
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with: {gradle-version: '8.14.3'}
+      - name: Bounded pinned CE build without optional runtime harness
+        env:
+          ANYA_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          timeout --signal=TERM --kill-after=20s 600s bash build/ce-source/gradlew --no-daemon --max-workers=2 --stacktrace -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar 2>&1 | tee build/live-view/evidence/ce-build.log
+          python3 fixtures/ce-control/provenance.py verify
+      - name: Build isolated scoped hooks and three-client acceptance without changing beta.6
+        run: |
+          set -o pipefail
+          timeout --signal=TERM --kill-after=15s 240s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle jar operatorProbeJar liveViewJar liveAcceptanceJar exportLiveLaunches 2>&1 | tee build/live-view/evidence/build.log
+          python3 scripts/repair_verify.py | tee build/live-view/evidence/preservation.log
+      - name: Prepare disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Outgoing and applied packet isolation mixed visitation scoped cleanup and restart
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 fixtures/live-view/run.py 2>&1 | tee build/live-view/evidence/controller.log
+      - name: Preserve exact source and hashes including failures
+        if: always()
+        run: |
+          mkdir -p build/live-view/evidence
+          git rev-parse HEAD > build/live-view/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/live-view/evidence/source.zip
+          sha256sum build/libs/*.jar build/operator/*.jar build/live-view/*.jar build/ce-control/approved-ce.jar > build/live-view/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: scoped-live-view-${{ github.sha }}
+          path: |
+            build/live-view/evidence/
+            build/ce-control/evidence/*.json
+            build/renderer-prereq/provenance/*.json
+          if-no-files-found: error
