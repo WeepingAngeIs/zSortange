@@ -39,7 +39,7 @@ jobs:
           ANYA_WORKSPACE: ${{ github.workspace }}
         run: |
           set -o pipefail
-          timeout --signal=TERM --kill-after=20s 600s gradle --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar 2>&1 | tee build/ce-control/evidence/ce-build.log
+          timeout --signal=TERM --kill-after=20s 600s bash build/ce-source/gradlew --no-daemon --max-workers=2 --stacktrace -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar 2>&1 | tee build/ce-control/evidence/ce-build.log
           python3 fixtures/ce-control/provenance.py verify
       - name: Build unchanged Anya safety and minimal separate diagnostic
         run: |
