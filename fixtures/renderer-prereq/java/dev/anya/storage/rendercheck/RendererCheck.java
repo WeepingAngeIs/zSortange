@@ -23,7 +23,13 @@ public final class RendererCheck {
     static final BlockPos TARGET=new BlockPos(8,67,10);
     private static MinecraftServer server;
     private static boolean changed;
-    public RendererCheck() {}
+    public RendererCheck() {
+        Path p=control();
+        // Existing safety observers require this path before server lifecycle events.
+        String old=System.getProperty("anya.control");
+        if(old!=null&&!Path.of(old).toAbsolutePath().normalize().equals(p))throw new IllegalStateException("Conflicting fixture output path");
+        System.setProperty("anya.control",p.toString());
+    }
     static Path control() {
         if(!"true".equals(System.getenv("GITHUB_ACTIONS"))) throw new IllegalStateException("CI-only diagnostic");
         Path p=Path.of(System.getProperty("anya.rendererControl")).toAbsolutePath().normalize();

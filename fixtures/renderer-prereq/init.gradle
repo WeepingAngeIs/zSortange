@@ -1,8 +1,8 @@
 apply from: new File(gradle.startParameter.currentDir, 'scripts/operator-init.gradle')
-// ModDev creates afterEvaluate callbacks when a run is registered. Register
-// during plugin application, not projectsEvaluated. Late safety JAR is lazy.
+// The main build first enables NeoForge. Its afterEvaluate callback runs before
+// projectsEvaluated and may still register the run's own finalization callback.
 gradle.beforeProject { p ->
- p.pluginManager.withPlugin('net.neoforged.moddev') {
+ p.afterEvaluate {
   p.sourceSets.create('rendererPrereq')
   p.sourceSets.rendererPrereq.java.srcDir p.file('fixtures/renderer-prereq/java')
   p.sourceSets.rendererPrereq.resources.srcDir p.file('fixtures/renderer-prereq/resources')
@@ -24,6 +24,7 @@ gradle.beforeProject { p ->
    client();sourceSet=p.sourceSets.rendererRuntime;loadedMods=[]
    gameDirectory=p.file('build/renderer-prereq/client')
    systemProperty 'anya.rendererControl',p.file('build/renderer-prereq/control').absolutePath
+   systemProperty 'anya.control',p.file('build/renderer-prereq/control').absolutePath
    systemProperty 'anya.nonblockingPrepare','true';systemProperty 'anya.minimalOwnership','true'
    systemProperty 'anya.serializationBudget','true';systemProperty 'anya.backpressure','true';systemProperty 'anya.repairJournal','true'
    programArguments.addAll '--username','AnyaRendererQA','--width','960','--height','640'
