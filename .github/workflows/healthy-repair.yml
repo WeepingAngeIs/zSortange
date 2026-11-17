@@ -1,0 +1,53 @@
+name: Healthy repair write proof and reset ordering
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/healthyProbe/**', 'scripts/healthy*', '.github/workflows/healthy-repair.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: healthy-repair-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  ordering:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [repair, reset]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Build existing journal and isolated ordering probe
+        run: |
+          mkdir -p build/healthy-evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/healthy-init.gradle jar healthyProbeJar 2>&1 | tee build/healthy-evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/healthy-evidence/module-check.log
+      - name: Healthy worker gates independent restarts and explicit resets
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.lane }}
+        run: |
+          set -o pipefail
+          python3 scripts/healthy_runtime.py 2>&1 | tee build/healthy-evidence/controller.log
+      - name: Exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/healthy-evidence
+          git rev-parse HEAD > build/healthy-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/healthy-evidence/source.zip
+          sha256sum build/libs/*.jar build/healthy/*.jar build/repair/*.jar > build/healthy-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: healthy-order-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            build/healthy-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
