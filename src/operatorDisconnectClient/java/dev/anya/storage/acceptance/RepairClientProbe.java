@@ -43,6 +43,7 @@ public final class RepairClientProbe {
  private static int tick,since,seq,completed;private static long ka,kc,bDeadline;private static UUID aid,bid;private static BlockPos boxA,boxC;
  private static final String CASE=System.getProperty("anya.operatorInterruption","");
  private static UUID alphaId;private static boolean fault(){return CASE.endsWith("-fail");}
+ private static boolean globalFaultExpected(){return fault()&&(!CASE.equals("projection-fail")||leg.equals("restart"));}
  private static CompletableFuture<Void> future;private static Reply last,saved;private static String frozen;private static String leg;
  private static final BlockPos HA=new BlockPos(1,81,1),EA=new BlockPos(3,81,1),HB=new BlockPos(35,81,1),EB=new BlockPos(37,81,1);
  private static final String ELIGIBLE="ELIGIBLE_FOR_EXPLICIT_REVERIFY",UNKNOWN="UNKNOWN_OR_REPLAYED_RECEIPT",EXACT="EXACT_WORLD_KEY_TOKEN_REQUIRED",STALE="STALE_INSPECTION",UNCERTAIN="REFUSE_UNCERTAIN_OLD_VERSION",CONFLICT="REFUSE_PRIMARY_JOURNAL_DISAGREEMENT",SUCCESS="Exact current reset durably completed";
@@ -108,7 +109,7 @@ public final class RepairClientProbe {
  }
  private static void saveOracle()throws Exception{var out=new ByteArrayOutputStream();oracle.store(out,"Disposable expectations; not consumed by storage recovery");try(var f=FileChannel.open(Path.of("operator-network.properties"),StandardOpenOption.CREATE,StandardOpenOption.TRUNCATE_EXISTING,StandardOpenOption.WRITE)){var buf=ByteBuffer.wrap(out.toByteArray());while(buf.hasRemaining())f.write(buf);f.force(true);}}
  private static void identities()throws Exception{
-  for(UUID id:List.of(aid,bid)){var r=room(id);oracle.setProperty("room."+id,r.cell()+"/"+r.owner());int i=0;for(var p:PocketService.chestPositions(r).getClass()!=null?PocketService.chestPositions(r):List.<BlockPos>of()){var c=(StorageEntity)level().getBlockEntity(p);oracle.setProperty("chest."+id+"."+(i++),c.storageIdentity().toString());}}
+  for(UUID id:List.of(aid,bid)){var r=room(id);oracle.setProperty("room."+id,r.cell()+"/"+r.owner());int i=0;for(var p:PocketService.chestPositions(r)){var c=(StorageEntity)level().getBlockEntity(p);oracle.setProperty("chest."+id+"."+(i++),c.storageIdentity().toString());}}
  }
  private static void rawAll()throws Exception{
   check(PocketService.ledger(server).pockets().size()==2,"Room count changed");int total=0;
@@ -121,7 +122,7 @@ public final class RepairClientProbe {
    }
   }check(total==36,"Stored item count not 36");
   check(RepairService.blocked(ka)==fault(),"Runtime quarantine does not match durable result");
-  if(fault())check(RepairService.globalBad,"Publication failure not globally protected");
+  if(fault())check(RepairService.globalBad==globalFaultExpected(),"Wrong scoped/global failure state");
   else check(record(ka)!=null&&record(ka).state()==SnapshotJournal.State.APPLIED&&!RepairService.journal.resetPending(ka),"Committed reset not retained");
   Trace.note("INTERRUPT_RAW_VERIFIED",null,"case="+CASE+" primary read not overlay;13 A gen2 diamonds,7 C gen0 gold,16 Beta emeralds;2 rooms;8 chest identities;blocked="+fault());
  }
@@ -144,15 +145,15 @@ public final class RepairClientProbe {
  private static void rememberEvidence()throws Exception{
   Path dir=root().resolve("anya_repair_experiment");String h=Long.toUnsignedString(ka,16);
   try(var files=Files.list(dir)){for(var p:files.toList()){String n=p.getFileName().toString();if(n.equals(h+".wal")||n.equals(h+".reset")||n.contains(".tmp-"))oracle.setProperty("evidence."+n,JournalDisk.hash(Files.readAllBytes(p)));}}
-  if(fault()){check(Files.exists(dir.resolve("journal-fault")),"Persistent fault marker missing");long partial=oracle.stringPropertyNames().stream().filter(k->k.startsWith("evidence.")&&k.contains(".tmp-")).count();check(partial==1,"Expected one retained partial reset publication");}
+  if(fault()){check(Files.exists(dir.resolve("journal-fault"))==!CASE.equals("projection-fail"),"Wrong persistent global-fault evidence for this boundary");long partial=oracle.stringPropertyNames().stream().filter(k->k.startsWith("evidence.")&&k.contains(".tmp-")).count();check(partial==1,"Expected one retained partial reset publication");}
  }
  private static void preservedEvidence()throws Exception{
   Path dir=root().resolve("anya_repair_experiment");for(var name:oracle.stringPropertyNames())if(name.startsWith("evidence.")){var p=dir.resolve(name.substring(9));check(Files.isRegularFile(p)&&oracle.getProperty(name).equals(JournalDisk.hash(Files.readAllBytes(p))),"Required evidence changed/missing: "+name);}
  }
  private static void finalState()throws Exception{
-  var d=disk();check(d.token.toString().equals(oracle.getProperty("token")),"Current exact token changed");check(d.world.toString().equals(oracle.getProperty("world")),"World binding changed");
-  if(fault()){check(d.pending&&RepairService.blocked(ka),"Failed confirmation reopened");if(CASE.equals("completion-fail"))check(d.state==0&&!d.locked,"Expected intermediate projection retained");else check(d.state==2&&d.locked,"Failure lost repaired snapshot protection");}
-  else check(d.state==0&&!d.locked&&!d.pending&&!RepairService.blocked(ka),"Successful accepted operation not committed");
+  var d=disk();Trace.note("INTERRUPT_DURABLE_OBSERVATION",null,"case="+CASE+" state="+d.state+" recordLocked="+d.locked+" pending="+d.pending+" blocked="+RepairService.blocked(ka)+" globalBad="+RepairService.globalBad);check(d.token.toString().equals(oracle.getProperty("token")),"Current exact token changed");check(d.world.toString().equals(oracle.getProperty("world")),"World binding changed");
+  if(fault()){check(d.pending&&RepairService.blocked(ka),"Failed confirmation reopened");if(CASE.equals("completion-fail"))check(d.state==SnapshotJournal.State.APPLIED.ordinal()&&!d.locked,"Expected intermediate projection retained");else check(d.state==SnapshotJournal.State.REPAIRED.ordinal()&&d.locked,"Failure lost repaired snapshot protection");}
+  else check(d.state==SnapshotJournal.State.APPLIED.ordinal()&&!d.locked&&!d.pending&&!RepairService.blocked(ka),"Successful accepted operation not committed");
   Trace.note("INTERRUPT_DURABLE_STATE",null,"case="+CASE+" primary=2 journal=2 state="+d.state+" recordLocked="+d.locked+" intentPending="+d.pending+" serviceBlocked="+RepairService.blocked(ka));
  }
  private static boolean drained()throws Exception{var v=(OwnershipView)(Object)level().getChunkSource().chunkMap;return PocketService.ownedTicketRequests()==0&&level().getChunkSource().getLoadedChunksCount()==0&&v.anyaPendingCount()==0&&v.anyaCallbackCount()==0&&RepairService.idle()&&PocketService.ledger(server).returnCount()==0;}
@@ -162,7 +163,7 @@ public final class RepairClientProbe {
   server.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0,server);server.getGameRules().getRule(GameRules.RULE_DOMOBSPAWNING).set(false,server);
   if(leg.equals("seed")){
    check(!Files.exists(root().resolve("anya_storage/pockets.v1.dat")),"Never seed an existing world");
-   for(BlockPos center:List.of(EA,EB))for(int x=-7;x<=7;x++)for(int z=-7;z<=7;z++)server.overworld().setBlockAndUpdate(new BlockPos(center.getX()+x,80,center.getZ()+z),Blocks.STONE.defaultBlockState());
+   for(BlockPos center:List.of(EA,EB))for(int x=-7;x<=7;x++)for(int z=-7;z<=7;z++)server.overworld().setBlockAndUpdate(new BlockPos(x,80,z),Blocks.STONE.defaultBlockState());
    server.overworld().setDefaultSpawnPos(EB.offset(0,0,4),0);
    for(BlockPos p:List.of(HA,HB))server.overworld().setBlockAndUpdate(p,Content.HUB.get().defaultBlockState());for(BlockPos p:List.of(EA,EB))server.overworld().setBlockAndUpdate(p,PocketContent.ENTRANCE.get().defaultBlockState());
   }else{try(var in=Files.newInputStream(Path.of("operator-network.properties"))){oracle.load(in);}aid=UUID.fromString(oracle.getProperty("aid"));bid=UUID.fromString(oracle.getProperty("bid"));boxA=BlockPos.of(Long.parseLong(oracle.getProperty("boxA")));boxC=BlockPos.of(Long.parseLong(oracle.getProperty("boxC")));ka=new ChunkPos(boxA).toLong();kc=new ChunkPos(boxC).toLong();check(level().getChunkSource().getLoadedChunksCount()==0,"Restart inspection preloaded pockets");preservedEvidence();finalState();rawAll();}
@@ -198,17 +199,17 @@ public final class RepairClientProbe {
    launchCommand(fault()?"Injected operator confirmation "+CASE:SUCCESS);
   },()->InterruptAudit.entered,()->{
    check(InterruptAudit.consumed,"Gate reached without receipt consumption");beta();var d=disk();
-   if(CASE.equals("receipt-disconnect"))check(d.state==2&&d.locked&&d.pending&&!d.intent.equals(d.token),"Receipt boundary published reset early");
-   if(CASE.equals("intent-disconnect"))check(d.state==2&&d.locked&&d.pending&&d.intent.equals(d.token),"Current intent not durable at gate");
-   if(CASE.equals("projection-disconnect"))check(d.state==0&&!d.locked&&d.pending,"Projection boundary missing uncertainty");
-   if(CASE.equals("completion-disconnect")||CASE.equals("ack-disconnect"))check(d.state==0&&!d.locked&&!d.pending,"Completion not durable at lost reply boundary");
+   if(CASE.equals("receipt-disconnect"))check(d.state==SnapshotJournal.State.REPAIRED.ordinal()&&d.locked&&d.pending&&!d.intent.equals(d.token),"Receipt boundary published reset early");
+   if(CASE.equals("intent-disconnect"))check(d.state==SnapshotJournal.State.REPAIRED.ordinal()&&d.locked&&d.pending&&d.intent.equals(d.token),"Current intent not durable at gate");
+   if(CASE.equals("projection-disconnect"))check(d.state==SnapshotJournal.State.APPLIED.ordinal()&&!d.locked&&d.pending,"Projection boundary missing uncertainty");
+   if(CASE.equals("completion-disconnect")||CASE.equals("ack-disconnect"))check(d.state==SnapshotJournal.State.APPLIED.ordinal()&&!d.locked&&!d.pending,"Completion not durable at lost reply boundary");
    Trace.note("NETWORK_BOUNDARY_STATE",null,"case="+CASE+" state="+d.state+" locked="+d.locked+" pending="+d.pending+" actual client confirmation still not acknowledged");
    if(fault())InterruptAudit.release();else{ready.remove(alphaId);Acceptance.marker("KILL_ALPHA","One actual client process killed at "+CASE+"; no world-thread pause");}
   });
   if(fault()){
    add("received-real-failure-reply",()->{},()->InterruptAudit.finished&&replies.containsKey(alphaId),()->{
     check(InterruptAudit.error!=null&&InterruptAudit.faults.get()==1&&replies.get(alphaId).contains("Injected operator confirmation "+CASE),"Expected actual network failure response absent");
-    check(RepairService.globalBad&&RepairService.blocked(ka),"Publication error did not retain protection");beta();ready.remove(alphaId);Acceptance.marker("KILL_ALPHA","Disconnect after actual confirmation failure response; persistence evidence retained");
+    check(RepairService.globalBad==globalFaultExpected()&&RepairService.blocked(ka)&&RepairService.journal.resetPending(ka),"Publication error lost required per-key intent/quarantine");beta();ready.remove(alphaId);Acceptance.marker("KILL_ALPHA","Disconnect after actual confirmation failure response; persistence evidence retained");
    });
   }
   add("actual-socket-disconnected",()->{},()->a()==null,()->{
