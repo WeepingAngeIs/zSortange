@@ -33,7 +33,7 @@ public final class ServerProbe {
     static ServerPlayer b(){return server.getPlayerList().getPlayerByName("AnyaQABeta");}
     static void check(boolean v,String m){Acceptance.require(v,m);}
     static void log(String m){AnyaStorage.LOG.info("ANYA_ACCEPTANCE_ASSERT {}",m);}
-    public static void ack(ServerPlayer p,Wire.Signal s){if(RemoteTicketProbe.active()){RemoteTicketProbe.ack(p,s);return;}if(MultiPocketProbe.active()){MultiPocketProbe.ack(p,s);return;}if(RoomProbe.active()){RoomProbe.ack(p,s);return;}if(s.action().equals("done")&&s.sequence()==seq)acks.put(p.getUUID(),seq);}
+    public static void ack(ServerPlayer p,Wire.Signal s){if(Boolean.getBoolean("anya.repairNetwork")){try{Class.forName("dev.anya.storage.acceptance.RepairClientProbe").getMethod("ack",ServerPlayer.class,Wire.Signal.class).invoke(null,p,s);}catch(ReflectiveOperationException error){throw new IllegalStateException(error);}return;}if(RemoteTicketProbe.active()){RemoteTicketProbe.ack(p,s);return;}if(MultiPocketProbe.active()){MultiPocketProbe.ack(p,s);return;}if(RoomProbe.active()){RoomProbe.ack(p,s);return;}if(s.action().equals("done")&&s.sequence()==seq)acks.put(p.getUUID(),seq);}
     static void send(ServerPlayer p,String s){seq++;acks.clear();PacketDistributor.sendToPlayer(p,new Wire.Signal(seq,s));since=tick;}
     static boolean done(ServerPlayer p){return p!=null&&Objects.equals(acks.get(p.getUUID()),seq);}
     static void next(){phase++;since=tick;}
@@ -45,7 +45,7 @@ public final class ServerProbe {
     static void homePosition(ServerPlayer p,double x){p.teleportTo(server.overworld(),x,81,3.5,180,10);}
     static String chestClick()throws Exception{BlockPos p=PocketService.chestPositions(record()).get(2);return "block "+p.getX()+" "+p.getY()+" "+p.getZ();}
     @SubscribeEvent public static void start(ServerStartedEvent e)throws Exception {
-        if(RemoteTicketProbe.active())return;
+        if(Boolean.getBoolean("anya.repairNetwork")||RemoteTicketProbe.active())return;
         if(!Boolean.getBoolean("anya.acceptance")||FaultProbe.active()||RoomProbe.active()||MultiPocketProbe.active())return;
         server=e.getServer();Acceptance.verifyJar("server");
         check(server.getPlayerList().getPlayers().isEmpty(),"Acceptance requires no pre-existing users");

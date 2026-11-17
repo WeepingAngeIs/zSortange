@@ -156,6 +156,25 @@ public final class ClientProbe {
                 AnyaStorage.LOG.info("ANYA_SINGLE_INTENT_READY action={} position={} waitedTicks={}",work.action(),mc.player.position(),waitingTicks);
             }
             ticks++;
+            if(action.equals("repairtry")){
+                Acceptance.require(ticks<=180,"Repair action deadline; no mutation retry");
+                if(!(mc.player.containerMenu instanceof StoreMenu m)||ticks<5)return;
+                if(depositRevision<0){depositRevision=m.revision();return;}
+                if(withdrawSentAt<0){
+                    if(m.revision()==depositRevision)return;
+                    saved=new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",Integer.parseInt(a[1]));
+                    AnyaStorage.LOG.info("REPAIR_CLIENT_SINGLE_INTENT revision={} value={}",m.revision(),a[1]);
+                    PacketDistributor.sendToServer(saved);withdrawSentAt=ticks;return;
+                }
+                if(ticks-withdrawSentAt>=30){shot("repair-intent-"+work.sequence());ack();}return;
+            }
+            if(action.equals("repairview")){
+                Acceptance.require(ticks<=180,"Repair snapshot client deadline");
+                if(!(mc.player.containerMenu instanceof StoreMenu m)||ticks<8)return;
+                var sample=m.getSlot(0).getItem();
+                Acceptance.require(sample.getCount()==Integer.parseInt(a[3])&&sample.getHoverName().getString().equals("Repair client "+a[1]+" v"+a[2]),"Wrong current snapshot displayed to real client");
+                shot("repair-view-"+work.sequence());ack();return;
+            }
             if(action.equals("multiview")||action.equals("multiwithdraw")){multiView(mc,action,a[1],Integer.parseInt(a[2]));return;}
             if(action.equals("withdrawone")){withdrawLocatedSample(mc);return;}
             if(action.equals("roomdeposit")){depositRoomSample(mc);return;}

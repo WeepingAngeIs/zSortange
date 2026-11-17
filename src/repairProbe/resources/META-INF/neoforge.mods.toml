@@ -21,3 +21,6 @@ config="anya_budget.mixins.json"
 config="anya_pressure.mixins.json"
 [[mixins]]
 config="anya_repair.mixins.json"
+
+[[mixins]]
+config="anya_repair_validation.mixins.json"

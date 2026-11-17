@@ -39,5 +39,9 @@ gradle.projectsEvaluated {
   archiveBaseName='anya-failed-write-repair-experiment';destinationDirectory=p.layout.buildDirectory.dir('repair')
   preserveFileTimestamps=false;reproducibleFileOrder=true
  }
+ if(p.hasProperty('repairClient')) {
+  p.sourceSets.acceptance.java.srcDir(p.file('src/repairClient/java'))
+  for(n in ['durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe'])p.dependencies.add('acceptanceCompileOnly',p.sourceSets.getByName(n).output)
+ }
  if(p.hasProperty('repairProbe')){p.dependencies.add('packagedLauncherRuntimeOnly',p.files(p.tasks.named('repairProbeJar')));p.tasks.named('exportAcceptanceLaunches'){dependsOn 'repairProbeJar'}}
 }
