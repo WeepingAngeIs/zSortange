@@ -1,0 +1,5 @@
+Final bounded repair verification includes the secondary-snapshot encoding failure path.
+Latest-copy journal failures must not suppress the original region save attempt.
+No required save is discarded, no inventory command is replayed, and reset requires exact durable proof.
+Run the same fixed failure/restart, combined unresolved-recovery and real-client regression matrix on this executable.
+The playable beta.6 and existing production source/formats remain unchanged.
