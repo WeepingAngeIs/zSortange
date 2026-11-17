@@ -12,7 +12,11 @@ gradle.beforeProject { p -> p.afterEvaluate {
  p.dependencies.add('liveAcceptanceCompileOnly',p.files('build/ce-control/approved-ce.jar'))
  p.tasks.register('liveAcceptanceJar',Jar){dependsOn 'liveAcceptanceClasses','liveViewJar';from p.sourceSets.liveAcceptance.output;archiveBaseName='anya-live-view-fixture';destinationDirectory=p.layout.buildDirectory.dir('live-view');preserveFileTimestamps=false;reproducibleFileOrder=true}
  p.sourceSets.create('liveRuntime');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveRuntime)
- for(task in ['jar','operatorProbeJar','liveViewJar','liveAcceptanceJar'])p.dependencies.add('liveRuntimeRuntimeOnly',p.files(p.provider{p.tasks.named(task).get().archiveFile.get().asFile}).builtBy(task))
+ // Each lazy provider must capture its own task name; a shared Groovy loop variable
+ // resolves all entries to the final fixture JAR and omits the adapter and safety mods.
+ ['jar','operatorProbeJar','liveViewJar','liveAcceptanceJar'].each { taskName ->
+  p.dependencies.add('liveRuntimeRuntimeOnly',p.files(p.provider{p.tasks.named(taskName).get().archiveFile.get().asFile}).builtBy(taskName))
+ }
  for(role in ['Alpha','Beta','Gamma']){
   def name='live'+role
   p.neoForge.runs.create(name){client();sourceSet=p.sourceSets.liveRuntime;loadedMods=[];gameDirectory=p.file('build/live-view/client-'+role)
@@ -22,6 +26,11 @@ gradle.beforeProject { p -> p.afterEvaluate {
   }
  }
  p.tasks.register('exportLiveLaunches'){dependsOn 'jar','operatorProbeJar','liveViewJar','liveAcceptanceJar','createLiveAlphaLaunchScript','createLiveBetaLaunchScript','createLiveGammaLaunchScript';doLast{
+  def required=['jar','operatorProbeJar','liveViewJar','liveAcceptanceJar'].collect { taskName -> p.tasks.named(taskName).get().archiveFile.get().asFile.canonicalFile }
+  def resolved=p.sourceSets.liveRuntime.runtimeClasspath.files.collect { it.canonicalFile }
+  if(required.toSet().size()!=4 || !resolved.containsAll(required))throw new GradleException('Live-view runtime omitted or aliased a required owned artifact')
+  def evidence=p.file('build/live-view/evidence/runtime-classpath.json');evidence.parentFile.mkdirs()
+  evidence.text=groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([required:required.collect{it.path},resolved:resolved.collect{it.path}.sort(),kind:'resolved dev classpath; runtime ModList remains authoritative']))
   def result=[:];for(role in ['Alpha','Beta','Gamma']){def f=p.tasks.named('createLive'+role+'LaunchScript').get().launchScript.get().asFile;result[role]=[command:['bash',f.absolutePath],cwd:p.file('build/live-view/client-'+role).absolutePath]}
   def out=p.file('build/live-view/client-launches.json');out.parentFile.mkdirs();out.text=groovy.json.JsonOutput.toJson(result)
  }}
