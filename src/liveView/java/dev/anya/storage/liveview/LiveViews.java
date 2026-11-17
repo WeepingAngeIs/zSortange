@@ -42,6 +42,7 @@ public final class LiveViews {
  public static final Map<UUID,Handle> HANDLES=new LinkedHashMap<>();
  public static final class Handle {
   public final UUID id,player,pocket;public final long epoch,deadline;public final LivePortal portal;
+  private String lastValidity="";private int validityTransitions;
   Handle(UUID id,ServerPlayer p,PocketLedger.Pocket r,LivePortal portal){this.id=id;player=p.getUUID();pocket=r.id();epoch=r.epoch();deadline=now()+LIFETIME;this.portal=portal;}
  }
  /** Ordinary non-global portal; it never becomes a persistent source-world entity. */
@@ -67,8 +68,18 @@ public final class LiveViews {
   return "";
  }
  public static boolean valid(Handle h){
-  if(server==null||!server.isSameThread()||now()>=h.deadline||h.portal.isRemoved())return false;
-  var r=pocket(h.pocket);return r!=null&&r.epoch()==h.epoch&&viewReason(server.getPlayerList().getPlayer(h.player),r).isEmpty();
+  if(server==null||!server.isSameThread())return false;
+  String reason;
+  if(now()>=h.deadline)reason="deadline";
+  else if(h.portal.isRemoved())reason="portal removed: "+h.portal.getRemovalReason();
+  else {var r=pocket(h.pocket);reason=r==null?"pocket absent":r.epoch()!=h.epoch?"epoch changed":viewReason(server.getPlayerList().getPlayer(h.player),r);}
+  // Bounded diagnostics only: never cache authorization or change its outcome.
+  // Observe transitions even between pre-tick cleanup and the final packet gate.
+  if(!reason.equals(h.lastValidity)){
+   if(h.validityTransitions++<32)AnyaStorage.LOG.info("LIVE_VIEW_VALIDITY tick={} handle={} pocket={} reason={} previous={}",now(),h.id,h.pocket,reason.isEmpty()?"valid":reason,h.lastValidity.isEmpty()?"valid":h.lastValidity);
+   h.lastValidity=reason;
+  }
+  return reason.isEmpty();
  }
  public static Handle open(ServerPlayer p,UUID id)throws Exception{
   owner();var r=pocket(id);String reason=viewReason(p,r);if(!reason.isEmpty()||pressure){deniedOpens++;throw new IllegalStateException("Live view denied");}
