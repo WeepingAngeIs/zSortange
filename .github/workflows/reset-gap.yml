@@ -1,0 +1,53 @@
+name: Reset publication crash and persistence boundaries
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/resetGap/**', 'scripts/resetgap*', '.github/workflows/reset-gap.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: reset-gap-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        boundary: [cut, lock-fail, double-fail]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Build unchanged beta.6 and bounded reset-gap fixture
+        run: |
+          mkdir -p build/resetgap-evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/resetgap-init.gradle jar resetGapJar 2>&1 | tee build/resetgap-evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/resetgap-evidence/module-check.log
+      - name: Process cut or relock failure followed by independent read-back
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.boundary }}
+        run: |
+          set -o pipefail
+          python3 scripts/resetgap_runtime.py 2>&1 | tee build/resetgap-evidence/controller.log
+      - name: Retain exact evidence including failures
+        if: always()
+        run: |
+          mkdir -p build/resetgap-evidence
+          git rev-parse HEAD > build/resetgap-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/resetgap-evidence/source.zip
+          sha256sum build/libs/*.jar build/resetgap/*.jar build/repair/*.jar > build/resetgap-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reset-gap-${{ matrix.boundary }}-${{ github.sha }}
+          path: |
+            build/resetgap-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
