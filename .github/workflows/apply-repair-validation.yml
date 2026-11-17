@@ -26,12 +26,14 @@ jobs:
               assert (not p.exists()) if digest is None else (p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==digest), 'Source changed: '+name
           patch=lzma.decompress(base64.b64decode(''.join(p.read_text() for p in parts),validate=True))
           assert hashlib.sha256(patch).hexdigest()=='d4df16671cd98db56d06bf90fcdb18d1d0f82a86836ea8440569c60594c604d3'
-          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
-          subprocess.run(['git','apply','-'],input=patch,check=True)
+          excluded='--exclude=.github/workflows/repair-validation.yml'
+          subprocess.run(['git','apply',excluded,'--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply',excluded,'-'],input=patch,check=True)
           for p in [*parts,manifest]:p.unlink()
           subprocess.run(['git','config','user.name','github-actions[bot]'],check=True)
           subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'],check=True)
-          subprocess.run(['git','add','--',*expected.keys(),*[str(p) for p in parts],str(manifest)],check=True)
+          names=[n for n in expected if not n.startswith('.github/')]
+          subprocess.run(['git','add','--',*names,*[str(p) for p in parts],str(manifest)],check=True)
           subprocess.run(['git','commit','-m','Add actual-client quarantine and bounded multikey snapshot validation'],check=True)
           subprocess.run(['git','push','origin','HEAD:refs/heads/feature/elemental-pockets'],check=True)
           PY
