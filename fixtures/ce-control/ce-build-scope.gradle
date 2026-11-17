@@ -1,0 +1,39 @@
+// Applies only to the approved immutable CE checkout. No source patch or upstream run/test task.
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+
+gradle.beforeProject { p ->
+ p.afterEvaluate {
+  def root=new File(System.getenv('ANYA_WORKSPACE')).canonicalFile
+  def verified=new File(root,'build/renderer-prereq/provenance/verified-jars')
+  def sodium=new File(root,'build/ce-control/compile-inputs/sodium-target-implementation.jar')
+  if(!sodium.isFile())throw new GradleException('Verified exact Sodium implementation missing')
+  for(n in ['compileOnly','implementation']) {
+   def c=p.configurations.findByName(n)
+   if(c!=null)c.dependencies.removeAll { d ->
+    (d.group=='net.caffeinemc'&&d.name.startsWith('sodium'))||
+    (d.group=='maven.modrinth'&&d.name in ['iris','cloth-config'])
+   }
+  }
+  p.dependencies.add('compileOnly',p.files(sodium,new File(verified,'iris-neoforge-1.8.14-beta.1+mc1.21.1.jar')))
+  p.dependencies.add('implementation',p.files(new File(verified,'cloth-config-15.0.140-neoforge.jar')))
+  // No local Maven artifact can silently substitute for a declared publisher input.
+  p.repositories.removeAll { r -> r instanceof org.gradle.api.artifacts.repositories.MavenArtifactRepository && r.url.scheme=='file' }
+  p.tasks.withType(JavaCompile).configureEach {
+   options.compilerArgs.add('-proc:none')
+   doFirst {
+    def rows=[]
+    p.configurations.compileClasspath.resolvedConfiguration.resolvedArtifacts.each { a ->
+     rows.add([coordinate:a.moduleVersion.id.toString(),file:a.file.name,bytes:a.file.length(),sha256:MessageDigest.getInstance('SHA-256').digest(a.file.bytes).encodeHex().toString(),role:'compile classfile data only; annotation processing disabled'])
+    }
+    def out=new File(root,'build/ce-control/evidence/ce-compile-dependencies.json');out.parentFile.mkdirs()
+    out.text=JsonOutput.prettyPrint(JsonOutput.toJson([source:'ad2e7ee5d73e4ff78bd0befade4f797265e65939',task:name,compilerArgs:options.compilerArgs,artifacts:rows,localExactInputs:[sodium.name,'iris-neoforge-1.8.14-beta.1+mc1.21.1.jar','cloth-config-15.0.140-neoforge.jar'],runtimeDependencyStaging:'none; separate explicit allowlist']))
+   }
+  }
+  p.tasks.named('jar',Jar).configure { preserveFileTimestamps=false;reproducibleFileOrder=true }
+ }
+}
+gradle.taskGraph.whenReady { graph ->
+ def forbidden=graph.allTasks.findAll { t -> t.name.toLowerCase().startsWith('run')||t.name in ['test','coreCheck','build','publish','javadoc'] }
+ if(!forbidden.isEmpty())throw new GradleException('Unapproved CE execution tasks: '+forbidden)
+}

@@ -1,0 +1,21 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/operator-init.gradle')
+gradle.beforeProject { p -> p.afterEvaluate {
+ p.sourceSets.create('ceControl');p.sourceSets.ceControl.java.srcDir p.file('fixtures/ce-control/java');p.sourceSets.ceControl.resources.srcDir p.file('fixtures/ce-control/resources')
+ p.neoForge.addModdingDependenciesTo(p.sourceSets.ceControl)
+ p.tasks.register('ceControlJar',Jar){dependsOn 'ceControlClasses';from p.sourceSets.ceControl.output;archiveBaseName='anya-ce-renderer-control';destinationDirectory=p.layout.buildDirectory.dir('ce-control');preserveFileTimestamps=false;reproducibleFileOrder=true}
+ p.sourceSets.create('ceRuntime');p.neoForge.addModdingDependenciesTo(p.sourceSets.ceRuntime)
+ p.dependencies.add('ceRuntimeRuntimeOnly',p.files(p.tasks.named('jar')))
+ p.dependencies.add('ceRuntimeRuntimeOnly',p.files(p.provider{p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile}).builtBy('operatorProbeJar'))
+ p.dependencies.add('ceRuntimeRuntimeOnly',p.files(p.tasks.named('ceControlJar')))
+ // CE and exact publisher wrappers are discovered normally from this disposable mods folder.
+ p.neoForge.runs.create('ceControl'){
+  client();sourceSet=p.sourceSets.ceRuntime;loadedMods=[];gameDirectory=p.file('build/ce-control/client')
+  systemProperty 'anya.ceControl',p.file('build/ce-control/control').absolutePath;systemProperty 'anya.control',p.file('build/ce-control/control').absolutePath
+  systemProperty 'anya.nonblockingPrepare','true';systemProperty 'anya.minimalOwnership','true';systemProperty 'anya.serializationBudget','true';systemProperty 'anya.backpressure','true';systemProperty 'anya.repairJournal','true'
+  systemProperty 'mixin.debug.verbose','true';systemProperty 'mixin.debug.export','true';systemProperty 'mixin.debug.export.filter','net.minecraft.client.renderer.LevelRenderer'
+  programArguments.addAll '--username','AnyaPortalQA','--width','960','--height','640';jvmArguments.addAll '-Xmx1000m','-Xms256m'
+ }
+ p.tasks.register('exportCeLaunch'){dependsOn 'jar','operatorProbeJar','ceControlJar','createCeControlLaunchScript';doLast{
+  def f=p.tasks.named('createCeControlLaunchScript').get().launchScript.get().asFile;def o=p.file('build/ce-control/client-launch.json');o.parentFile.mkdirs();o.text=groovy.json.JsonOutput.toJson([command:['bash',f.absolutePath],cwd:p.file('build/ce-control/client').absolutePath])
+ }}
+}}

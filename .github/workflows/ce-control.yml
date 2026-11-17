@@ -1,0 +1,73 @@
+name: Approved pinned CE minimal portal renderer control
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['fixtures/ce-control/**', '.github/workflows/ce-control.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: approved-ce-control-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Syntax-check owned fixture and preserve exact target preflight
+        run: |
+          mkdir -p build/ce-control/evidence
+          python3 -m py_compile fixtures/ce-control/provenance.py fixtures/ce-control/run_control.py
+          set -o pipefail
+          python3 fixtures/renderer-prereq/provenance.py build/renderer-prereq/provenance 2>&1 | tee build/ce-control/evidence/publisher-preflight.log
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: UpperMoon0/ImmersivePortals
+          ref: ad2e7ee5d73e4ff78bd0befade4f797265e65939
+          path: build/ce-source
+          persist-credentials: false
+      - name: Verify approved source and exact compile inputs without executing mods
+        run: python3 fixtures/ce-control/provenance.py prepare
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with: {gradle-version: '8.14.3'}
+      - name: Bounded approved CE build only no optional runtime or upstream test harness
+        env:
+          ANYA_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          timeout --signal=TERM --kill-after=20s 600s gradle --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar 2>&1 | tee build/ce-control/evidence/ce-build.log
+          python3 fixtures/ce-control/provenance.py verify
+      - name: Build unchanged Anya safety and minimal separate diagnostic
+        run: |
+          set -o pipefail
+          timeout --signal=TERM --kill-after=15s 120s gradle --no-daemon --max-workers=2 -I fixtures/ce-control/init.gradle jar operatorProbeJar ceControlJar exportCeLaunch 2>&1 | tee build/ce-control/evidence/fixture-build.log
+          python3 scripts/repair_verify.py | tee build/ce-control/evidence/preservation.log
+      - name: Prepare disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Exact backend actual changing portal pixels occlusion removal and bounded cleanup
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1280x800x24' python3 fixtures/ce-control/run_control.py 2>&1 | tee build/ce-control/evidence/controller.log
+      - name: Preserve code hashes and exact approval scope on success or failure
+        if: always()
+        run: |
+          mkdir -p build/ce-control/evidence
+          git rev-parse HEAD > build/ce-control/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/ce-control/evidence/source.zip
+          cp fixtures/ce-control/approval.json build/ce-control/evidence/approval.json
+          sha256sum build/libs/*.jar build/operator/*.jar build/ce-control/*.jar > build/ce-control/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: approved-ce-control-${{ github.sha }}
+          path: |
+            build/ce-control/evidence/
+            build/renderer-prereq/provenance/*.json
+            build/renderer-prereq/provenance/STATIC_VERIFIED
+          if-no-files-found: error

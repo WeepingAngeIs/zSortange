@@ -1,0 +1,19 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="anyacecontrol"
+version="1.0"
+displayName="Anya approved CE disposable renderer control (NOT FOR PLAY)"
+[[dependencies.anyacecontrol]]
+modId="anyastorage"
+type="required"
+versionRange="[0.3.0-beta.6]"
+ordering="AFTER"
+side="BOTH"
+[[dependencies.anyacecontrol]]
+modId="immersive_portals_core"
+type="required"
+versionRange="[6.1.4]"
+ordering="AFTER"
+side="BOTH"
