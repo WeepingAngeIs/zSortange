@@ -47,6 +47,7 @@ jobs:
           timeout --signal=TERM --kill-after=15s 240s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle jar operatorProbeJar liveViewJar liveAcceptanceJar exportLiveLaunches 2>&1 | tee build/live-view/evidence/build.log
           python3 scripts/repair_verify.py | tee build/live-view/evidence/preservation.log
           javap -c -p -classpath build/moddev/artifacts/neoforge-21.1.249.jar net.minecraft.client.gui.screens.ReceivingLevelScreen > build/live-view/evidence/receiving-level-bytecode.txt
+          javap -c -p -classpath build/ce-control/approved-ce.jar qouteall.imm_ptl.core.platform_specific.mixin.common.MixinServerPlayerEntity_MA qouteall.imm_ptl.core.portal.custom_portal_gen.CustomPortalGenManager qouteall.imm_ptl.core.mixin.client.MixinMinecraft > build/live-view/evidence/ce-conventional-bytecode.txt
       - name: Prepare disposable software display
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
       - name: Outgoing and applied packet isolation mixed visitation scoped cleanup and restart

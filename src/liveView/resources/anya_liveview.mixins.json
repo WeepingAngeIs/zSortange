@@ -1,1 +1,1 @@
-{"required":true,"minVersion":"0.8","package":"dev.anya.storage.liveview.mixin","compatibilityLevel":"JAVA_21","mixins":["ScopedLoaders","NoExtraLoaders","ScopedPortal","FinalSendFence","PendingSendFence"],"injectors":{"defaultRequire":1}}
+{"required":true,"minVersion":"0.8","package":"dev.anya.storage.liveview.mixin","compatibilityLevel":"JAVA_21","mixins":["ScopedLoaders","NoExtraLoaders","ScopedPortal","FinalSendFence","PendingSendFence","ConventionalPocketSync"],"injectors":{"defaultRequire":1}}

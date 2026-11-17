@@ -32,6 +32,7 @@ import java.util.*;
 @EventBusSubscriber(modid=LiveTest.ID,value=Dist.CLIENT)
 public final class LiveClient {
  static boolean connecting,hello;static int age,ticks,waited,stable;static TestWire.Signal work;
+ static long homeColumnPackets,homeColumnPacketsAtExit;
  static final Set<Long> columns=new HashSet<>();static final Map<String,Long> applied=new TreeMap<>();static final Map<Integer,UUID> portals=new HashMap<>();
  public static void receive(TestWire.Signal s){
   check(work==null,"Overlapping client directive: "+(work==null?"none":work.action())+" -> "+s.action());
@@ -55,6 +56,9 @@ public final class LiveClient {
     check(!p.extraData().getBoolean("teleportable")&&!p.extraData().getBoolean("interactable")&&!p.extraData().getBoolean("hasCrossPortalCollision"),"Unsafe portal flags reached client");portals.put(p.id(),p.uuid());applied.merge("portal",1L,Long::sum);
    }
    if(packet instanceof ClientboundRemoveEntitiesPacket r)for(int id:r.getEntityIds())portals.remove(id);
+   if(dimension.equals(Level.OVERWORLD)&&packet instanceof ClientboundLevelChunkWithLightPacket home&&home.getX()==0&&home.getZ()==0){
+    homeColumnPackets++;dev.anya.storage.AnyaStorage.LOG.info("LIVE_APPLIED_HOME role={} count={} chunk_present={}",role(),homeColumnPackets,Minecraft.getInstance().level.hasChunkAt(new BlockPos(3,81,1)));
+   }
    if(!dimension.equals(PocketService.DIMENSION))return;
    applied.merge(packet.getClass().getSimpleName(),1L,Long::sum);
    if(packet instanceof ClientboundLevelChunkWithLightPacket c){columns.add(ChunkPos.asLong(c.getX(),c.getZ()));
@@ -88,7 +92,7 @@ public final class LiveClient {
   ticks++;
   if(ticks==1){
    dev.anya.storage.AnyaStorage.LOG.info("LIVE_CLIENT_DISPATCH role={} sequence={} action={} dimension={}",role(),work.sequence(),work.action(),mc.level.dimension().location());
-   if(action.equals("cmd")){mc.player.closeContainer();mc.player.connection.sendCommand(work.action().substring(4));}
+   if(action.equals("cmd")){mc.player.closeContainer();if(work.action().equals("cmd anya pocket exit"))homeColumnPacketsAtExit=homeColumnPackets;mc.player.connection.sendCommand(work.action().substring(4));}
    else if(action.equals("block")){var pos=new BlockPos(Integer.parseInt(words[1]),Integer.parseInt(words[2]),Integer.parseInt(words[3]));mc.gameMode.useItemOn(mc.player,InteractionHand.MAIN_HAND,new BlockHitResult(Vec3.atCenterOf(pos),Direction.UP,pos,false));}
    else if(action.equals("deny-items")){check(mc.player.containerMenu instanceof StoreMenu,"Expected Visit-only menu");var m=(StoreMenu)mc.player.containerMenu;check(m.privateView()&&m.resultCount()==0,"Visit-only menu leaked items");PacketDistributor.sendToServer(new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",256));PacketDistributor.sendToServer(new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",m.shownSlots()));}
    else if(action.equals("forge")){check(mc.player.containerMenu==mc.player.inventoryMenu,"View created an inventory menu");PacketDistributor.sendToServer(new Packets.Action(12345,17,0,"slot","",256));for(var entity:mc.level.entitiesForRendering())if(entity instanceof Portal portal&&PocketService.DIMENSION.equals(portal.getDestDim())){check(!portal.getTeleportable()&&!portal.isInteractable(),"Client portal unsafe");PacketDistributor.sendToServer(new ImmPtlNetworking.TeleportPacket(PortalAPI.clientDimKeyToInt(mc.level.dimension()),mc.player.getEyePosition(),portal.getUUID()));break;}}
@@ -100,7 +104,8 @@ public final class LiveClient {
    boolean home=mc.level.dimension().equals(Level.OVERWORLD)&&mc.player.level()==mc.level&&mc.level.hasChunkAt(pos)&&!(mc.screen instanceof ReceivingLevelScreen);
    if(ticks==1||ticks%20==0)dev.anya.storage.AnyaStorage.LOG.info("LIVE_RETURN_READINESS role={} ticks={} dimension={} home_chunk={} player_chunk={} screen={} position={}",role(),ticks,mc.level.dimension().location(),mc.level.hasChunkAt(pos),mc.level.hasChunkAt(mc.player.blockPosition()),mc.screen==null?"none":mc.screen.getClass().getSimpleName(),mc.player.position());
    if(!home){stable=0;return;}if(++stable<12)return;
-   LiveTest.write("client-"+role()+"-returned-"+work.sequence()+".json",Map.of("dimension",mc.level.dimension().location().toString(),"home_chunk_loaded",true,"loading_screen",false,"position",mc.player.position().toString()));ack();return;
+   check(homeColumnPackets>homeColumnPacketsAtExit,"Return became ready without independently observed fresh home-column application");
+   LiveTest.write("client-"+role()+"-returned-"+work.sequence()+".json",Map.of("dimension",mc.level.dimension().location().toString(),"home_chunk_loaded",true,"loading_screen",false,"position",mc.player.position().toString(),"home_column_packets_after_exit",homeColumnPackets-homeColumnPacketsAtExit));ack();return;
   }
   if(action.equals("inspect")){if(ticks<50)return;inspect(Integer.parseInt(words[1]));if(role().equals("Alpha")&&Integer.parseInt(words[1])==1)Screenshot.grab(mc.gameDirectory,"live-view-"+work.sequence()+".png",mc.getMainRenderTarget(),c->{});ack();}
   else if(ticks>=40){if(action.equals("deny-items"))mc.player.closeContainer();ack();}

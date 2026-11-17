@@ -28,6 +28,12 @@ public final class PacketFence {
   var sent=SENT.get(p.getUUID());if(sent==null||!sent.remove(key))return;
   CLEANUP.set(true);try{PacketRedirection.sendRedirectedMessage(p,PocketService.DIMENSION,new ClientboundForgetLevelChunkPacket(new ChunkPos(key)));forgotten++;}finally{CLEANUP.set(false);}
  }
+ /** Retire only this connection's projected data before vanilla destroys its client worlds. */
+ public static void beforeClientWorldReset(ServerPlayer p){
+  LiveViews.owner();
+  for(long key:new HashSet<>(SENT.getOrDefault(p.getUUID(),Set.of())))forget(p,key);
+  SENT.remove(p.getUUID());SENT_ENTITIES.remove(p.getUUID());
+ }
  private static boolean column(ServerPlayer p,BlockPos pos){return LiveViews.allowedColumn(p,new ChunkPos(pos).toLong());}
  private static boolean safeTag(CompoundTag t){return t==null||Set.of("Symbol","ShowLabels").containsAll(t.getAllKeys());}
  private static boolean safeChunk(long key){
