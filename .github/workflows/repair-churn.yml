@@ -1,0 +1,53 @@
+name: Bounded concurrent snapshot and repair churn
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/churnProbe/**', 'scripts/churn*', '.github/workflows/repair-churn.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: repair-churn-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  sustained:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [forward, reverse]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Build unchanged journal and isolated churn probe
+        run: |
+          mkdir -p build/churn-evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/churn-init.gradle jar churnProbeJar 2>&1 | tee build/churn-evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/churn-evidence/unchanged-module-check.log
+      - name: Bounded concurrent engine submissions, failures, restart and cuts
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.order }}
+        run: |
+          set -o pipefail
+          python3 scripts/churn_runtime.py 2>&1 | tee build/churn-evidence/controller.log
+      - name: Exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/churn-evidence
+          git rev-parse HEAD > build/churn-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/churn-evidence/source.zip
+          sha256sum build/libs/*.jar build/churn/*.jar build/repair/*.jar > build/churn-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repair-churn-${{ matrix.order }}-${{ github.sha }}
+          path: |
+            build/churn-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
