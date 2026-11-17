@@ -138,9 +138,10 @@ public final class RepairClientProbe {
     var ha=(StorageEntity)server.overworld().getBlockEntity(HA);var hb=(StorageEntity)server.overworld().getBlockEntity(HB);var ea=(PocketContent.EntranceEntity)server.overworld().getBlockEntity(EA);var eb=(PocketContent.EntranceEntity)server.overworld().getBlockEntity(EB);
     ha.owner=a().getUUID();ea.owner=a().getUUID();hb.owner=b().getUUID();eb.owner=b().getUUID();ha.setChanged();hb.setChanged();ea.setChanged();eb.setChanged();
     a().getInventory().clearContent();b().getInventory().clearContent();var ra=remote(HA);var rb=remote(HB);PocketService.link(a(),ea,ra);PocketService.link(b(),eb,rb);aid=ea.pocket;bid=eb.pocket;a().getInventory().setItem(0,ra);b().getInventory().setItem(0,rb);a().inventoryMenu.broadcastChanges();b().inventoryMenu.broadcastChanges();
-   }else{server.getPlayerList().op(a().getGameProfile());check(inventory(b(),Items.EMERALD)==1&&inventory(a(),Items.DIAMOND)==0,"Restart player item conservation");}
+    boxA=PocketService.chestPositions(room(aid)).getFirst();boxC=PocketService.chestPositions(room(aid)).get(3);ka=new ChunkPos(boxA).toLong();kc=new ChunkPos(boxC).toLong();check(ka!=kc,"Targets need distinct allocated columns");seed();
+   }else{server.getPlayerList().op(a().getGameProfile());check(inventory(b(),Items.EMERALD)==1&&inventory(a(),Items.DIAMOND)==0,"Restart player item conservation");resume();}
   },3600));
-  if(leg.equals("seed"))seed();else resume();running=true;Acceptance.marker("server-ready","operator network leg="+leg+" separate 3600-tick join ceiling;900-tick gameplay steps");
+  running=true;Acceptance.marker("server-ready","operator network leg="+leg+" separate 3600-tick join ceiling;900-tick gameplay steps");
  }
  private static void seed(){
   add("real-client-first-visits",()->{send(a(),block(EA));send(b(),block(EB));},()->done(a())&&done(b())&&inside(a())&&inside(b()),()->{
