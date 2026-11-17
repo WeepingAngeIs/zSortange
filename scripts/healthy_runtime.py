@@ -2,6 +2,7 @@
 from pathlib import Path
 import os
 assert os.environ.get('GITHUB_ACTIONS')=='true'
+exec(compile(Path('scripts/healthy_verify.py').read_text(),'scripts/healthy_verify.py','exec'))
 text=Path('scripts/durable_runtime.py').read_text().split("lane=os.environ['ANYA_DURABLE_LANE']")[0]
 text=text.replace("ROOT/'build/durable'","ROOT/'build/healthy'")
 old="f'-Danya.nonblockingPrepare={str(candidate).lower()}',f'-Danya.durableScenario={scenario}'"
