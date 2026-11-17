@@ -1,0 +1,96 @@
+name: Multi-key and real-client repair validation
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/repairProbe/**', 'src/repairClient/**', 'scripts/repair*validation.py', '.github/workflows/repair-validation.yml', 'scripts/repair-init.gradle', 'src/acceptance/java/dev/anya/storage/acceptance/ClientProbe.java', 'src/acceptance/java/dev/anya/storage/acceptance/ServerProbe.java']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: repair-validation-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [multi, full, corrupt, no-durable-copy]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile unchanged beta.6 and opt-in journal validation
+        run: |
+          mkdir -p build/repair-validation-evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/repair-init.gradle jar repairProbeJar 2>&1 | tee build/repair-validation-evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/repair-validation-evidence/module-check.log
+      - name: Bounded independent restart and data checks
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.lane }}
+        run: |
+          set -o pipefail
+          if [ "$ANYA_DURABLE_LANE" = no-durable-copy ]; then
+            python3 scripts/repair_runtime.py 2>&1 | tee build/repair-validation-evidence/controller.log
+          else
+            python3 scripts/repair_multikey_validation.py 2>&1 | tee build/repair-validation-evidence/controller.log
+          fi
+      - name: Exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/repair-validation-evidence
+          git rev-parse HEAD > build/repair-validation-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/repair-validation-evidence/source.zip
+          sha256sum build/libs/*.jar build/repair/*.jar > build/repair-validation-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multirepair-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            build/repair-validation-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
+  clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Build actual-client failure scenario and exact journal
+        run: |
+          mkdir -p build/repair-network/evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/repair-init.gradle jar repairProbeJar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PrepairProbe -PrepairClient -PticketExperiment 2>&1 | tee build/repair-network/evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/repair-network/evidence/module-check.log
+      - name: Disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Real clients under write failure quarantine repair and reset cuts
+        env:
+          JAVA_TOOL_OPTIONS: '-Danya.nonblockingPrepare=true -Danya.minimalOwnership=true -Danya.serializationBudget=true -Danya.backpressure=true -Danya.pressureClient=true -Danya.repairJournal=true'
+          ANYA_DURABLE_PROBE: 'true'
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/repair_network_validation.py 2>&1 | tee build/repair-network/evidence/controller.log
+      - name: Exact source and hashes
+        if: always()
+        run: |
+          mkdir -p build/repair-network/evidence
+          git rev-parse HEAD > build/repair-network/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/repair-network/evidence/source.zip
+          sha256sum build/libs/*.jar build/repair/*.jar build/acceptance/*.jar > build/repair-network/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: multirepair-real-clients-${{ github.sha }}
+          path: build/repair-network/evidence/
+          if-no-files-found: error
