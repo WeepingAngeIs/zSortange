@@ -1,0 +1,38 @@
+name: Isolated persistent failed-write repair
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/repairProbe/**','src/repairTest/**','scripts/repair*','.github/workflows/repair.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile unchanged beta.6 and isolated journal
+        run: |
+          mkdir -p build/repair-evidence build/repair-core
+          set -o pipefail
+          javac -d build/repair-core src/repairProbe/java/dev/anya/storage/repair/SnapshotJournal.java src/repairTest/java/dev/anya/storage/repair/JournalChecks.java
+          java -cp build/repair-core dev.anya.storage.repair.JournalChecks | tee build/repair-evidence/core.log
+          gradle --no-daemon --max-workers=2 -I scripts/repair-init.gradle jar repairProbeJar 2>&1 | tee build/repair-evidence/compile.log
+      - name: Preserve source and hashes even on failure
+        if: always()
+        run: |
+          mkdir -p build/repair-evidence
+          git rev-parse HEAD > build/repair-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/repair-evidence/source.zip
+          sha256sum build/libs/*.jar build/repair/*.jar > build/repair-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repair-compile-${{ github.sha }}
+          path: build/repair-evidence/
