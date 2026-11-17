@@ -163,7 +163,7 @@ public final class RepairClientProbe {
   server.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0,server);server.getGameRules().getRule(GameRules.RULE_DOMOBSPAWNING).set(false,server);
   if(leg.equals("seed")){
    check(!Files.exists(root().resolve("anya_storage/pockets.v1.dat")),"Never seed an existing world");
-   for(BlockPos center:List.of(EA,EB))for(int x=-7;x<=7;x++)for(int z=-7;z<=7;z++)server.overworld().setBlockAndUpdate(new BlockPos(x,80,z),Blocks.STONE.defaultBlockState());
+   for(BlockPos center:List.of(EA,EB))for(int x=-7;x<=7;x++)for(int z=-7;z<=7;z++)server.overworld().setBlockAndUpdate(new BlockPos(center.getX()+x,80,center.getZ()+z),Blocks.STONE.defaultBlockState());
    server.overworld().setDefaultSpawnPos(EB.offset(0,0,4),0);
    for(BlockPos p:List.of(HA,HB))server.overworld().setBlockAndUpdate(p,Content.HUB.get().defaultBlockState());for(BlockPos p:List.of(EA,EB))server.overworld().setBlockAndUpdate(p,PocketContent.ENTRANCE.get().defaultBlockState());
   }else{try(var in=Files.newInputStream(Path.of("operator-network.properties"))){oracle.load(in);}aid=UUID.fromString(oracle.getProperty("aid"));bid=UUID.fromString(oracle.getProperty("bid"));boxA=BlockPos.of(Long.parseLong(oracle.getProperty("boxA")));boxC=BlockPos.of(Long.parseLong(oracle.getProperty("boxC")));ka=new ChunkPos(boxA).toLong();kc=new ChunkPos(boxC).toLong();check(level().getChunkSource().getLoadedChunksCount()==0,"Restart inspection preloaded pockets");preservedEvidence();finalState();rawAll();}
