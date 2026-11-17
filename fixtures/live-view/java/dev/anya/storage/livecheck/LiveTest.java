@@ -48,7 +48,7 @@ public final class LiveTest {
  public static Path control(){if(!"true".equals(System.getenv("GITHUB_ACTIONS")))throw new IllegalStateException("Disposable GitHub only");var p=Path.of(System.getProperty("anya.liveControl")).toAbsolutePath();if(!Files.isRegularFile(p.resolve(".disposable-live-view")))throw new IllegalStateException("Disposable marker absent");return p;}
  public static void write(String name,Object value){try{Files.writeString(control().resolve(name),new GsonBuilder().setPrettyPrinting().create().toJson(value)+"\n");}catch(IOException e){throw new IllegalStateException(e);}}
  public static void check(boolean value,String text){if(!value)throw new IllegalStateException(text);}
- public static void fail(Throwable t){write("FAILED",Map.of("step",active==null?"setup":active.name,"error",t.toString()));AnyaStorage.LOG.error("LIVE_VIEW_ACCEPTANCE_FAILED",t);if(server!=null)server.halt(false);}
+ public static void fail(Throwable t){LiveSafety.releaseOnFailure();write("FAILED",Map.of("step",active==null?"setup":active.name,"error",t.toString()));AnyaStorage.LOG.error("LIVE_VIEW_ACCEPTANCE_FAILED",t);if(server!=null)server.halt(false);}
  static ServerPlayer p(String role){return server.getPlayerList().getPlayerByName(role);}
  static PocketLedger.Pocket room(int i)throws Exception{return PocketService.ledger(server).get(ROOMS[i]);}
  static ServerLevel dest(){return PocketService.dimension(server);}
@@ -109,6 +109,7 @@ public final class LiveTest {
   server=e.getServer();resume=Boolean.getBoolean("anya.liveResume");started=server.getTickCount();running=true;ExpansionRules.get().pocketStorage=true;
   metrics=Files.newBufferedWriter(control().resolve(resume?"restart-metrics.csv":"live-metrics.csv"));metrics.write("tick,step,handles,requested_columns,watch_records,ce_registry,actual_ce_tickets,cache,full_future_ready,block_ticking_ready,entity_ticking_ready,accepted_packets,denied_packets,forget_packets,anya_requests\n");
   for(var l:server.getAllLevels()){l.getGameRules().getRule(GameRules.RULE_DOMOBSPAWNING).set(false,server);l.setDayTime(6000);l.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);}
+  if(Boolean.getBoolean("anya.liveSafetyVerify")){LiveSafety.verifyRestart();running=false;server.halt(false);return;}
   if(resume){try(var in=Files.newInputStream(Path.of("live-view-oracle.properties"))){oracle.load(in);}for(int i=0;i<2;i++)ROOMS[i]=UUID.fromString(oracle.getProperty("room."+i).split("/")[0]);
    check(LiveViews.HANDLES.isEmpty(),"View handles persisted");var region=server.getWorldPath(LevelResource.ROOT).resolve("dimensions/anyastorage/pockets/region");for(int i=0;i<2;i++){var r=room(i);var primary=ReadOnlyRegion.inspect(region,new ChunkPos(PocketService.chestPositions(r).getFirst()).toLong());check(primary.tag().toString().contains("Live view conserved "+i),"Independent primary read-back lacks newest sample");}
    checkItems(true);write("RESTART_ITEMS",Map.of("items",30,"rooms",2,"chests",8,"primary_read_before_chunk_load",true));initialized=true;since=server.getTickCount();return;
@@ -127,6 +128,7 @@ public final class LiveTest {
   once("seed second conserved inventory",()->seed(1));command("Beta","anya pocket exit");add("second safe return",()->{},()->!inside("Beta")&&PocketService.lease(p("Beta").getUUID())==null,300);returnedClient("Beta");
   once("durable setup and view-only trust",()->{server.saveEverything(true,true,true);HUBS[0].setMember(p("Beta").getUUID(),BasePermissions.VIEW);HUBS[1].setMember(p("Alpha").getUUID(),BasePermissions.VIEW);home("Alpha");home("Beta");});
   add("settled setup receipts",()->{},()->RepairService.idle()&&!RepairService.roomBlocked(ROOMS[0])&&!RepairService.roomBlocked(ROOMS[1]),400);
+  if(Boolean.getBoolean("anya.liveSafety")){LiveSafety.append();initialized=true;return;}
   command("Alpha","anyaliveview open "+ROOMS[0]);inspect("Alpha",1);
   command("Beta","anyaliveview open "+ROOMS[0]);command("Beta","anyaliveview open "+ROOMS[1]);inspect("Beta",3);inspect("Gamma",0);
   command("Gamma","anyaliveview open "+ROOMS[0]);once("unauthorized open and entity stream refused",()->{check(handles("Gamma")==0,"Unauthorized handle");check(PacketFence.COUNTS.getOrDefault(p("Gamma").getUUID(),Map.of()).entrySet().stream().noneMatch(en->en.getKey().startsWith("allow:")&&!en.getKey().equals("allow:forget")),"Unauthorized destination data");deadlineB=handleDeadline("Beta",1);});

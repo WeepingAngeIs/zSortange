@@ -11,6 +11,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   isolation:
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [baseline, safety]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -55,7 +59,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: 'true'
         run: |
           set -o pipefail
-          xvfb-run -a -s '-screen 0 1920x1200x24' python3 fixtures/live-view/run.py 2>&1 | tee build/live-view/evidence/controller.log
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 fixtures/live-view/run.py ${{ matrix.scenario == 'safety' && '--safety' || '' }} 2>&1 | tee build/live-view/evidence/controller.log
       - name: Preserve exact source and hashes including failures
         if: always()
         run: |
@@ -66,7 +70,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: scoped-live-view-${{ github.sha }}
+          name: scoped-live-view-${{ matrix.scenario }}-${{ github.sha }}
           path: |
             build/live-view/evidence/
             build/ce-control/evidence/*.json

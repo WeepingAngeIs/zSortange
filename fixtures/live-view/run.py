@@ -1,6 +1,8 @@
 """Three real clients; two production pockets; explicit bounded source/packet isolation and independent restart."""
 from __future__ import annotations
-import hashlib,importlib.util,json,os,pathlib,platform,shutil,signal,subprocess,time
+import sys,hashlib,importlib.util,json,os,pathlib,platform,shutil,signal,subprocess,time
+SAFETY='--safety' in sys.argv
+assert set(sys.argv[1:])<= {'--safety'},'Unknown fixture arguments'
 R=pathlib.Path.cwd().resolve();B=R/'build/live-view';E=B/'evidence';C=B/'control';S=B/'server'
 spec=importlib.util.spec_from_file_location('helpers',R/'fixtures/renderer-prereq/run_baseline.py');H=importlib.util.module_from_spec(spec);spec.loader.exec_module(H)
 SPEC=json.loads((R/'fixtures/renderer-prereq/inputs.json').read_text());sha=H.sha
@@ -55,6 +57,7 @@ def main():
   until=time.monotonic()+seconds
   while not (C/marker).exists():check();assert time.monotonic()<until,'Bounded wait '+marker;time.sleep(.5)
  flags=['-Danyastorage.pocketPrototype=true','-Danyastorage.liveViewPrototype=true','-Danya.nonblockingPrepare=true','-Danya.minimalOwnership=true','-Danya.serializationBudget=true','-Danya.backpressure=true','-Danya.repairJournal=true',f'-Danya.liveControl={C}',f'-Danya.control={C}']
+ if SAFETY:flags.append('-Danya.liveSafety=true')
  try:
   srv=launch(['java','-Xms256m','-Xmx2048m',*flags,'@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],S,'server-main');wait('server-ready',180)
   for role in ('Alpha','Beta','Gamma'):client(role)
@@ -71,8 +74,13 @@ def main():
    if n.startswith('client'):
     try:p.wait(timeout=15)
     except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL);p.wait(timeout=10)
-  resume=launch(['java','-Xms256m','-Xmx2048m',*flags,'-Danya.liveResume=true','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],S,'server-restart');wait('RESTART_PASSED',180);expected.add(resume.pid);assert resume.wait(timeout=45)==0
-  assert (C/'RESTART_ITEMS').exists();success=True;print('ANYA_SCOPED_LIVE_VIEW_NETWORK_ACCEPTANCE_PASSED',flush=True)
+  if SAFETY:
+   assert (C/'SAFETY_PASSED').exists(),'Safety scenario missing evidence'
+   resume=launch(['java','-Xms256m','-Xmx2048m',*flags,'-Danya.liveSafetyVerify=true','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],S,'server-safety-restart');wait('RESTART_SAFETY_PASSED',180);expected.add(resume.pid);assert resume.wait(timeout=45)==0
+   success=True;print('ANYA_SCOPED_LIVE_VIEW_PERSISTENCE_SAFETY_PASSED',flush=True)
+  else:
+   resume=launch(['java','-Xms256m','-Xmx2048m',*flags,'-Danya.liveResume=true','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],S,'server-restart');wait('RESTART_PASSED',180);expected.add(resume.pid);assert resume.wait(timeout=45)==0
+   assert (C/'RESTART_ITEMS').exists();success=True;print('ANYA_SCOPED_LIVE_VIEW_NETWORK_ACCEPTANCE_PASSED',flush=True)
  finally:
   for p,n in proc:
    if p.poll() is None:os.killpg(p.pid,signal.SIGTERM)
@@ -88,4 +96,9 @@ def main():
     if (d/name).exists():shutil.copytree(d/name,E/('client-'+role)/name,dirs_exist_ok=True)
   if (S/'logs').exists():shutil.copytree(S/'logs',E/'server-logs',dirs_exist_ok=True)
   if (S/'crash-reports').exists():shutil.copytree(S/'crash-reports',E/'server-crash-reports',dirs_exist_ok=True)
+  if SAFETY and (S/'world').exists():
+   # Preserve the entire disposable failure world, including WAL and primary
+   # regions. Never replace it with a repaired/reset projection.
+   shutil.copytree(S/'world',E/'failed-world',dirs_exist_ok=True)
+   (E/'failed-world-hashes.json').write_text(json.dumps({str(p.relative_to(E/'failed-world')):sha(p) for p in sorted((E/'failed-world').rglob('*')) if p.is_file()},indent=2))
 if __name__=='__main__':main()
