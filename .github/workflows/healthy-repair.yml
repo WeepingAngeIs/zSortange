@@ -2,7 +2,7 @@ name: Healthy repair write proof and reset ordering
 on:
   push:
     branches: [feature/elemental-pockets]
-    paths: ['src/healthyProbe/**', 'scripts/healthy*', '.github/workflows/healthy-repair.yml']
+    paths: ['src/healthyProbe/**', 'src/repairProbe/**', 'scripts/healthy*', '.github/workflows/healthy-repair.yml']
   workflow_dispatch:
 permissions:
   contents: read
