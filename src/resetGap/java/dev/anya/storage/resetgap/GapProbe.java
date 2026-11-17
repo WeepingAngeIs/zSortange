@@ -61,7 +61,7 @@ public final class GapProbe {
    for(var p:positions){var tag=storage.read(new ChunkPos(p));check(tag!=null,"Physical region absent");var bes=tag.getList("block_entities",10);CompoundTag chest=null;
     for(int i=0;i<bes.size();i++){var be=bes.getCompound(i);if(be.getInt("x")==p.getX()&&be.getInt("y")==p.getY()&&be.getInt("z")==p.getZ()){check(chest==null,"Duplicate physical block entity");chest=be;}}
     check(chest!=null&&chest.hasUUID("PocketId")&&chest.getUUID("PocketId").equals(roomId)&&chest.hasUUID("Owner")&&chest.getUUID("Owner").equals(r.owner()),"Physical ownership mismatch");
-    check(chest.toString().contains(oracle.getProperty("chest-nbt-id."+index)),"Physical storage identity missing");var items=chest.getList("Items",10);
+    check(chest.hasUUID("StorageIdentity")&&chest.getUUID("StorageIdentity").toString().equals(oracle.getProperty("chest-nbt-id."+index)),"Physical storage identity mismatch");var items=chest.getList("Items",10);
     if(p.equals(box)){var wanted=(CompoundTag)sample(expected).save(server.registryAccess());wanted.putByte("Slot",(byte)0);check(items.size()==1&&items.getCompound(0).equals(wanted),"Raw region newest/previous item mismatch;expected="+expected);total+=13;}else check(items.isEmpty(),"Unexpected item outside target");index++;
    }check(total==13&&index==4,"Item/chest count changed");Trace.note("GAP_RAW_REGION_READBACK",null,"generation="+expected+" items=13 chests=4 overlay=false beforeChunkLoad=true");return Either.left(null);
   }catch(Exception ex){return Either.right(ex);}});
@@ -78,8 +78,7 @@ public final class GapProbe {
   var ps=(List<ServerPlayer>)fixture("PLAYERS");if(ps.isEmpty()||!PocketService.inPocket(ps.getFirst().level()))return;player=ps.getFirst();var f=Fixture.class.getDeclaredField("running");f.setAccessible(true);f.setBoolean(null,false);
   roomId=((List<UUID>)fixture("IDS")).getFirst();var room=PocketService.ledger(server).get(roomId);check(room.stage()==PocketLedger.Stage.READY,"Entry before READY");box=PocketService.chestPositions(room).getFirst();key=new ChunkPos(box).toLong();GapHooks.key=key;
   oracle.setProperty("room",roomId.toString());oracle.setProperty("box",""+box.asLong());oracle.setProperty("identity",room.cell()+"/"+room.owner());int n=0;
-  for(var p:PocketService.chestPositions(room)){var c=(StorageEntity)level().getBlockEntity(p);check(c!=null&&c.isEmpty(),"Seed refuses existing contents");var tag=c.saveWithFullMetadata(server.registryAccess());String id=null;
-   for(var name:tag.getAllKeys())if(tag.hasUUID(name)&&tag.getUUID(name).equals(c.storageIdentity()))id=tag.get(name).toString();check(id!=null,"Storage identity tag not found");oracle.setProperty("chest-nbt-id."+(n++),id);
+  for(var p:PocketService.chestPositions(room)){var c=(StorageEntity)level().getBlockEntity(p);check(c!=null&&c.isEmpty(),"Seed refuses existing contents");var identity=c.storageIdentity();var tag=c.saveWithFullMetadata(server.registryAccess());check(tag.hasUUID("StorageIdentity")&&tag.getUUID("StorageIdentity").equals(identity),"Assigned storage identity not serialized");oracle.setProperty("chest-nbt-id."+(n++),identity.toString());
   }
   ((StorageEntity)level().getBlockEntity(box)).setItem(0,sample(0));server.saveEverything(true,true,true);PocketService.recover(player);initialized=true;step(1,"initial-drain");
  }
