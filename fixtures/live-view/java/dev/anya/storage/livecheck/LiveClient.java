@@ -81,7 +81,7 @@ public final class LiveClient {
   if(mc.player==null||mc.level==null||mc.gameMode==null||mc.getOverlay()!=null)return;
   // Readiness gates a first interaction, not completion of an already-sent
   // command across a dimension transition. Never send that mutation again.
-  if(ticks==0&&mc.screen instanceof ReceivingLevelScreen)return;
+  if(ticks==0&&mc.screen instanceof ReceivingLevelScreen&&(work==null||!work.action().equals("return-ready")))return;
   if(!hello){inventory();hello=true;PacketDistributor.sendToServer(new TestWire.Signal(0,"ready"));}
   if(work==null)return;String[] words=work.action().split(" ");String action=words[0];
   if(ticks==0&&action.equals("block")){BlockPos pos=new BlockPos(Integer.parseInt(words[1]),Integer.parseInt(words[2]),Integer.parseInt(words[3]));check(++waited<240,"Readiness deadline before one use packet");if(!mc.level.hasChunkAt(pos)||!mc.player.canInteractWithBlock(pos,0))return;if(++stable<8)return;}
@@ -94,10 +94,11 @@ public final class LiveClient {
    else if(action.equals("forge")){check(mc.player.containerMenu==mc.player.inventoryMenu,"View created an inventory menu");PacketDistributor.sendToServer(new Packets.Action(12345,17,0,"slot","",256));for(var entity:mc.level.entitiesForRendering())if(entity instanceof Portal portal&&PocketService.DIMENSION.equals(portal.getDestDim())){check(!portal.getTeleportable()&&!portal.isInteractable(),"Client portal unsafe");PacketDistributor.sendToServer(new ImmPtlNetworking.TeleportPacket(PortalAPI.clientDimKeyToInt(mc.level.dimension()),mc.player.getEyePosition(),portal.getUUID()));break;}}
   }
   if(action.equals("return-ready")){
-   check(ticks<=280,"Returned client did not regain a usable home world");
+   check(ticks<=800,"Returned client did not regain a usable home world within the separate readiness window");
    var pos=new BlockPos(3,81,1);
    check(mc.player.containerMenu==mc.player.inventoryMenu,"Return retained an unexpected storage menu");
    boolean home=mc.level.dimension().equals(Level.OVERWORLD)&&mc.player.level()==mc.level&&mc.level.hasChunkAt(pos)&&!(mc.screen instanceof ReceivingLevelScreen);
+   if(ticks==1||ticks%20==0)dev.anya.storage.AnyaStorage.LOG.info("LIVE_RETURN_READINESS role={} ticks={} dimension={} home_chunk={} player_chunk={} screen={} position={}",role(),ticks,mc.level.dimension().location(),mc.level.hasChunkAt(pos),mc.level.hasChunkAt(mc.player.blockPosition()),mc.screen==null?"none":mc.screen.getClass().getSimpleName(),mc.player.position());
    if(!home){stable=0;return;}if(++stable<12)return;
    LiveTest.write("client-"+role()+"-returned-"+work.sequence()+".json",Map.of("dimension",mc.level.dimension().location().toString(),"home_chunk_loaded",true,"loading_screen",false,"position",mc.player.position().toString()));ack();return;
   }

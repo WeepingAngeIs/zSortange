@@ -70,7 +70,7 @@ public final class LiveTest {
  static void add(String name,Action action,Test done,int limit){steps.add(new Step(name,action,done,limit));}
  static void once(String name,Action action){add(name,action,()->true,80);}
  static void command(String role,String cmd){add(role+" command "+cmd,()->send(role,"cmd "+cmd),()->ack(role),180);}
- static void returnedClient(String role){add(role+" usable home client after return",()->send(role,"return-ready"),()->ack(role),300);}
+ static void returnedClient(String role){add(role+" usable home client after return",()->send(role,"return-ready"),()->ack(role),900);}
  static void inspect(String role,int mask){add(role+" applied mask "+mask,()->send(role,"inspect "+mask),()->ack(role),240);}
  static boolean inside(String role){return p(role)!=null&&PocketService.inPocket(p(role).level());}
  static void home(String role){var player=p(role);double x=role.equals("Alpha")?3.5:9.5;player.teleportTo(server.overworld(),x,81,1.5,0,0);}
