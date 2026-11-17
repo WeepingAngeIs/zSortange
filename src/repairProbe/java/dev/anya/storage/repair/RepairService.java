@@ -116,6 +116,10 @@ public final class RepairService {
   if(r==null||!r.token().equals(token)||!journal.blocked(key))throw new IOException("Stale or unnecessary repair");validate(r);
   if(retries.size()>=8&&!retries.containsKey(key))throw new IOException("Repair intent quota; retained snapshots unchanged");retries.putIfAbsent(key,new Retry(key,token,server.getTickCount()));
  }
+ private static void resetPersistenceFault(long key,String phase,Exception failure){
+  globalBad=true;transientFaults.add(key);
+  try{journal.failClosed("Reset "+phase+" persistence failed: "+failure);}catch(Exception nested){failure.addSuppressed(nested);}
+ }
  /** A reset is authorized for one observed submission epoch, not just a journal token. */
  public static CompletableFuture<Void> reset(long key,UUID token)throws IOException {
   if(globalBad||journal==null)throw new IOException("Global journal fault cannot be reset blindly");var r=journal.get(key);
@@ -125,10 +129,11 @@ public final class RepairService {
   return ((WorkerAccess)(Object)w).anyaExecute(()->{
    try{var current=journal.get(key);var count=inFlight.get(key);
     if(current==null||!current.token().equals(token)||sequence.get()!=expected||count!=null&&count.get()!=0)throw new IOException("Reset token or submission epoch changed");
+    try{journal.beginReset(key,token);}catch(Exception persistence){resetPersistenceFault(key,"intent",persistence);throw persistence;}
     var pos=new ChunkPos(key);storage.flush();
     if(!decode(r.payload()).equals(storage.read(pos)))throw new IOException("Reset read-back mismatch");journal.reset(key,token);
-    // Publication can overlap a new owner-thread capture. Do not reopen that newer save.
-    // The same IO worker has not processed it yet; relock this exact record before returning.
+    // The durable intent remains authoritative while this unlocked projection is superseded.
+    // The same IO worker has not processed the new snapshot yet; never drop its obligation.
     if(!sequence.compareAndSet(expected,expected+1)){
      transientFaults.add(key);
      try{journal.lock(key,token);}catch(Exception lockFailure){
@@ -138,6 +143,7 @@ public final class RepairService {
      Trace.note("REPAIR_RESET_SUPERSEDED",null,"key="+key+" token="+token+" expected="+expected+" actual="+sequence.get()+" relocked=true");
      throw new IOException("Reset superseded by a newer snapshot submission; quarantine retained");
     }
+    try{journal.completeReset(key,token);}catch(Exception persistence){resetPersistenceFault(key,"completion",persistence);throw persistence;}
     transientFaults.remove(key);resets.incrementAndGet();Trace.note("REPAIR_RESET_DURABLE",null,"key="+key+" token="+token+" epoch="+(expected+1));return Either.left(null);
    }catch(Exception ex){return Either.right(ex);}
   });

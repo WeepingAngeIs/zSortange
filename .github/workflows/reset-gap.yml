@@ -2,7 +2,7 @@ name: Reset publication crash and persistence boundaries
 on:
   push:
     branches: [feature/elemental-pockets]
-    paths: ['src/resetGap/**', 'scripts/resetgap*', '.github/workflows/reset-gap.yml']
+    paths: ['src/resetGap/**', 'src/resetGapTest/**', 'src/repairProbe/**', 'scripts/resetgap*', '.github/workflows/reset-gap.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -10,13 +10,34 @@ concurrency:
   group: reset-gap-${{ github.sha }}
   cancel-in-progress: false
 jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - name: Bounded filesystem reset-intent interruption checks
+        run: |
+          mkdir -p build/resetgap-core/classes build/resetgap-core/evidence
+          set -o pipefail
+          javac -d build/resetgap-core/classes src/repairProbe/java/dev/anya/storage/repair/SnapshotJournal.java src/resetGapTest/java/dev/anya/storage/repair/ResetIntentChecks.java
+          timeout 60 java -Xmx128m -cp build/resetgap-core/classes dev.anya.storage.repair.ResetIntentChecks build/resetgap-core/disposable | tee build/resetgap-core/evidence/checks.log
+          git rev-parse HEAD > build/resetgap-core/evidence/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reset-gap-core-${{ github.sha }}
+          path: build/resetgap-core/evidence/
+          if-no-files-found: error
   boundary:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        boundary: [cut, lock-fail, double-fail]
+        boundary: [cut, lock-fail, double-fail, latest-durable, valid-reset]
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
