@@ -58,6 +58,17 @@ public final class PacketFence {
    }
    if(custom.payload() instanceof ImmPtlNetworking.GlobalPortalSyncPacket sync&&sync.data().toString().contains(PocketService.DIMENSION.location().toString())){record(p,"global-protected-portal",false);return null;}
   }
+  // A protected portal is spawned in its SOURCE dimension. Its ordinary entity
+  // shell must be authorized too, before the protected-destination early return.
+  // Filtering only PortalSyncPacket leaves an uninitialized shell at denied clients.
+  if(packet instanceof ClientboundAddEntityPacket spawn&&spawn.getType()==qouteall.imm_ptl.core.portal.Portal.ENTITY_TYPE){
+   if(LiveViews.server==null||!LiveViews.server.isSameThread()){record(p,"off-thread-portal-spawn",false);return null;}
+   var h=LiveViews.portalHandle(spawn.getUUID());var world=dimension==null?p.serverLevel():p.server.getLevel(dimension);
+   var entity=world==null?null:world.getEntity(spawn.getUUID());
+   if(h!=null||entity instanceof qouteall.imm_ptl.core.portal.Portal portal&&LiveViews.protectedDimension(portal.getDestDim())||entity==null){
+    boolean yes=h!=null&&h.player.equals(p.getUUID())&&LiveViews.valid(h);record(p,"portal-spawn",yes);return yes?packet:null;
+   }
+  }
   if(!LiveViews.protectedDimension(dimension))return packet;
   if(LiveViews.server==null||!LiveViews.server.isSameThread()){record(p,"off-thread",false);return null;}
   if(packet instanceof ClientboundForgetLevelChunkPacket){boolean yes=CLEANUP.get();record(p,"forget",yes);return yes?packet:null;}

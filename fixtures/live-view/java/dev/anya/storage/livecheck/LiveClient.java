@@ -72,6 +72,11 @@ public final class LiveClient {
   check(mask==expected,"Applied destination footprint differs: expected="+expected+" actual="+mask+" columns="+columns.size());
   for(long k:columns){boolean allowed=false;for(int i=0;i<2;i++)if((expected&(1<<i))!=0&&Math.abs(ChunkPos.getX(k)-(256+i*32))<=2&&Math.abs(ChunkPos.getZ(k)-256)<=2)allowed=true;check(allowed,"Unexpected applied destination column "+new ChunkPos(k));}
   if(expected==0)check(columns.isEmpty(),"Unauthorized/closed client retained destination columns");
+  // Independently inspect real source-world entity state, not only CE sync counters.
+  for(var entity:Minecraft.getInstance().level.entitiesForRendering())if(entity instanceof Portal portal){
+   check(portal.getDestDim()!=null,"Uninitialized portal shell reached client");
+   if(PocketService.DIMENSION.equals(portal.getDestDim()))check(Minecraft.getInstance().player.getUUID().equals(portal.specificPlayerId)&&portals.containsKey(portal.getId()),"Another viewer's portal entity reached client");
+  }
   LiveTest.write("client-"+role()+"-inspection-"+work.sequence()+".json",Map.of("expected_mask",expected,"actual_mask",mask,"current_columns",columns.size(),"received_counts",applied,"current_portals",portals.size()));
  }
  static void inventory()throws Exception{
