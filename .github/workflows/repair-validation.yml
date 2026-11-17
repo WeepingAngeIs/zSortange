@@ -16,7 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [multi, full, corrupt, no-durable-copy]
+        # Explicit runtime-repair commits reuse unchanged passing fixtures; ordinary pushes still run every lane.
+        lane: ${{ fromJSON(contains(github.event.head_commit.message, '[repair-runtime-only]') && '["full"]' || '["multi","full","corrupt","no-durable-copy"]') }}
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}

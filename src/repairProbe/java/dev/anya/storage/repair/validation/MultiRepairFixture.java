@@ -56,9 +56,15 @@ public final class MultiRepairFixture {
    // Fill the actual payload quota using structurally valid no-item NBT padding records. No invented chests or transferred items.
    task=((WorkerAccess)(Object)RepairService.worker()).anyaExecute(()->{try{
     long key=Long.MAX_VALUE-100;while(RepairService.journal.bytes()<SnapshotJournal.MAX_TOTAL){
-     long left=SnapshotJournal.MAX_TOTAL-RepairService.journal.bytes();int len=(int)Math.min(left,SnapshotJournal.MAX_BYTES-128L);
+     long left=SnapshotJournal.MAX_TOTAL-RepairService.journal.bytes();
      var t=new CompoundTag();t.putInt("xPos",new ChunkPos(key).x);t.putInt("zPos",new ChunkPos(key).z);t.putByteArray("QuotaFixturePadding",new byte[0]);int overhead=RepairService.encode(t).length;
-     if(len<=overhead)throw new IOException("Padding remainder too small");t.putByteArray("QuotaFixturePadding",new byte[len-overhead]);var r=RepairService.journal.pending(key,RepairService.encode(t));RepairService.journal.applied(key,r.token(),false);key--;
+     // The encoder bounds both estimated NBT memory and serialized bytes. Account for both; never raise the production limits.
+     long safeEncoded=Math.min(SnapshotJournal.MAX_BYTES,SnapshotJournal.MAX_BYTES-(long)t.sizeInBytes()+overhead);
+     int len=(int)Math.min(left,safeEncoded);
+     if(left>len&&left-len<=overhead)len-=overhead+1-(int)(left-len);
+     if(len<=overhead)throw new IOException("Padding remainder too small");t.putByteArray("QuotaFixturePadding",new byte[len-overhead]);
+     byte[] payload=RepairService.encode(t);check(payload.length==len&&t.sizeInBytes()<=SnapshotJournal.MAX_BYTES,"Fixture padding violates an existing encoder bound");
+     var r=RepairService.journal.pending(key,payload);RepairService.journal.applied(key,r.token(),false);key--;
     }Trace.marker("ACTUAL_JOURNAL_QUOTA_FILLED","payload="+RepairService.journal.bytes()+" records="+RepairService.journal.all().size()+" padding records contain no items");return Either.left(null);
    }catch(Exception ex){return Either.right(ex);}});step(70,"fill-payload-quota");return;
   }
