@@ -1,0 +1,74 @@
+name: Read-only inspection and explicit pending-reset resolution
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/operatorProbe/**', 'src/operatorTest/**', 'scripts/operator*', '.github/workflows/operator-resolution.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: operator-resolution-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - name: Bounded read-only corruption missing partial and full-journal checks
+        run: |
+          mkdir -p build/operator-core/classes build/operator-core/evidence
+          set -o pipefail
+          javac -d build/operator-core/classes src/repairProbe/java/dev/anya/storage/repair/SnapshotJournal.java src/operatorProbe/java/dev/anya/storage/operator/JournalDisk.java src/operatorTest/java/dev/anya/storage/operator/InspectionChecks.java
+          timeout 60 java -Xmx192m -cp build/operator-core/classes dev.anya.storage.operator.InspectionChecks build/operator-core/disposable | tee build/operator-core/evidence/checks.log
+          git rev-parse HEAD > build/operator-core/evidence/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: operator-core-${{ github.sha }}
+          path: build/operator-core/evidence/
+          if-no-files-found: error
+  resolution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        case: [resolve, uncertain, disagreement, intent-fail, completion-fail, cut-projection, cut-complete]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile unchanged beta.6 and separate operator experiment
+        run: |
+          mkdir -p build/operator-evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/operator-init.gradle jar operatorProbeJar 2>&1 | tee build/operator-evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/operator-evidence/module-check.log
+      - name: Read-only inspection explicit resolution and independent restart
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.case }}
+        run: |
+          set -o pipefail
+          python3 scripts/operator_runtime.py 2>&1 | tee build/operator-evidence/controller.log
+      - name: Preserve exact evidence including failures
+        if: always()
+        run: |
+          mkdir -p build/operator-evidence
+          git rev-parse HEAD > build/operator-evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/operator-evidence/source.zip
+          sha256sum build/libs/*.jar build/operator/*.jar build/repair/*.jar > build/operator-evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: operator-${{ matrix.case }}-${{ github.sha }}
+          path: |
+            build/operator-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error

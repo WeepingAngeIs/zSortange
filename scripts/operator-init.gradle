@@ -1,0 +1,13 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/repair-init.gradle')
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.sourceSets.create('operatorProbe');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('operatorProbe'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe'])p.dependencies.add('operatorProbeCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('operatorProbeJar',Jar){
+  dependsOn p.tasks.named('operatorProbeClasses'),p.tasks.named('repairProbeJar')
+  from({p.zipTree(p.tasks.named('repairProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/MANIFEST.MF'}
+  from p.sourceSets.getByName('operatorProbe').output
+  archiveBaseName='anya-operator-resolution-experiment';destinationDirectory=p.layout.buildDirectory.dir('operator')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+}
