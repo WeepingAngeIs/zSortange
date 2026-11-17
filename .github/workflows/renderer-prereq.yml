@@ -1,0 +1,60 @@
+name: Pinned renderer prerequisite without CE execution
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['fixtures/renderer-prereq/**', '.github/workflows/renderer-prereq.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: renderer-prerequisite-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - name: Standard-library fixture tests
+        run: |
+          mkdir -p build/renderer-prereq/evidence
+          set -o pipefail
+          python3 -m unittest discover -s fixtures/renderer-prereq/tests -v 2>&1 | tee build/renderer-prereq/evidence/unit-tests.log
+      - name: Verify official publisher provenance and exact target bytes before execution
+        run: |
+          set -o pipefail
+          python3 fixtures/renderer-prereq/provenance.py build/renderer-prereq/provenance 2>&1 | tee build/renderer-prereq/evidence/provenance.log
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with: {gradle-version: '8.14.3'}
+      - name: Build current Anya safety and separate baseline diagnostic only
+        run: |
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I fixtures/renderer-prereq/init.gradle jar operatorProbeJar rendererPrereqJar exportRendererLaunch 2>&1 | tee build/renderer-prereq/evidence/compile.log
+      - name: Prepare bounded disposable display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Exact target baseline resolved modules backend and changing direct-world pixels
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1280x800x24' python3 fixtures/renderer-prereq/run_baseline.py 2>&1 | tee build/renderer-prereq/evidence/controller.log
+      - name: Record CE approval boundary and exact source
+        if: always()
+        run: |
+          mkdir -p build/renderer-prereq/evidence
+          git rev-parse HEAD > build/renderer-prereq/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/renderer-prereq/evidence/source.zip
+          printf 'CE not built, installed, loaded or executed. Explicit source-specific approval is still required.\n' > build/renderer-prereq/evidence/CE_NOT_EXECUTED.txt
+          sha256sum build/libs/*.jar build/operator/*.jar build/renderer-prereq/*.jar > build/renderer-prereq/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: renderer-prerequisite-${{ github.sha }}
+          path: |
+            build/renderer-prereq/evidence/
+            build/renderer-prereq/provenance/*.json
+            build/renderer-prereq/provenance/STATIC_VERIFIED
+          if-no-files-found: error

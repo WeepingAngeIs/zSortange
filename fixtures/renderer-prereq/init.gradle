@@ -1,0 +1,37 @@
+apply from: new File(gradle.startParameter.currentDir, 'scripts/operator-init.gradle')
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.sourceSets.create('rendererPrereq')
+ p.sourceSets.rendererPrereq.java.srcDir p.file('fixtures/renderer-prereq/java')
+ p.sourceSets.rendererPrereq.resources.srcDir p.file('fixtures/renderer-prereq/resources')
+ p.neoForge.addModdingDependenciesTo(p.sourceSets.rendererPrereq)
+ p.tasks.register('rendererPrereqJar',Jar){
+  dependsOn p.tasks.named('rendererPrereqClasses')
+  from p.sourceSets.rendererPrereq.output
+  archiveBaseName='anya-renderer-prerequisite-fixture'
+  destinationDirectory=p.layout.buildDirectory.dir('renderer-prereq')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ p.sourceSets.create('rendererRuntime');p.neoForge.addModdingDependenciesTo(p.sourceSets.rendererRuntime)
+ p.dependencies.add('rendererRuntimeRuntimeOnly',p.files(p.tasks.named('jar')))
+ p.dependencies.add('rendererRuntimeRuntimeOnly',p.files(p.tasks.named('operatorProbeJar')))
+ p.dependencies.add('rendererRuntimeRuntimeOnly',p.files(p.tasks.named('rendererPrereqJar')))
+ p.dependencies.add('rendererRuntimeRuntimeOnly',p.fileTree('build/renderer-prereq/provenance/verified-jars'){include '*.jar'})
+ p.neoForge.runs.create('rendererBaseline'){
+  client();sourceSet=p.sourceSets.rendererRuntime;loadedMods=[]
+  gameDirectory=p.file('build/renderer-prereq/client')
+  systemProperty 'anya.rendererControl',p.file('build/renderer-prereq/control').absolutePath
+  systemProperty 'anya.nonblockingPrepare','true';systemProperty 'anya.minimalOwnership','true'
+  systemProperty 'anya.serializationBudget','true';systemProperty 'anya.backpressure','true';systemProperty 'anya.repairJournal','true'
+  programArguments.addAll '--username','AnyaRendererQA','--width','960','--height','640'
+  jvmArguments.addAll '-Xmx1000m','-Xms256m'
+ }
+ p.tasks.register('exportRendererLaunch'){
+  dependsOn 'jar','operatorProbeJar','rendererPrereqJar','createRendererBaselineLaunchScript'
+  doLast{
+   def f=p.tasks.named('createRendererBaselineLaunchScript').get().launchScript.get().asFile
+   def o=p.file('build/renderer-prereq/client-launch.json');o.parentFile.mkdirs()
+   o.text=groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([command:['bash',f.absolutePath],cwd:p.file('build/renderer-prereq/client').absolutePath]))
+  }
+ }
+}
