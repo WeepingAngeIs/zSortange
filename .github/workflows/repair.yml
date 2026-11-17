@@ -1,15 +1,22 @@
-name: Isolated persistent failed-write repair
+name: Persistent latest-snapshot repair and quarantine
 on:
   push:
     branches: [feature/elemental-pockets]
-    paths: ['src/repairProbe/**','src/repairTest/**','scripts/repair*','.github/workflows/repair.yml']
+    paths: ['src/repairProbe/**', 'src/repairTest/**', 'scripts/repair*', '.github/workflows/repair.yml']
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: repair-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
-  compile:
+  fixture:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [baseline-first, candidate-first, failed-write, recovery-retry, cuts-stop, no-durable-copy]
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
@@ -17,14 +24,21 @@ jobs:
         with: {distribution: temurin, java-version: '21'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
-      - name: Compile unchanged beta.6 and isolated journal
+      - name: Compile isolated latest-snapshot journal and unchanged beta.6
         run: |
           mkdir -p build/repair-evidence build/repair-core
           set -o pipefail
           javac -d build/repair-core src/repairProbe/java/dev/anya/storage/repair/SnapshotJournal.java src/repairTest/java/dev/anya/storage/repair/JournalChecks.java
-          java -cp build/repair-core dev.anya.storage.repair.JournalChecks | tee build/repair-evidence/core.log
+          java -cp build/repair-core dev.anya.storage.repair.JournalChecks | tee build/repair-evidence/core-checks.log
           gradle --no-daemon --max-workers=2 -I scripts/repair-init.gradle jar repairProbeJar 2>&1 | tee build/repair-evidence/compile.log
-      - name: Preserve source and hashes even on failure
+          python3 scripts/repair_verify.py | tee build/repair-evidence/module-check.log
+      - name: Latest failed edits bounded retries restart cuts and unresolved recovery
+        env:
+          ANYA_DURABLE_LANE: ${{ matrix.lane }}
+        run: |
+          set -o pipefail
+          python3 scripts/repair_runtime.py 2>&1 | tee build/repair-evidence/controller.log
+      - name: Preserve exact source and checksums
         if: always()
         run: |
           mkdir -p build/repair-evidence
@@ -34,5 +48,61 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: repair-compile-${{ github.sha }}
-          path: build/repair-evidence/
+          name: repair-${{ matrix.lane }}-${{ github.sha }}
+          path: |
+            build/repair-evidence/
+            build/durable-runtime/evidence/
+          if-no-files-found: error
+  clients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: room
+            evidence: build/acceptance/evidence
+          - scenario: cold-recovery
+            evidence: build/cold-recovery/evidence
+          - scenario: transitions
+            evidence: build/remote-policy/evidence
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile exact candidate and unchanged actual-client fixtures
+        run: |
+          mkdir -p '${{ matrix.evidence }}'
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/repair-init.gradle jar repairProbeJar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PrepairProbe -PticketExperiment 2>&1 | tee '${{ matrix.evidence }}/compile.log'
+          python3 scripts/repair_verify.py | tee '${{ matrix.evidence }}/module-check.log'
+      - name: Prepare disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Two actual clients with isolated journal and original lifecycle assertions
+        env:
+          JAVA_TOOL_OPTIONS: '-Danya.nonblockingPrepare=true -Danya.minimalOwnership=true -Danya.serializationBudget=true -Danya.backpressure=true -Danya.pressureClient=true -Danya.repairJournal=true'
+          ANYA_DURABLE_PROBE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: room
+          ANYA_ROOM_TICKET_EXPERIMENT: 'true'
+          ANYA_COLD_POLICY: candidate
+          ANYA_REPAIR_CLIENT_SCENARIO: ${{ matrix.scenario }}
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/repair_clients.py 2>&1 | tee '${{ matrix.evidence }}/controller.log'
+      - name: Preserve exact source and checksums
+        if: always()
+        run: |
+          mkdir -p '${{ matrix.evidence }}'
+          git rev-parse HEAD > '${{ matrix.evidence }}/SOURCE_COMMIT.txt'
+          git archive --format=zip HEAD > '${{ matrix.evidence }}/source.zip'
+          sha256sum build/libs/*.jar build/repair/*.jar build/ticket-experiment/*.jar > '${{ matrix.evidence }}/SHA256SUMS.txt' || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: repair-clients-${{ matrix.scenario }}-${{ github.sha }}
+          path: ${{ matrix.evidence }}/
+          if-no-files-found: error
