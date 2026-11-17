@@ -36,13 +36,14 @@ public final class LiveViews {
  public static final boolean ENABLED=Boolean.getBoolean("anyastorage.liveViewPrototype");
  public static final int MAX_POCKETS=2,MAX_HANDLES=8,MAX_PER_PLAYER=2,DATA_RADIUS=2,MAX_CACHE=4096;
  public static final long LIFETIME=1200;
+ public static final int MAX_SUSPENDED_TICKS=100;
  public static MinecraftServer server;
  public static boolean stopping,failed,pressure;
  public static long deniedOpens,closed,autoLoadersSuppressed,nestedQueriesSuppressed;
  public static final Map<UUID,Handle> HANDLES=new LinkedHashMap<>();
  public static final class Handle {
   public final UUID id,player,pocket;public final long epoch,deadline;public final LivePortal portal;
-  private String lastValidity="";private int validityTransitions;
+  private String lastValidity="";private int validityTransitions,suspendedTicks;
   Handle(UUID id,ServerPlayer p,PocketLedger.Pocket r,LivePortal portal){this.id=id;player=p.getUUID();pocket=r.id();epoch=r.epoch();deadline=now()+LIFETIME;this.portal=portal;}
  }
  /** Ordinary non-global portal; it never becomes a persistent source-world entity. */
@@ -59,12 +60,13 @@ public final class LiveViews {
  public static boolean protectedDimension(ResourceKey<Level> d){return PocketService.DIMENSION.equals(d);}
  public static void owner(){if(server==null||!server.isSameThread())throw new IllegalStateException("Live view state must stay on the server thread");}
  public static PocketLedger.Pocket pocket(UUID id){try{return PocketService.ledger(server).get(id);}catch(Exception e){return null;}}
- public static String viewReason(ServerPlayer p,PocketLedger.Pocket r){
+ public static String viewReason(ServerPlayer p,PocketLedger.Pocket r){return viewReason(p,r,true);}
+ private static String viewReason(ServerPlayer p,PocketLedger.Pocket r,boolean persistence){
   if(!ENABLED||failed||stopping||server==null||p==null||p.isRemoved()||server.getPlayerList().getPlayer(p.getUUID())!=p)return "Preview unavailable";
   if(r==null||r.stage()!=PocketLedger.Stage.READY)return "Only an existing READY pocket can be previewed";
   String reason=PocketService.authorize(p,r,PocketLeases.Kind.REMOTE,false,BasePermissions.VIEW);if(!reason.isEmpty())return reason;
   if(p.distanceToSqr(Vec3.atCenterOf(BlockPos.of(r.anchor().entrance())))>24*24)return "Preview distance exceeded";
-  if(RepairService.roomBlocked(r.id()))return "Persistence quarantine";
+  if(persistence&&RepairService.roomBlocked(r.id()))return "Persistence quarantine";
   return "";
  }
  public static boolean valid(Handle h){
@@ -80,6 +82,18 @@ public final class LiveViews {
    h.lastValidity=reason;
   }
   return reason.isEmpty();
+ }
+ /** Retain only the bounded load intent while a save receipt is pending.
+  * This never authorizes a packet, entity pairing, Visit, or inventory access.
+  * Keeping the same footprint avoids unload/save/reload feedback; a persistent
+  * block still expires after 100 cumulative blocked pre-ticks. Blocks between
+  * samples remain packet-gated and cannot extend the absolute handle deadline.
+  */
+ public static boolean loaderRetained(Handle h){
+  if(server==null||!server.isSameThread()||now()>=h.deadline||h.portal.isRemoved())return false;
+  var r=pocket(h.pocket);
+  if(r==null||r.epoch()!=h.epoch||!viewReason(server.getPlayerList().getPlayer(h.player),r,false).isEmpty())return false;
+  return !RepairService.roomBlocked(r.id())||h.suspendedTicks<MAX_SUSPENDED_TICKS;
  }
  public static Handle open(ServerPlayer p,UUID id)throws Exception{
   owner();var r=pocket(id);String reason=viewReason(p,r);if(!reason.isEmpty()||pressure){deniedOpens++;throw new IllegalStateException("Live view denied");}
@@ -121,14 +135,14 @@ public final class LiveViews {
  public static boolean anyAccess(ServerPlayer p){if(visiting(p)!=null)return true;return HANDLES.values().stream().anyMatch(h->h.player.equals(p.getUUID())&&valid(h));}
  public static Set<Long> requested(ServerPlayer p){
   Set<Long> result=new HashSet<>();var ids=new HashSet<UUID>();var visit=visiting(p);if(visit!=null)ids.add(visit.id());
-  for(var h:HANDLES.values())if(h.player.equals(p.getUUID())&&valid(h))ids.add(h.pocket);
+  for(var h:HANDLES.values())if(h.player.equals(p.getUUID())&&loaderRetained(h))ids.add(h.pocket);
   for(UUID id:ids){var r=pocket(id);for(int dx=-DATA_RADIUS;dx<=DATA_RADIUS;dx++)for(int dz=-DATA_RADIUS;dz<=DATA_RADIUS;dz++)result.add(ChunkPos.asLong((r.x()>>4)+dx,(r.z()>>4)+dz));}return result;
  }
  /** Original source-world loaders remain. All protected-destination loaders, direct or nested, are replaced by the authorized union. */
  public static Consumer<ChunkLoader> filterLoader(Consumer<ChunkLoader> original){return l->{if(ENABLED&&protectedDimension(l.dimension()))autoLoadersSuppressed++;else original.accept(l);};}
  public static void appendLoaders(ServerPlayer p,Consumer<ChunkLoader> sink){
   if(!ENABLED||server==null||stopping||failed)return;var ids=new HashSet<UUID>();var visit=visiting(p);if(visit!=null)ids.add(visit.id());
-  for(var h:HANDLES.values())if(h.player.equals(p.getUUID())&&valid(h))ids.add(h.pocket);
+  for(var h:HANDLES.values())if(h.player.equals(p.getUUID())&&loaderRetained(h))ids.add(h.pocket);
   for(UUID id:ids){var r=pocket(id);sink.accept(new ChunkLoader(new DimensionalChunkPos(PocketService.DIMENSION,new ChunkPos(r.x()>>4,r.z()>>4)),DATA_RADIUS));}
  }
  private static Object field(Class<?> c,Object object,String name){try{Field f=c.getDeclaredField(name);f.setAccessible(true);return f.get(object);}catch(Exception e){throw new IllegalStateException("Pinned CE field unavailable: "+name,e);}}
@@ -161,7 +175,12 @@ public final class LiveViews {
  }
  @SubscribeEvent public static void started(ServerStartedEvent e){server=e.getServer();stopping=failed=pressure=false;HANDLES.clear();PacketFence.clear();if(ENABLED){owner();watches();}}
  @SubscribeEvent(priority=EventPriority.HIGHEST) public static void tick(ServerTickEvent.Pre e){if(!ENABLED||server!=e.getServer())return;try{
-  for(var h:new ArrayList<>(HANDLES.values()))if(!valid(h))retire(h.id);
+  for(var h:new ArrayList<>(HANDLES.values())){
+   if(!valid(h)){
+    if(!loaderRetained(h))retire(h.id);
+    else if(++h.suspendedTicks>=MAX_SUSPENDED_TICKS)retire(h.id);
+   }
+  }
   var l=PocketService.dimension(server);var mem=ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();pressure=l!=null&&l.getChunkSource().getLoadedChunksCount()>MAX_CACHE||mem.getUsed()>mem.getMax()*.80;
   if(pressure)for(var id:new ArrayList<>(HANDLES.keySet()))retire(id);reconcile();
  }catch(Throwable ex){failed=true;AnyaStorage.LOG.error("LIVE_VIEW_FAIL_CLOSED",ex);for(var id:new ArrayList<>(HANDLES.keySet()))retire(id);}}
