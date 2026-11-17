@@ -55,7 +55,7 @@ public final class HealthyProbe {
   var bytes=new ByteArrayOutputStream();oracle.store(bytes,"Disposable assertion oracle, not player recovery state");
   try(var out=FileChannel.open(Path.of("healthy-oracle.properties"),StandardOpenOption.CREATE,StandardOpenOption.TRUNCATE_EXISTING,StandardOpenOption.WRITE)){var b=java.nio.ByteBuffer.wrap(bytes.toByteArray());while(b.hasRemaining())out.write(b);out.force(true);}
  }
- private static boolean drained(){var v=(OwnershipView)(Object)level().getChunkSource().chunkMap;return PocketService.ownedTicketRequests()==0&&level().getChunkSource().getLoadedChunksCount()==0&&v.anyaPendingCount()==0&&v.anyaCallbackCount()==0&&RepairService.idle()&&PocketService.ledger(server).returnCount()==0;}
+ private static boolean drained()throws IOException{var v=(OwnershipView)(Object)level().getChunkSource().chunkMap;return PocketService.ownedTicketRequests()==0&&level().getChunkSource().getLoadedChunksCount()==0&&v.anyaPendingCount()==0&&v.anyaCallbackCount()==0&&RepairService.idle()&&PocketService.ledger(server).returnCount()==0;}
  private static CompletableFuture<Void> raw(int expected,boolean staleProof){
   var worker=RepairService.worker();var storage=((WorkerAccess)(Object)worker).anyaStorage();var t=oldToken;
   return ((WorkerAccess)(Object)worker).anyaExecute(()->{try{
