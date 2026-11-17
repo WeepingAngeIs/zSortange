@@ -4,6 +4,7 @@ import dev.anya.storage.*;
 import dev.anya.storage.durable.Trace;
 import dev.anya.storage.pocket.*;
 import dev.anya.storage.repair.mixin.WorkerAccess;
+import dev.anya.storage.repair.mixin.RegionAccess;
 import com.mojang.datafixers.util.Either;
 import net.minecraft.nbt.*;
 import net.minecraft.server.MinecraftServer;
@@ -72,7 +73,7 @@ public final class RepairService {
   if(tag.getInt("xPos")!=pos.x||tag.getInt("zPos")!=pos.z)throw new IOException("Snapshot coordinate mismatch");return Optional.of(tag);
  }
  public static void write(RegionFileStorage storage,ChunkPos pos,CompoundTag tag)throws IOException {
-  if(!ENABLED||!target(storage.info())||!supported(tag)){storage.write(pos,tag);return;}
+  if(!ENABLED||!target(storage.info())||!supported(tag)){((RegionAccess)(Object)storage).anyaWrite(pos,tag);return;}
   if(server!=null&&server.isSameThread())throw new IllegalStateException("Region IO worker required");
   SnapshotJournal.Record r=null;boolean repair=false;byte[] data=encode(tag);long start=System.nanoTime();
   try{
@@ -81,7 +82,7 @@ public final class RepairService {
    if(repair){var now=journal.get(pos.toLong());if(now==null||!now.token().equals(r.token()))throw new IOException("Stale repair token");}
    else {if(fault.equals("dual")&&pos.toLong()==faultKey)throw new IOException("Injected journal publication failure: newest copy not durable");r=journal.pending(pos.toLong(),data);}
    journalNs.addAndGet(System.nanoTime()-start);boundary("after-journal",pos);
-   long region=System.nanoTime();storage.write(pos,tag);storage.flush();writes.incrementAndGet();
+   long region=System.nanoTime();((RegionAccess)(Object)storage).anyaWrite(pos,tag);storage.flush();writes.incrementAndGet();
    if(!tag.equals(storage.read(pos)))throw new IOException("Region read-back mismatch");regionNs.addAndGet(System.nanoTime()-region);
    boundary(repair?"repair-after-region":"after-region",pos);journal.applied(pos.toLong(),r.token(),repair);if(repair)repairs.incrementAndGet();
    boundary(repair?"repair-after-proof":"after-proof",pos);emergency.remove(pos.toLong());
@@ -92,7 +93,7 @@ public final class RepairService {
     globalBad=true;if(emergency.size()<64)emergency.put(pos.toLong(),data);
     try{if(journal!=null)journal.failClosed("No confirmed latest journal snapshot: "+e);}catch(Exception nested){e.addSuppressed(nested);}
     // Do not remove the original save obligation when the secondary journal fails. Try the original store/flush, but never call it journal-protected.
-    try{storage.write(pos,tag);storage.flush();Trace.note("REPAIR_PRIMARY_ONLY",null,"key="+pos.toLong()+" journal unavailable; remains quarantined");}catch(Exception primary){e.addSuppressed(primary);}
+    try{((RegionAccess)(Object)storage).anyaWrite(pos,tag);storage.flush();Trace.note("REPAIR_PRIMARY_ONLY",null,"key="+pos.toLong()+" journal unavailable; remains quarantined");}catch(Exception primary){e.addSuppressed(primary);}
    }
    Trace.note("REPAIR_WRITE_UNCONFIRMED",null,"key="+pos.toLong()+" snapshotDurable="+(r!=null)+" "+e);
    if(e instanceof IOException io)throw io;throw new IOException(e);
@@ -136,7 +137,7 @@ public final class RepairService {
    if(r.future!=null){if(!r.future.isDone())continue;try{r.future.join();Trace.note("REPAIR_ATTEMPT_OK",null,"key="+r.key+" attempts="+r.attempts);it.remove();}
     catch(CompletionException ex){Trace.note("REPAIR_ATTEMPT_FAILED",null,"key="+r.key+" attempts="+r.attempts);r.future=null;r.due=now+20L*(1L<<Math.min(3,r.attempts-1));if(r.attempts>=3)it.remove();}continue;}
    if(now<r.due)continue;
-   try{var entry=journal.get(r.key());if(entry==null||!entry.token().equals(r.token))throw new IOException("Stale queued repair");validate(entry);var tag=decode(entry.payload());replay.put(tag,entry);r.attempts++;
+   try{var entry=journal.get(r.key);if(entry==null||!entry.token().equals(r.token))throw new IOException("Stale queued repair");validate(entry);var tag=decode(entry.payload());replay.put(tag,entry);r.attempts++;
     r.future=worker().store(new ChunkPos(r.key),tag);r.future.whenComplete((v,error)->replay.remove(tag));Trace.note("REPAIR_ATTEMPT",null,"key="+r.key+" attempt="+r.attempts+" tick="+now);break;
    }catch(Exception ex){Trace.note("REPAIR_INTENT_REFUSED",null,ex.toString());it.remove();}
   }
