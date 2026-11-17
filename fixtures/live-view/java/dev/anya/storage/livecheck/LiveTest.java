@@ -147,8 +147,14 @@ public final class LiveTest {
   once("request actual Beta socket interruption",()->{oldBeta=p("Beta").getUUID();write("kill-beta",Map.of("action","SIGKILL real client while viewing"));});
   add("socket release preserves visitor",()->{},()->{if(p("Beta")!=null)return false;check(LiveViews.HANDLES.values().stream().noneMatch(h->h.player.equals(oldBeta)),"Socket loss retained handles");check(inside("Gamma")&&PocketService.lease(p("Gamma").getUUID())!=null,"Socket loss disturbed other visitor");write("restart-beta",Map.of("same_identity",true));return true;},300);
   add("new Beta client returns with no handles",()->{},()->p("Beta")!=null&&ready.contains("Beta")&&handles("Beta")==0,1500);inspect("Beta",0);inspect("Alpha",1);
-  once("range loss",()->p("Alpha").teleportTo(server.overworld(),1000,81,1,0,0));inspect("Alpha",0);
-  once("return to home without auto reopening",()->home("Alpha"));command("Alpha","anyaliveview open "+ROOMS[0]);inspect("Alpha",1);
+  once("range loss",()->{
+   // Keep the survival actor on real footing while exercising the same distant
+   // location. The previous fixture dropped it into empty terrain and the
+   // accumulated fall killed it on return, testing death instead of range loss.
+   for(int x=998;x<=1002;x++)for(int z=-1;z<=3;z++)server.overworld().setBlockAndUpdate(new BlockPos(x,80,z),Blocks.STONE.defaultBlockState());
+   p("Alpha").teleportTo(server.overworld(),1000,81,1,0,0);
+  });inspect("Alpha",0);
+  once("return to home without auto reopening",()->{check(p("Alpha").isAlive(),"Range test actor died");home("Alpha");});command("Alpha","anyaliveview open "+ROOMS[0]);inspect("Alpha",1);
   once("entrance loss invalidates only its own view",()->server.overworld().setBlockAndUpdate(EP[0],Blocks.AIR.defaultBlockState()));inspect("Alpha",0);
   once("other visitor retained on anchor loss",()->check(inside("Gamma")&&PocketService.lease(p("Gamma").getUUID())!=null,"Other pocket visitor lost"));
   command("Gamma","anya pocket exit");add("normal Visit recovery intact",()->{},()->!inside("Gamma")&&PocketService.ledger(server).returnCount()==0,300);returnedClient("Gamma");
