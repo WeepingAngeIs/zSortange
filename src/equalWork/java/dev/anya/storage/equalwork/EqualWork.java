@@ -43,12 +43,12 @@ public final class EqualWork {
  private static BufferedWriter admissions;
  private static void check(boolean v,String text){if(!v)throw new IllegalStateException(text);}
  private static net.minecraft.server.level.ServerLevel level(){return PocketService.dimension(server);}
- private static PocketLedger.Pocket room(int i){return PocketService.ledger(server).get(ids.get(i));}
+ private static PocketLedger.Pocket room(int i){try{return PocketService.ledger(server).get(ids.get(i));}catch(IOException e){throw new IllegalStateException(e);}}
  private static Receipts.Sample sample(int i){return Receipts.SAMPLES.get(new ChunkPos(PocketService.chestPositions(room(i)).getFirst()).toLong());}
  private static ItemStack item(int i,int v){var s=new ItemStack(Items.DIAMOND,13);s.set(DataComponents.CUSTOM_NAME,Component.literal("Pressure "+ids.get(i)+" v"+v));return s;}
  private static StorageEntity chest(int i){var pos=PocketService.chestPositions(room(i)).getFirst();check(level().hasChunkAt(pos),"Unexpected loading by fixture");return (StorageEntity)level().getBlockEntity(pos);}
  private static boolean menu(int i){return players.get(i).containerMenu instanceof StoreMenu m&&m.hasPocket(ids.get(i));}
- private static boolean drained(){var v=(OwnershipView)(Object)level().getChunkSource().chunkMap;return PocketService.ownedTicketRequests()==0&&level().getChunkSource().getLoadedChunksCount()==0&&v.anyaPendingCount()==0&&v.anyaCallbackCount()==0&&RepairService.idle()&&PocketService.ledger(server).returnCount()==0;}
+ private static boolean drained()throws IOException{var v=(OwnershipView)(Object)level().getChunkSource().chunkMap;return PocketService.ownedTicketRequests()==0&&level().getChunkSource().getLoadedChunksCount()==0&&v.anyaPendingCount()==0&&v.anyaCallbackCount()==0&&RepairService.idle()&&PocketService.ledger(server).returnCount()==0;}
  private static void next(String value){phase=value;Fixture.phase="equal-"+value;phaseAt=server.getTickCount();Trace.note("EQUAL_PHASE",null,value+" completed="+completed+" confirmed="+Receipts.confirmedCount);}
  private static Object field(String name)throws Exception{var f=Fixture.class.getDeclaredField(name);f.setAccessible(true);return f.get(null);}
  private static Path region(){var id=PocketService.DIMENSION.location();return server.getWorldPath(LevelResource.ROOT).resolve("dimensions").resolve(id.getNamespace()).resolve(id.getPath()).resolve("region");}
