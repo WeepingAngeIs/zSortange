@@ -1,6 +1,5 @@
 apply from: new File(gradle.startParameter.currentDir, 'scripts/operator-init.gradle')
-// The main build first enables NeoForge. Its afterEvaluate callback runs before
-// projectsEvaluated and may still register the run's own finalization callback.
+// Configure after the main build enables NeoForge but before evaluation finishes.
 gradle.beforeProject { p ->
  p.afterEvaluate {
   p.sourceSets.create('rendererPrereq')
@@ -16,10 +15,11 @@ gradle.beforeProject { p ->
   }
   p.sourceSets.create('rendererRuntime');p.neoForge.addModdingDependenciesTo(p.sourceSets.rendererRuntime)
   p.dependencies.add('rendererRuntimeRuntimeOnly',p.files(p.tasks.named('jar')))
-  def safety = p.files(p.provider { p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile }).builtBy('operatorProbeJar')
+  def safety=p.files(p.provider { p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile }).builtBy('operatorProbeJar')
   p.dependencies.add('rendererRuntimeRuntimeOnly',safety)
   p.dependencies.add('rendererRuntimeRuntimeOnly',p.files(p.tasks.named('rendererPrereqJar')))
-  p.dependencies.add('rendererRuntimeRuntimeOnly',p.fileTree('build/renderer-prereq/provenance/verified-jars'){include '*.jar'})
+  // Publisher wrappers belong in the disposable mods folder, not the dev mod
+  // classpath: Sodium's early locator must discover its nested implementation.
   p.neoForge.runs.create('rendererBaseline'){
    client();sourceSet=p.sourceSets.rendererRuntime;loadedMods=[]
    gameDirectory=p.file('build/renderer-prereq/client')

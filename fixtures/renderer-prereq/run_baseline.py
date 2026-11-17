@@ -1,6 +1,6 @@
 """CI-only disposable direct-world baseline. CE is deliberately absent and never downloaded here."""
 from __future__ import annotations
-import hashlib,json,os,pathlib,shutil,signal,struct,subprocess,time,urllib.request,zlib
+import hashlib,json,os,pathlib,platform,shutil,signal,struct,subprocess,time,urllib.request,urllib.parse,zlib
 ROOT=pathlib.Path.cwd().resolve();F=ROOT/'fixtures/renderer-prereq';B=ROOT/'build/renderer-prereq';E=B/'evidence';C=B/'control';S=B/'server';D=B/'client'
 SPEC=json.loads((F/'inputs.json').read_text())
 
@@ -43,6 +43,17 @@ def png_rgb(path):
             n+=1
     return {'width':w,'height':h,'center_mean_rgb':[s/n for s in sums],'sha256':sha(path)}
 
+def group_rss(pgid):
+    total=0
+    for d in pathlib.Path('/proc').iterdir():
+        if not d.name.isdecimal():continue
+        try:
+            if os.getpgid(int(d.name))!=pgid:continue
+            row=next((v for v in (d/'status').read_text().splitlines() if v.startswith('VmRSS:')),None)
+            if row:total+=int(row.split()[1])*1024
+        except (FileNotFoundError,ProcessLookupError,PermissionError):pass
+    return total
+
 def main():
     assert os.environ.get('GITHUB_ACTIONS')=='true','Disposable GitHub only'
     assert (B/'provenance/STATIC_VERIFIED').is_file(),'No execution before publisher and target hash validation'
@@ -54,8 +65,11 @@ def main():
     assert sha(jar)==SPEC['anya_sha256'] and sha(safety)==SPEC['safety_sha256'],'Existing binaries changed'
     mods=S/'mods';mods.mkdir();verified=B/'provenance/verified-jars';cloth=verified/'cloth-config-15.0.140-neoforge.jar'
     for p in (jar,safety,fixture,cloth):shutil.copy2(p,mods/p.name)
-    for a in SPEC['artifacts']:assert sha(verified/a['filename'])==a['sha256'],'Artifact changed after audit'
+    client_mods=D/'mods';client_mods.mkdir(exist_ok=False)
+    for a in SPEC['artifacts']:
+        p=verified/a['filename'];assert sha(p)==a['sha256'],'Artifact changed after audit';shutil.copy2(p,client_mods/p.name)
     (E/'input-hashes.json').write_text(json.dumps({str(p.relative_to(ROOT)):sha(p) for p in (jar,safety,fixture,*sorted(verified.glob('*.jar')))},indent=2))
+    (E/'host.json').write_text(json.dumps({'platform':platform.uname()._asdict(),'logical_cpus':os.cpu_count(),'java':subprocess.run(['java','-version'],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=True).stdout,'server_heap_mib':2048,'client_heap_mib':1000,'rss_accounting':'sum of /proc VmRSS for each complete process group; shared pages not deduplicated','ce_executed':False},indent=2))
     installer=B/'neoforge-installer.jar';url='https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.249/neoforge-21.1.249-installer.jar'
     data=bounded_download(url,16*1024*1024);published=bounded_download(url+'.sha256',512).decode().split()[0].lower()
     assert hashlib.sha256(data).hexdigest()==published,'Official NeoForge installer digest mismatch';installer.write_bytes(data)
@@ -70,24 +84,20 @@ def main():
     (E/'config-boundaries.json').write_text(json.dumps({'iris':SPEC['iris_options'],'vanilla':opts,'sodium_options':'fresh defaults, captured after launch; exact user JSON not supplied','shader_zip':'not installed','ce':'not installed','user_profile':'never accessed'},indent=2))
     proc=[];logs=[];started=time.monotonic();success=False
     def launch(cmd,cwd,name,env=None):
+        (E/(name+'-command.json')).write_text(json.dumps({'command':cmd,'cwd':str(cwd)},indent=2))
         log=(E/(name+'.log')).open('w');logs.append(log);p=subprocess.Popen(cmd,cwd=cwd,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True);proc.append((p,name));return p
-    def rss(pid):
-        try:
-            values=pathlib.Path(f'/proc/{pid}/status').read_text().splitlines()
-            return int(next(x for x in values if x.startswith('VmRSS:')).split()[1])*1024
-        except (FileNotFoundError,StopIteration):return 0
     resources=[]
     def check(expected_exit=False):
         if (C/'FAILED').exists():raise RuntimeError((C/'FAILED').read_text())
         elapsed=time.monotonic()-started
         if elapsed>480:raise TimeoutError('480-second total runtime bound')
         available=int(next(x for x in pathlib.Path('/proc/meminfo').read_text().splitlines() if x.startswith('MemAvailable:')).split()[1])*1024
-        values={n:rss(p.pid) for p,n in proc};resources.append({'seconds':elapsed,'rss_bytes':values,'host_available_bytes':available})
-        if sum(values.values())>6*1024**3 or available<2*1024**3:raise RuntimeError('Resource guard')
+        values={n:group_rss(p.pid) for p,n in proc};resources.append({'seconds':elapsed,'rss_bytes':values,'host_available_bytes':available})
+        if values.get('server',0)>3*1024**3 or sum(values.values())>6*1024**3 or available<2*1024**3:raise RuntimeError('Resource guard')
         for p,n in proc:
             if p.poll() is not None and not expected_exit and not (C/'client-finished').exists():raise RuntimeError(f'{n} exited {p.returncode} before completion')
     try:
-        flags=['-Danya.nonblockingPrepare=true','-Danya.minimalOwnership=true','-Danya.serializationBudget=true','-Danya.backpressure=true','-Danya.repairJournal=true',f'-Danya.rendererControl={C}',f'-Danya.durableOutput={E}']
+        flags=['-Danya.nonblockingPrepare=true','-Danya.minimalOwnership=true','-Danya.serializationBudget=true','-Danya.backpressure=true','-Danya.repairJournal=true',f'-Danya.rendererControl={C}',f'-Danya.control={C}']
         srv=launch(['java','-Xms256m','-Xmx2048m',*flags,'@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],S,'server')
         deadline=time.monotonic()+150
         while not (C/'server-ready').exists():
