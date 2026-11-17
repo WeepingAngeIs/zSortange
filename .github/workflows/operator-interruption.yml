@@ -1,0 +1,55 @@
+name: Actual-client confirmation interruption and persistence failure
+on:
+  push:
+    branches: [feature/elemental-pockets]
+    paths: ['src/operatorDisconnect/**', 'src/operatorDisconnectClient/**', 'scripts/operator-disconnect-init.gradle', 'scripts/operator_interrupt_network.py', '.github/workflows/operator-interruption.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: operator-interruption-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        boundary: [receipt-disconnect, intent-disconnect, projection-disconnect, completion-disconnect, ack-disconnect, intent-fail, projection-fail, completion-fail]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Compile unchanged beta.6 and isolated command-interruption fixtures
+        run: |
+          mkdir -p build/operator-interruption/evidence
+          set -o pipefail
+          gradle --no-daemon --max-workers=2 -I scripts/operator-disconnect-init.gradle jar operatorDisconnectJar acceptanceJar ticketExperimentJar stageAcceptanceDependencies exportAcceptanceLaunches -PticketExperiment 2>&1 | tee build/operator-interruption/evidence/compile.log
+          python3 scripts/repair_verify.py | tee build/operator-interruption/evidence/module-check.log
+      - name: Disposable software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Actual command packets disconnect fault and restart read-back
+        env:
+          ANYA_OPERATOR_INTERRUPT_CASE: ${{ matrix.boundary }}
+          JAVA_TOOL_OPTIONS: '-Danya.nonblockingPrepare=true -Danya.minimalOwnership=true -Danya.serializationBudget=true -Danya.backpressure=true -Danya.pressureClient=true -Danya.repairJournal=true'
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 scripts/operator_interrupt_network.py 2>&1 | tee build/operator-interruption/evidence/controller.log
+      - name: Preserve exact source hashes and failed evidence
+        if: always()
+        run: |
+          mkdir -p build/operator-interruption/evidence
+          git rev-parse HEAD > build/operator-interruption/evidence/SOURCE_COMMIT.txt
+          git archive --format=zip HEAD > build/operator-interruption/evidence/source.zip
+          sha256sum build/libs/*.jar build/operator/*.jar build/operator-disconnect/*.jar build/acceptance/*.jar build/ticket-experiment/*.jar > build/operator-interruption/evidence/SHA256SUMS.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: operator-interruption-${{ matrix.boundary }}-${{ github.sha }}
+          path: build/operator-interruption/evidence/
+          if-no-files-found: error

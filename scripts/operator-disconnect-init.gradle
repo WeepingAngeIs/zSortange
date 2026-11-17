@@ -1,0 +1,17 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/operator-init.gradle')
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.sourceSets.create('operatorDisconnect');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('operatorDisconnect'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe','operatorProbe'])p.dependencies.add('operatorDisconnectCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('operatorDisconnectJar',Jar){
+  dependsOn p.tasks.named('operatorDisconnectClasses'),p.tasks.named('operatorProbeJar')
+  from({p.zipTree(p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/MANIFEST.MF';exclude 'META-INF/neoforge.mods.toml'}
+  from p.sourceSets.getByName('operatorDisconnect').output
+  archiveBaseName='anya-operator-disconnect-fixture';destinationDirectory=p.layout.buildDirectory.dir('operator-disconnect')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ p.sourceSets.acceptance.java.srcDir(p.file('src/operatorDisconnectClient/java'))
+ for(n in ['durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe','operatorProbe','operatorDisconnect'])p.dependencies.add('acceptanceCompileOnly',p.sourceSets.getByName(n).output)
+ p.dependencies.add('packagedLauncherRuntimeOnly',p.files(p.tasks.named('operatorDisconnectJar')))
+ p.tasks.named('exportAcceptanceLaunches'){dependsOn 'operatorDisconnectJar'}
+}
