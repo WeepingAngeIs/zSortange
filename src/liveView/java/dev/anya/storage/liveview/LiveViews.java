@@ -139,6 +139,15 @@ public final class LiveViews {
   var l=PocketService.dimension(server);if(l!=null){Set<Long> union=new HashSet<>();for(var p:server.getPlayerList().getPlayers())union.addAll(requested(p));ImmPtlChunkTickets.get(l).purge(l,union::contains);}
  }
  @SubscribeEvent public static void commands(RegisterCommandsEvent e){e.getDispatcher().register(Commands.literal("anyaliveview").then(Commands.literal("open").then(Commands.argument("pocket",StringArgumentType.word()).executes(c->{try{var p=c.getSource().getPlayerOrException();var h=open(p,UUID.fromString(StringArgumentType.getString(c,"pocket")));c.getSource().sendSuccess(()->Component.literal("View handle "+h.id+" deadline "+h.deadline),false);return 1;}catch(Exception ex){c.getSource().sendFailure(Component.literal("Live view denied"));return 0;}}))).then(Commands.literal("close").executes(c->{closePlayer(c.getSource().getPlayerOrException());return 1;})));}
+ // Logout can occur after ServerTickEvent.Pre. Retire this player's view scopes
+ // immediately rather than leaving them until the next tick's validity sweep.
+ // closePlayer reconciles the authorized union; other viewers, visitors and
+ // save/recovery obligations retain their existing owners.
+ @SubscribeEvent(priority=EventPriority.HIGHEST)
+ public static void logout(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e){
+  if(!ENABLED||server==null||!(e.getEntity() instanceof ServerPlayer p)||p.getServer()!=server)return;
+  closePlayer(p);
+ }
  @SubscribeEvent public static void started(ServerStartedEvent e){server=e.getServer();stopping=failed=pressure=false;HANDLES.clear();PacketFence.clear();if(ENABLED){owner();watches();}}
  @SubscribeEvent(priority=EventPriority.HIGHEST) public static void tick(ServerTickEvent.Pre e){if(!ENABLED||server!=e.getServer())return;try{
   for(var h:new ArrayList<>(HANDLES.values()))if(!valid(h))retire(h.id);
