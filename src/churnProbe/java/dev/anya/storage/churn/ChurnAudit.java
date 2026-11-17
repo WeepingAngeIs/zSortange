@@ -23,11 +23,11 @@ public final class ChurnAudit {
  public static volatile int gateVersion=-1;
  public static volatile boolean gateEntered;
  private static volatile CountDownLatch gate=new CountDownLatch(0);
- private static final Field RESTORING,REPLAY;
+ private static final Field RESTORING,REPLAY,RETRIES;
  public static final Map<UUID,Integer> tokenAttempts=new ConcurrentHashMap<>();
  private static long dispatchedTick=Long.MIN_VALUE;private static int dispatchedThisTick;
  public static long dispatches;
- static {try{RESTORING=RepairService.class.getDeclaredField("restoring");RESTORING.setAccessible(true);REPLAY=RepairService.class.getDeclaredField("replay");REPLAY.setAccessible(true);}catch(Exception e){throw new ExceptionInInitializerError(e);}}
+ static {try{RESTORING=RepairService.class.getDeclaredField("restoring");RESTORING.setAccessible(true);REPLAY=RepairService.class.getDeclaredField("replay");REPLAY.setAccessible(true);RETRIES=RepairService.class.getDeclaredField("retries");RETRIES.setAccessible(true);}catch(Exception e){throw new ExceptionInInitializerError(e);}}
  public static int version(CompoundTag tag){
   if(tag==null)return -1;int found=-1;var bes=tag.getList("block_entities",10);
   for(int i=0;i<bes.size();i++){var items=bes.getCompound(i).getList("Items",10);for(int j=0;j<items.size();j++){
@@ -40,9 +40,11 @@ public final class ChurnAudit {
   if(!ACTIVE||!RepairService.target(worker.storageInfo()))return;
   try{var r=((Map<CompoundTag,SnapshotJournal.Record>)REPLAY.get(null)).get(tag);if(r==null)return;
    long tick=RepairService.server.getTickCount();if(dispatchedTick!=tick){dispatchedTick=tick;dispatchedThisTick=0;}
-   if(++dispatchedThisTick>1||tokenAttempts.merge(r.token(),1,Integer::sum)>3)throw new IllegalStateException("Retry dispatch bound exceeded");dispatches++;
-   Trace.note("CHURN_REPAIR_DISPATCH",null,"key="+pos.toLong()+" token="+r.token()+" attempt="+tokenAttempts.get(r.token())+" generation="+version(tag));
-  }catch(IllegalAccessException e){throw new IllegalStateException(e);}
+   var intent=((Map<Long,?>)RETRIES.get(null)).get(pos.toLong());if(intent==null)throw new IllegalStateException("Dispatch without owned retry intent");
+   var attemptField=intent.getClass().getDeclaredField("attempts");attemptField.setAccessible(true);int attempt=attemptField.getInt(intent);
+   if(++dispatchedThisTick>1||attempt<1||attempt>3)throw new IllegalStateException("Retry dispatch bound exceeded");tokenAttempts.merge(r.token(),1,Integer::sum);dispatches++;
+   Trace.note("CHURN_REPAIR_DISPATCH",null,"key="+pos.toLong()+" token="+r.token()+" attempt="+attempt+" totalTokenAttempts="+tokenAttempts.get(r.token())+" intent="+System.identityHashCode(intent)+" generation="+version(tag));
+  }catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
  }
  public static void release(){gate.countDown();}
  public static void before(RegionFileStorage storage,ChunkPos pos,CompoundTag tag)throws IOException{
