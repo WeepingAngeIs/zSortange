@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.zip.ZipFile;
 import net.minecraft.core.BlockPos;
-import net.minecraft.gametest.framework.GameTest;
-import net.minecraft.gametest.framework.GameTestHelper;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -35,23 +35,29 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.gametest.GameTestHolder;
-import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
 @Mod("anyachestcheck")
-@GameTestHolder("anyachestcheck")
-@PrefixGameTestTemplate(false)
-public final class ChestPrivacyGameTest {
+@EventBusSubscriber(modid = "anyachestcheck")
+public final class ChestPrivacyCheck {
     private static final String REVIEW_SHA = "0a7eb462e4256518b2bed9b52e782b80649a03f4068ebdad0f6742a1a6515ea7";
 
-    public ChestPrivacyGameTest() {
+    public ChestPrivacyCheck() {
         if (!"true".equals(System.getenv("GITHUB_ACTIONS")) || System.getProperty("anya.chestPrivacyEvidence") == null) {
-            throw new IllegalStateException("This check requires its disposable hosted GameTest run");
+            throw new IllegalStateException("This check requires its disposable hosted server");
         }
     }
 
-    @GameTest(template = "empty")
-    public static void checkChestPrivacy(GameTestHelper game) throws Exception {
+    @SubscribeEvent
+    public static void serverStarted(ServerStartedEvent event) throws Exception {
+        try {
+            checkChestPrivacy(event.getServer());
+        } finally {
+            event.getServer().halt(false);
+        }
+    }
+
+    private static void checkChestPrivacy(net.minecraft.server.MinecraftServer server) throws Exception {
         JsonObject report = new JsonObject();
         verifyRuntime(report);
         checkMetadata();
@@ -59,7 +65,7 @@ public final class ChestPrivacyGameTest {
         var pocketA = pocket(0);
         var pocketB = pocket(1);
         checkVisitorBounds(pocketA, pocketB);
-        ServerLevel room = PocketService.dimension(game.getLevel().getServer());
+        ServerLevel room = PocketService.dimension(server);
         check(room != null, "Missing pocket test dimension");
         Function<UUID, PocketLedger.Pocket> findPocket = id -> id.equals(pocketA.id()) ? pocketA : null;
         BlockPos pos = PocketService.chestPositions(pocketA).getFirst();
@@ -91,12 +97,12 @@ public final class ChestPrivacyGameTest {
         check(!PocketChestPrivacy.publicChunk(room, opened, findPocket), "Queued open-lid chunk escaped");
         report.addProperty("queued_chunk_after_removal", "fresh accepted; prepared closed and open packets refused");
         report.addProperty("physical_visit_scope", "two independent ledger plots; boundary, halo and height assertions passed");
-        report.addProperty("scope", "One dedicated GameTest. No CE session, network client, rendered frame or full modpack.");
+        report.addProperty("dimension", room.dimension().location().toString());
+        report.addProperty("scope", "One disposable dedicated server. No CE session, network client, rendered frame or full modpack.");
         Path evidence = Path.of(System.getProperty("anya.chestPrivacyEvidence"));
         Files.createDirectories(evidence.getParent());
         Files.writeString(evidence, new GsonBuilder().setPrettyPrinting().create().toJson(report) + "\n",
                 StandardOpenOption.CREATE_NEW);
-        game.succeed();
     }
 
     private static ClientboundLevelChunkWithLightPacket inspectPacketState(ServerLevel room, StorageEntity chest,

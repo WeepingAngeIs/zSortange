@@ -5,7 +5,7 @@ gradle.beforeProject { p -> p.afterEvaluate {
  p.dependencies.add('liveViewCompileOnly',p.files(p.provider{p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile}).builtBy('operatorProbeJar'))
  p.dependencies.add('liveViewCompileOnly',p.files('build/ce-control/approved-ce.jar'))
  p.tasks.register('liveViewJar',Jar){dependsOn 'liveViewClasses','operatorProbeJar';from p.sourceSets.liveView.output;archiveBaseName='anya-live-view-experiment';destinationDirectory=p.layout.buildDirectory.dir('live-view');preserveFileTimestamps=false;reproducibleFileOrder=true}
- // Run only the chest policy against the packaged storage mod. The GameTest uses
+ // Run only the chest policy against the packaged storage mod. The dedicated server uses
  // exactly the policy class from the adapter, without starting CE or its mixins.
  def chestTests = p.sourceSets.create('liveChestCheck')
  chestTests.java.srcDir p.file('fixtures/live-view/chest-check/java')
@@ -17,9 +17,6 @@ gradle.beforeProject { p -> p.afterEvaluate {
   dependsOn 'liveChestCheckClasses', 'liveViewJar', 'processResources'
   from chestTests.output
   from(p.sourceSets.liveView.output) { include 'dev/anya/storage/liveview/PocketChestPrivacy.class' }
-  from(p.layout.buildDirectory.file('resources/main/data/anyastorage/structure/empty.nbt')) {
-   into 'data/anyachestcheck/structure'
-  }
   archiveBaseName = 'anya-hosted-chest-check'
   destinationDirectory = p.layout.buildDirectory.dir('live-view/check-runtime')
  }
@@ -28,11 +25,11 @@ gradle.beforeProject { p -> p.afterEvaluate {
  p.dependencies.add('liveChestCheckRuntimeRuntimeOnly', p.files(p.tasks.named('jar')))
  p.dependencies.add('liveChestCheckRuntimeRuntimeOnly', p.files(chestCheckJar))
  p.neoForge.runs.create('chestPrivacyCheck') {
-  type = 'gameTestServer'
+  server()
+  programArgument '--nogui'
   sourceSet = chestRuntime
   loadedMods = []
   gameDirectory = p.file('build/live-view/chest-privacy-game')
-  systemProperty 'neoforge.enabledGameTestNamespaces', 'anyachestcheck'
   systemProperty 'anya.chestPrivacyEvidence', p.file('build/live-view/evidence/chest-privacy.json').absolutePath
   systemProperty 'anya.expectedAdapter', p.tasks.named('liveViewJar').get().archiveFile.get().asFile.absolutePath
   jvmArguments.addAll '-Xms256m', '-Xmx1400m'
@@ -41,7 +38,7 @@ gradle.beforeProject { p -> p.afterEvaluate {
   dependsOn 'runChestPrivacyCheck'
   doLast {
    if (!p.file('build/live-view/evidence/chest-privacy.json').isFile()) {
-    throw new GradleException('The chest privacy GameTest did not record a passing result')
+    throw new GradleException('The chest privacy check did not record a passing result')
    }
   }
  }

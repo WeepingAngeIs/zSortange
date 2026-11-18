@@ -57,6 +57,14 @@ jobs:
           sha256sum "$base" "$safety" "$adapter" build/ce-control/approved-ce.jar > build/live-view/evidence/SHA256SUMS.txt
       - name: Run the isolated chest privacy assertions
         run: |
+          game=build/live-view/chest-privacy-game
+          mkdir -p "$game"
+          test ! -e "$game/world"
+          test ! -e build/live-view/evidence/chest-privacy.json
+          printf 'eula=true\n' > "$game/eula.txt"
+          printf '%s\n' 'level-name=world' 'level-type=minecraft:flat' 'generate-structures=false' \
+            'view-distance=2' 'simulation-distance=2' 'spawn-protection=0' 'server-ip=127.0.0.1' \
+            'server-port=0' 'enable-query=false' 'enable-rcon=false' > "$game/server.properties"
           timeout --kill-after=15s 180s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle liveChestPrivacyTest
           python3 -m json.tool build/live-view/evidence/chest-privacy.json > /dev/null
       - name: Retain the chest privacy result and input records
