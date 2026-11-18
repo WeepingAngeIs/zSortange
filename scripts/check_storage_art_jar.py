@@ -24,11 +24,15 @@ def check_jar(path):
     with ZipFile(path) as jar:
         for resource, size in [("textures/gui/control_atlas.png", (256, 256)),
                                ("textures/block/chest_shell.png", (128, 128)),
-                               ("textures/entity/starter_room_study.png", (128, 128))]:
+                               ("textures/entity/starter_room_study.png", (128, 128)),
+                               ("textures/entity/pocket_pad_plan.png", (512, 256))]:
             png = jar.read(ASSETS + resource)
             assert png.startswith(b"\x89PNG\r\n\x1a\n") and struct.unpack(">II", png[16:24]) == size, resource
         assert jar.read(ASSETS + "textures/gui/control_atlas.png") == (
             ROOT / "src/main/resources" / ASSETS / "textures/gui/control_atlas.png").read_bytes()
+        for material in ("starter_room_study.png", "pocket_pad_plan.png"):
+            entry = ASSETS + "textures/entity/" + material
+            assert jar.read(entry) == (ROOT / "src/main/resources" / entry).read_bytes(), material
         for part in ("chest", "chest_base", "chest_lid"):
             model = json.loads(jar.read(ASSETS + f"models/block/{part}.json"))
             assert model["loader"] == "neoforge:obj"

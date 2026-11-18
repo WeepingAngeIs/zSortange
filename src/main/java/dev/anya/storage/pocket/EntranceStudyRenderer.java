@@ -16,13 +16,24 @@ import net.minecraft.world.phys.HitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 
-/** A public, artist-authored starter room illustration, shared by every entrance. */
+/** Draws the public study or a short-lived schematic of the eight registered chest pads. */
 @EventBusSubscriber(modid = AnyaStorage.ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketContent.EntranceEntity> {
     private static final ResourceLocation STUDY = ResourceLocation.fromNamespaceAndPath(
             AnyaStorage.ID, "textures/entity/starter_room_study.png");
+    private static final ResourceLocation PLAN = ResourceLocation.fromNamespaceAndPath(
+            AnyaStorage.ID, "textures/entity/pocket_pad_plan.png");
+    // Face texels in the art atlas, ordered as the four starters then the four optional pads.
+    private static final int[] PAD_X = {88,110,131,153,76,97,161,183};
+    private static final int[] PAD_Y = {116,117,119,121,136,137,142,144};
+
+    @SubscribeEvent
+    public static void setup(FMLClientSetupEvent event) {
+        event.enqueueWork(() -> { PocketPadPackets.receiver = EntranceLayoutClient::receive; });
+    }
 
     @SubscribeEvent
     public static void register(EntityRenderersEvent.RegisterRenderers event) {
@@ -48,19 +59,33 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         pose.pushPose();
         pose.translate(.5, .5, .5);
         pose.mulPose(Axis.YP.rotationDegrees(180 - face.toYRot()));
-        VertexConsumer material = buffers.getBuffer(RenderType.entityCutout(STUDY));
-        // The illustration is a self-lit display. The incoming light is sampled inside the
-        // opaque cube and turns this material brown even outdoors at noon.
-        vertex(pose, material, face, .5f, -.5f, 0, 1, overlay);
-        vertex(pose, material, face, -.5f, -.5f, 1, 1, overlay);
-        vertex(pose, material, face, -.5f, .5f, 1, 0, overlay);
-        vertex(pose, material, face, .5f, .5f, 0, 0, overlay);
+        int mask = EntranceLayoutClient.visibleMask(entrance);
+        boolean plan = mask >= 0;
+        VertexConsumer material = buffers.getBuffer(RenderType.entityCutout(plan ? PLAN : STUDY));
+        // The diagram and its repeated chest sprites share one public atlas and one render type.
+        quad(pose, material, face, 0, 0, 1, 1, 0, 0, plan ? .5f : 1, 1, -.501f, overlay);
+        if (plan) {
+            for (int i = 0; i < PAD_X.length; i++) {
+                if ((mask & (1 << i)) == 0) continue;
+                int left = PAD_X[i] - 12, top = PAD_Y[i] - 17;
+                quad(pose, material, face, left/256f, top/256f, (left+25)/256f, (top+22)/256f,
+                        .5f, 0, 281/512f, 22/256f, -.5015f, overlay);
+            }
+        }
         pose.popPose();
     }
 
+    private static void quad(PoseStack pose, VertexConsumer material, Direction face, float left, float top,
+                             float right, float bottom, float u0, float v0, float u1, float v1, float z, int overlay) {
+        vertex(pose, material, face, .5f-left, .5f-bottom, z, u0, v1, overlay);
+        vertex(pose, material, face, .5f-right, .5f-bottom, z, u1, v1, overlay);
+        vertex(pose, material, face, .5f-right, .5f-top, z, u1, v0, overlay);
+        vertex(pose, material, face, .5f-left, .5f-top, z, u0, v0, overlay);
+    }
+
     private static void vertex(PoseStack pose, VertexConsumer material, Direction face, float x, float y,
-                               float u, float v, int overlay) {
-        material.addVertex(pose.last().pose(), x, y, -.501f)
+                               float z, float u, float v, int overlay) {
+        material.addVertex(pose.last().pose(), x, y, z)
                 .setColor(255, 255, 255, 255).setUv(u, v).setOverlay(overlay).setLight(LightTexture.FULL_BRIGHT)
                 .setNormal(face.getStepX(), 0, face.getStepZ());
     }

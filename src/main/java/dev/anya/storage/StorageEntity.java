@@ -19,6 +19,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public UUID pocketId;
     private UUID storageIdentity;
     public UUID storageIdentity(){if(storageIdentity==null){storageIdentity=UUID.randomUUID();setChanged();}return storageIdentity;}
+    /** Looking at an entrance must never initialize a legacy chest or hub. */
+    public UUID existingStorageIdentity(){return storageIdentity;}
     public final Set<UUID> trusted=new HashSet<>();
     public final Map<UUID,Integer> memberPermissions=new HashMap<>();
     public final BaseActivity activity=new BaseActivity();

@@ -49,6 +49,9 @@ public final class PocketService {
         return ledger;
     }
     public static ServerLevel dimension(MinecraftServer server){return server.getLevel(DIMENSION);}
+    static PocketLedger.Pocket loadedPocket(MinecraftServer server,UUID id){
+        return currentServer==server&&failure==null&&ledger!=null&&id!=null?ledger.get(id):null;
+    }
     private static ServerLevel level(MinecraftServer server,String id){return server.getLevel(ResourceKey.create(Registries.DIMENSION,ResourceLocation.parse(id)));}
     private static boolean present(ServerPlayer p){return p.getServer()!=null&&(p.getServer().getPlayerList().getPlayer(p.getUUID())==p||(Boolean.getBoolean("anyastorage.pocketTests")&&p instanceof FakePlayer));}
     public static String status(){return "Experimental pocket gate="+enabled()+"; active pockets="+LEASES.active().size()+"; leases="+LEASES.snapshot().size()+"; Anya-owned ticket requests="+TICKETS.size()+"; last preparation writes="+lastPreparedBlocks+" (not total engine chunks)";}
@@ -66,15 +69,19 @@ public final class PocketService {
         if(!p.isAlive()||p.isSpectator())return "Player cannot interact";
         if(arriving&&kind==PocketLeases.Kind.VISIT){String travel=PocketTravelGuard.reason(p);if(!travel.isEmpty())return travel;}
         StorageEntity hub=home(p,pocket);if(hub==null)return "Loaded home hub/entrance identity is missing or changed";
-        if(!hub.allowed(p)||!hub.permits(p,rights|(kind==PocketLeases.Kind.VISIT?BasePermissions.VISIT:0)))return "Pocket permission denied; Visit is separate from storage rights";
-        ServerLevel home=(ServerLevel)hub.getLevel();
-        String reason=Safety.locationReason(p,home,hub.getBlockPos());if(!reason.isEmpty())return reason;
-        reason=Safety.locationReason(p,home,BlockPos.of(pocket.anchor().entrance()));if(!reason.isEmpty())return reason;
+        String reason=homeAccess(p,pocket,hub,rights|(kind==PocketLeases.Kind.VISIT?BasePermissions.VISIT:0));
+        if(!reason.isEmpty())return reason;
         if(kind==PocketLeases.Kind.REMOTE||arriving){
             if(!Network.inRange(p,hub))return "Outside the loaded home hub's spherical radius";
             if(kind==PocketLeases.Kind.VISIT&&p.distanceToSqr(Vec3.atCenterOf(BlockPos.of(pocket.anchor().entrance())))>64)return "Stand near the entrance to visit";
         }else if(!inPocket(p.level())||!pocket.contains(p.blockPosition().getX(),p.blockPosition().getY(),p.blockPosition().getZ()))return "Outside your authorized pocket boundary";
         return "";
+    }
+    static String homeAccess(ServerPlayer p,PocketLedger.Pocket pocket,StorageEntity hub,int rights){
+        if(!hub.allowed(p)||!hub.permits(p,rights))return "Pocket permission denied; Visit is separate from storage rights";
+        ServerLevel home=(ServerLevel)hub.getLevel();
+        String reason=Safety.locationReason(p,home,hub.getBlockPos());if(!reason.isEmpty())return reason;
+        return Safety.locationReason(p,home,BlockPos.of(pocket.anchor().entrance()));
     }
     public static void link(ServerPlayer p,PocketContent.EntranceEntity entrance,ItemStack remote){
         try{
@@ -91,7 +98,7 @@ public final class PocketService {
                 entrance.pocket=pocket.id();entrance.setChanged();
             }else{pocket=l.get(entrance.pocket);if(pocket==null||home(p,pocket)!=hub)throw new IOException("Copied or moved entrance refused; owner reanchor required");}
             var data=BagInventory.data(remote);data.putUUID("PocketId",pocket.id());BagInventory.data(remote,data);
-            AnyaStorage.tell(p,"Remote linked to pocket "+pocket.id()+". Right-click entrance: Visit. Remote: storage within the hub radius. Decorative preview is not live.");
+            AnyaStorage.tell(p,"Remote linked to pocket "+pocket.id()+". Look at a side for the chest layout when the room is loaded. Right-click to Visit. Use the remote for storage within the hub radius.");
         }catch(Exception e){error(p,e);}
     }
     public static void reanchor(ServerPlayer p,UUID id,PocketContent.EntranceEntity entrance,ItemStack remote){
@@ -186,7 +193,7 @@ public final class PocketService {
         if(job.cursor<job.blocks.size())return false;
         for(BlockPos pos:chestPositions(p)){
             if(!level.isEmptyBlock(pos))throw new IOException("Chest destination changed during preparation; no inventory was overwritten");
-            level.setBlock(pos,Content.CRATE.get().defaultBlockState(),3);var chest=(StorageEntity)level.getBlockEntity(pos);chest.owner=p.owner();chest.pocketId=p.id();chest.setChanged();
+            level.setBlock(pos,Content.CRATE.get().defaultBlockState(),3);var chest=(StorageEntity)level.getBlockEntity(pos);chest.owner=p.owner();chest.pocketId=p.id();chest.storageIdentity();chest.setChanged();
         }
         if(!level.isEmptyBlock(exitPosition(p)))throw new IOException("Exit position changed during preparation; no block was overwritten");
         level.setBlock(exitPosition(p),Blocks.LODESTONE.defaultBlockState(),3);

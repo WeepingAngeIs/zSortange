@@ -1,0 +1,47 @@
+name: Pocket pad preview privacy and frames
+on:
+  push:
+    branches: [feature/pocket-layout-preview]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pocket-pad-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  two-viewers:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Package production mod and isolated test clients
+        run: gradle --no-daemon --max-workers=2 jar acceptanceJar stageAcceptanceDependencies exportAcceptanceLaunches
+      - name: Install the virtual display and framebuffer reader
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 python3-pil
+      - name: Check two private views on a disposable server
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: pad-preview
+        run: xvfb-run -a -s '-screen 0 1280x800x24' python3 scripts/packaged_acceptance.py
+      - name: Verify starter artwork and changed pad at both angles
+        run: |
+          git rev-parse HEAD > build/acceptance/evidence/SOURCE_COMMIT.txt
+          jar=$(find build/libs -maxdepth 1 -name 'anya-storage-plus-*.jar' ! -name '*-sources.jar' -print -quit)
+          /usr/bin/python3 scripts/check_pad_preview_frames.py build/acceptance/evidence "$jar"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pocket-pad-preview-evidence-${{ github.sha }}
+          path: build/acceptance/evidence/
+          if-no-files-found: warn
+          retention-days: 7

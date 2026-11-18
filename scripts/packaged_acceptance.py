@@ -27,6 +27,7 @@ with (logdir/'installer.log').open('w') as log:
 room=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='room'
 multi=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='multi'
 art=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='art'
+preview=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='pad-preview'
 processes=[];handles=[];expected_dead=set();process_names={};native_launches=[]
 def launch(cmd,cwd,name,env=None):
     log=(logdir/(name+'.log')).open('w');handles.append(log)
@@ -36,8 +37,10 @@ def launch(cmd,cwd,name,env=None):
 def client(role,suffix=''):
     config=json.loads((base/f'client-{role}.json').read_text());gd=Path(config['cwd']);gd.mkdir(exist_ok=True)
     options_text = 'enableVsync:false\nmaxFps:25\nrenderDistance:3\nsimulationDistance:2\nguiScale:2\npauseOnLostFocus:false\n'
-    if art:
+    if art or preview:
         options_text += 'tutorialStep:none\n'
+    if preview:
+        options_text += 'bobView:false\nfovEffectScale:0.0\nentityShadows:false\n'
     (gd/'options.txt').write_text(options_text)
     # LWJGL 3.3.3 supports this explicit extraction path. Never share extracted natives
     # between simultaneously booting JVMs or reuse a killed client's directory.
@@ -97,6 +100,9 @@ try:
         assert resume.wait(timeout=150)==0,'Room restart process failed';expected_dead.add(resume.pid)
         failure();assert (control/'ROOM_RESTART_PASSED').exists(),'Room restart verification missing'
         print('ANYA_PACKAGED_ROOM_ACCEPTANCE_OK',flush=True)
+    elif preview:
+        assert srv.wait(timeout=45)==0,'Pad preview server did not stop cleanly'
+        print('ANYA_PAD_PREVIEW_CLIENT_CHECKS_OK',flush=True)
     elif art:
         assert srv.wait(timeout=45)==0,'Visual fixture server did not stop cleanly'
         print('ANYA_STORAGE_ART_RECONNECT_OK',flush=True)

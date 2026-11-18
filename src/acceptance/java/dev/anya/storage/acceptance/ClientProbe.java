@@ -135,6 +135,7 @@ public final class ClientProbe {
         if(!Boolean.getBoolean("anya.acceptance"))return;
         var mc=Minecraft.getInstance();age++;
         try{
+            if(PadPreviewClient.active())PadPreviewClient.observe(mc);
             if(!connected&&mc.screen instanceof TitleScreen&&mc.getOverlay()==null){
                 Acceptance.verifyJar("client-"+System.getProperty("anya.role"));
                 mc.options.pauseOnLostFocus=false;mc.options.guiScale().set(2);mc.options.renderDistance().set(3);mc.options.simulationDistance().set(2);mc.options.enableVsync().set(false);mc.options.framerateLimit().set(25);mc.resizeDisplay();
@@ -156,6 +157,10 @@ public final class ClientProbe {
                 AnyaStorage.LOG.info("ANYA_SINGLE_INTENT_READY action={} position={} waitedTicks={}",work.action(),mc.player.position(),waitingTicks);
             }
             ticks++;
+            if(action.equals("pad")){
+                if(PadPreviewClient.check(mc,a,ticks))ack();
+                return;
+            }
             if(action.startsWith("art-")){
                 if (ticks == 1 && action.equals("art-closed")) ArtSoundObserver.arm(ArtVisualProbe.CHEST);
                 if (ArtVisualClient.run(mc, action, ticks)) {

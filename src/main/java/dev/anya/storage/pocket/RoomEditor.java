@@ -19,6 +19,7 @@ public final class RoomEditor {
     private static final Set<Block> DECOR=Set.of(Blocks.STONE_BRICKS,Blocks.QUARTZ_BLOCK,Blocks.OAK_PLANKS,Blocks.CHERRY_PLANKS,Blocks.BLACK_CONCRETE,Blocks.PURPLE_CONCRETE,Blocks.CYAN_CONCRETE,Blocks.SEA_LANTERN);
     private static final Map<ServerPlayer,Long> LAST=new WeakHashMap<>();
     private static final Set<UUID> FAILED=new HashSet<>();
+    static boolean quarantined(UUID pocket){return FAILED.contains(pocket);}
     private static boolean editing;
     public static boolean enabled(){return PocketService.enabled()&&ExpansionRules.get().pocketEditing;}
     public static boolean supported(Block block){return DECOR.contains(block)||block==Content.CRATE.get();}

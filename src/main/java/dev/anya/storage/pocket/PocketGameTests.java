@@ -2,9 +2,11 @@ package dev.anya.storage.pocket;
 
 import com.mojang.authlib.GameProfile;
 import dev.anya.storage.*;
+import io.netty.buffer.Unpooled;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.*;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
@@ -37,6 +39,31 @@ public final class PocketGameTests {
     @GameTest(template="empty") public static void pocketChestNotScannedByOrdinaryNetwork(GameTestHelper h){
         var chest=new StorageEntity(BlockPos.ZERO,Content.CRATE.get().defaultBlockState());check(h,Network.supported(chest),"Ordinary chest stays supported");chest.pocketId=UUID.randomUUID();
         check(h,!Network.supported(chest),"No nearby QuickStack bypass into protected pocket chest");check(h,chest.getSlotsForFace(net.minecraft.core.Direction.DOWN).length==0,"No sided automation exposure");h.succeed();
+    }
+    @GameTest(template="empty") public static void eightPadWireFormat(GameTestHelper h) {
+        var pos = new BlockPos(-322, 71, 900);
+        long token = 0x100000001L;
+        var buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), h.getLevel().registryAccess());
+        try {
+            for (int mask = -1; mask <= 255; mask++) {
+                var sent = new PocketPadPackets.Update(pos, token, mask);
+                PocketPadPackets.Update.CODEC.encode(buf, sent);
+                check(h, buf.readableBytes() == (mask == -1 ? 17 : 18), "Only a granted diagram carries a pad byte");
+                check(h, sent.equals(PocketPadPackets.Update.CODEC.decode(buf)) && !buf.isReadable(),
+                        "Clear and all eight-bit layouts round-trip exactly");
+                buf.clear();
+            }
+            for (boolean watching : List.of(false, true)) {
+                var focus = new PocketPadPackets.Focus(pos, token, watching);
+                PocketPadPackets.Focus.CODEC.encode(buf, focus);
+                check(h, buf.readableBytes() == 17 && focus.equals(PocketPadPackets.Focus.CODEC.decode(buf)),
+                        "Focus and cancellation carry only the entrance position, nonce and intent");
+                buf.clear();
+            }
+        } finally {
+            buf.release();
+        }
+        h.succeed();
     }
     private PocketGameTests(){}
 }

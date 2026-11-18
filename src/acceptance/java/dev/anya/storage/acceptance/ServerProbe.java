@@ -45,7 +45,7 @@ public final class ServerProbe {
     static void homePosition(ServerPlayer p,double x){p.teleportTo(server.overworld(),x,81,3.5,180,10);}
     static String chestClick()throws Exception{BlockPos p=PocketService.chestPositions(record()).get(2);return "block "+p.getX()+" "+p.getY()+" "+p.getZ();}
     @SubscribeEvent public static void start(ServerStartedEvent e)throws Exception {
-        if(OrdinaryStorageProbe.active()||Boolean.getBoolean("anya.artAcceptance"))return;
+        if(OrdinaryStorageProbe.active()||Boolean.getBoolean("anya.artAcceptance")||PadPreviewProbe.active())return;
         if(Boolean.getBoolean("anya.repairNetwork")||RemoteTicketProbe.active())return;
         if(!Boolean.getBoolean("anya.acceptance")||FaultProbe.active()||RoomProbe.active()||MultiPocketProbe.active())return;
         server=e.getServer();Acceptance.verifyJar("server");
