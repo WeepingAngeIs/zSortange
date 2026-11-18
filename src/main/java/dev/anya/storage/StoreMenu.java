@@ -189,7 +189,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         ItemStack copy=stack.copy();if(copy.isEmpty())copy=new ItemStack(Content.REMOTE.get());
         Component originalName=copy.getHoverName().copy();copy.remove(DataComponents.CONTAINER);copy.remove(DataComponents.BUNDLE_CONTENTS);if(copy.is(Content.BACKPACK.get())){copy.remove(DataComponents.CUSTOM_DATA);copy.set(DataComponents.CUSTOM_NAME,originalName);}
         if(name!=null)copy.set(DataComponents.CUSTOM_NAME,Component.literal(name).withStyle(s->s.withItalic(false)));
-        List<Component> lines=new ArrayList<>();for(String text:lore)for(int i=0;i<text.length();i+=55)lines.add(Component.literal(text.substring(i,Math.min(i+55,text.length()))).withStyle(s->s.withItalic(false).withColor(0xBFC9DE)));
+        // The client font wraps each paragraph at the available screen width.
+        List<Component> lines=new ArrayList<>();
+        for(String text:lore)if(!text.isEmpty())lines.add(Component.literal(text).withStyle(s->s.withItalic(false).withColor(0xBFC9DE)));
         copy.set(DataComponents.LORE,new ItemLore(lines));return copy;
     }
     private void footer(Page back){button(45,ControlGlyph.BACK,"Back",c->navigate(back));button(46,ControlGlyph.PREVIOUS,"Previous page",c->offset=Math.max(0,offset-45));button(47,ControlGlyph.NEXT,"Next page",c->offset+=45);button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());}

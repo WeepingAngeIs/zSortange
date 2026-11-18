@@ -81,9 +81,17 @@ final class ArtVisualClient {
 
     private static boolean memberPage(Minecraft mc, int tick) {
         if (!(mc.player.containerMenu instanceof StoreMenu menu) || mc.screen == null) return false;
-        // Keep transient launcher/tutorial notices and the cursor tooltip off this reference image.
+        // Both clients share a virtual display. GLFW may ignore a pointer warp in the
+        // unfocused window, so deliver its ordinary pointer-move callback without a click.
         mc.getToasts().clear();
-        GLFW.glfwSetCursorPos(mc.getWindow().getWindow(), 4, 4);
+        if (mc.mouseHandler.xpos() > 8 || mc.mouseHandler.ypos() > 8) {
+            long window = mc.getWindow().getWindow();
+            var move = GLFW.glfwSetCursorPosCallback(window, null);
+            Acceptance.require(move != null, "Expected Minecraft's cursor movement callback");
+            GLFW.glfwSetCursorPosCallback(window, move);
+            move.invoke(window, 4, 4);
+            return false;
+        }
         var allow = ControlGlyph.read(menu.getSlot(28).getItem());
         var deny = ControlGlyph.read(menu.getSlot(30).getItem());
         if (menu.accessView() && menu.controlSlot(27)
