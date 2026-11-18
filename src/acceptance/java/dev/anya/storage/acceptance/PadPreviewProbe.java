@@ -94,18 +94,21 @@ public final class PadPreviewProbe {
         frame(true,"public-south",-1,"south","public");
         frame(true,"public-east",-1,"east","public");
         frame(false,"visit-only-cold",-1,"west","public");
-        act("prepare deliberately using the owner's ordinary pocket remote",()->{
+        act("prepare deliberately with a separate physical visit",()->{
             check(PocketService.ledger(server).get(room.id()).stage()==PocketLedger.Stage.RESERVED,"Focusing prepared a room");
             cold=false;previewOnly=false;
-            check(PocketService.remote(owner,remote,hub),"Failed to start explicit room preparation");
+            owner.getInventory().selected=0;
+            owner.getInventory().setItem(0,ItemStack.EMPTY);
+            owner.inventoryMenu.broadcastChanges();
+            ServerProbe.send(owner,"block "+ENTRANCE.getX()+" "+ENTRANCE.getY()+" "+ENTRANCE.getZ());
         });
-        waitFor("remote has finished preparing actual room",()->owner.containerMenu instanceof StoreMenu);
-        act("pin the warm fixture separately and close its remote",()->{
+        waitFor("owner entered the prepared room",()->ServerProbe.done(owner)&&PocketService.inPocket(owner.level()));
+        act("pin the warm fixture separately and exit the visit",()->{
             room=PocketService.ledger(server).get(room.id());check(room.stage()==PocketLedger.Stage.READY,"Room must be ready");
-            pin(true);owner.closeContainer();
+            pin(true);ServerProbe.send(owner,"exit");
         });
         waitFor("no active storage leases or owned tickets",()->{
-            if(PocketService.ownedTicketRequests()!=0)return false;
+            if(!ServerProbe.done(owner)||owner.level()!=server.overworld()||PocketService.ownedTicketRequests()!=0)return false;
             previewOnly=true;return true;
         });
         frame(true,"base-east",STARTER,"east","image");
