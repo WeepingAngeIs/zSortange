@@ -35,7 +35,10 @@ def launch(cmd,cwd,name,env=None):
 
 def client(role,suffix=''):
     config=json.loads((base/f'client-{role}.json').read_text());gd=Path(config['cwd']);gd.mkdir(exist_ok=True)
-    (gd/'options.txt').write_text('enableVsync:false\nmaxFps:25\nrenderDistance:3\nsimulationDistance:2\nguiScale:2\npauseOnLostFocus:false\n')
+    options_text = 'enableVsync:false\nmaxFps:25\nrenderDistance:3\nsimulationDistance:2\nguiScale:2\npauseOnLostFocus:false\n'
+    if art:
+        options_text += 'tutorialStep:none\n'
+    (gd/'options.txt').write_text(options_text)
     # LWJGL 3.3.3 supports this explicit extraction path. Never share extracted natives
     # between simultaneously booting JVMs or reuse a killed client's directory.
     private=base/'client-native'/(role+(suffix or '-initial'))

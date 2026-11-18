@@ -31,8 +31,8 @@ public final class GuideScreen extends Screen {
             index?indexOffset>0:page>0,b->{if(index){indexOffset=Math.max(0,indexOffset-indexCapacity());rebuildWidgets();}else setPage(page-1);});
         guideButton(left+bookW-43,y,25,18,ControlGlyph.NEXT,"Next page",true,
             index?indexOffset+indexCapacity()<pages.size():page+1<pages.size(),b->{if(index){indexOffset=Math.min(Math.max(0,pages.size()-indexCapacity()),indexOffset+indexCapacity());rebuildWidgets();}else setPage(page+1);});
-        guideButton(left+48,y,64,18,index?ControlGlyph.READ:ControlGlyph.CONTENTS,index?"Read":"Contents",false,true,b->{index=!index;rebuildWidgets();});
-        guideButton(left+bookW-96,y,48,18,ControlGlyph.CLOSE,"Close",false,true,b->onClose());
+        guideButton(left+48,y,68,18,index?ControlGlyph.READ:ControlGlyph.CONTENTS,index?"Read":"Contents",false,true,b->{index=!index;rebuildWidgets();});
+        guideButton(left+bookW-100,y,52,18,ControlGlyph.CLOSE,"Close",false,true,b->onClose());
         indexButtons.clear();
         if(index){
             for(int i=0;i<indexCapacity()&&i+indexOffset<pages.size();i++){

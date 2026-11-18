@@ -248,10 +248,12 @@ public final class Client {
                 var box=layout.inventory(i);frame(g,box,hover==54+i?0xff53605c:0xff202733,colors[1]);var stack=menu.getSlot(54+i).getItem();
                 if(!stack.isEmpty()){g.renderItem(stack,box.x(),box.y());g.renderItemDecorations(font,stack,box.x(),box.y());}
             }
-            g.drawString(font,"Left: stack / Right: one",104,layout.height()-19,0xffc6c6c8,false);
-            g.drawString(font,"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
+            g.drawString(font,menu.accessView()?"Choose a member to edit rights.":"Left: stack / Right: one",104,layout.height()-19,0xffc6c6c8,false);
+            g.drawString(font,menu.accessView()?"Changes apply immediately.":"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
             g.pose().popPose();
-            if(hover>=0){var stack=menu.getSlot(hover).getItem();if(!stack.isEmpty()){
+            if(menu.accessView()&&x>=12&&x<90&&y>=129&&y<145&&!menu.getSlot(27).getItem().isEmpty()){
+                controlTooltip(g,menu.getSlot(27).getItem(),mx,my);
+            }else if(hover>=0){var stack=menu.getSlot(hover).getItem();if(!stack.isEmpty()){
                 if(menu.controlSlot(hover))controlTooltip(g,stack,mx,my);
                 else g.renderTooltip(font,stack,mx,my);
             }else if(hover<45&&menu.storageView())g.renderTooltip(font,Component.literal("Empty real slot "+(menu.firstSlot()+hover+1)+". Click your inventory to deposit."),mx,my);}

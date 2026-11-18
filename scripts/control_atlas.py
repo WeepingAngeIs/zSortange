@@ -84,12 +84,18 @@ def sprite(shape, badge=""):
     elif shape=="back":
         poly([(1,7),(6,2),(6,5),(11,5),(14,8),(14,12),(12,14),(10,14),(11,11),(10,9),(6,9),(6,12)],ALLOY)
         line([(3,7),(5,5)],LIGHT);line([(7,6),(10,6),(12,8)],MINT)
-    elif shape in ("prev","next","up","down"):
-        poly([(2,7),(8,2),(8,5),(13,2),(13,7),(8,11),(8,13)],ALLOY)
-        line([(3,7),(7,4)],LIGHT);line([(9,7),(12,5)],ROSE)
+    elif shape in ("prev","next"):
+        # A folded page corner beside the book's spine.
+        poly([(2,7),(9,1),(10,4),(6,7),(10,11),(9,14)],ALLOY)
+        line([(3,7),(9,2)],LIGHT);line([(5,8),(9,12)],ROSE)
+        line([(12,3),(12,11)],TEAL,2);d.point((12,2),MINT)
         if shape=="next":im=im.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-        if shape=="up":im=im.transpose(Image.Transpose.ROTATE_270)
-        if shape=="down":im=im.transpose(Image.Transpose.ROTATE_90)
+    elif shape in ("up","down"):
+        # Lift inside a two-rail scroll track.
+        line([(1,3),(1,12)],ALLOY);line([(14,3),(14,12)],ALLOY)
+        poly([(3,8),(8,2),(13,8),(10,8),(10,12),(6,12),(6,8)],TEAL)
+        line([(5,7),(8,4),(10,6)],LIGHT);line([(7,10),(9,10)],MINT)
+        if shape=="down":im=im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
     elif shape=="close":
         poly([(1,4),(4,1),(8,5),(11,2),(14,5),(10,8),(14,12),(11,15),(7,11),(4,14),(1,11),(5,7)],PLUM)
         line([(3,4),(4,3),(11,11)],ROSE);line([(4,11),(11,4)],LIGHT)

@@ -108,6 +108,8 @@ public final class ArtVisualProbe {
                 }
                 case 5 -> {
                     if (!ServerProbe.done(alpha)) return;
+                    Acceptance.require(Files.isRegularFile(Acceptance.control().resolve("art-alpha-chimes.txt")),
+                            "Observer did not verify the placed chest's open and close sounds");
                     alpha.teleportTo(level, 9.65, 81, 4, 160, 17);
                     ServerProbe.send(alpha, "art-window");
                 }
@@ -140,7 +142,7 @@ public final class ArtVisualProbe {
                     var stored = beta.getInventory().getItem(8);
                     Acceptance.require(stored.is(Items.AMETHYST_SHARD) && stored.getCount() == 3
                             && stored.getHoverName().getString().equals("Lid study"), "Reconnected guest lost its named stack");
-                    Acceptance.marker("PASSED", "Five live client captures; guest reconnected with the same three named shards; pockets off.");
+                    Acceptance.marker("PASSED", "Five live client captures; observer received one open chime and one close chime; guest reconnected with the same three named shards; pockets off.");
                     running = false;
                     server.saveEverything(true, true, true);
                     server.halt(false);

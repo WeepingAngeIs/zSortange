@@ -48,6 +48,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private boolean favoritesOnly;
     private int feedSlot,feedCount,feedPoints,feedBefore;
     private long feedRevision;
+    private long shownAccessRevision;
     private ItemStack feedSnapshot=ItemStack.EMPTY;
     private long lastAction=-1,lastRefresh=-1;
     private Transactions.Plan pending;
@@ -134,13 +135,19 @@ public final class StoreMenu extends AbstractContainerMenu {
     @Override public void clicked(int slot,int button,ClickType type,Player p){if(owner!=null)sendAllDataToRemote();}
     @Override public void removed(Player p){if(chest!=null)chest.closeViewer();if(pocket!=null)pocket.close();pending=null;super.removed(p);}
     @Override public void broadcastChanges(){
-        if(owner!=null&&owner.containerMenu==this&&stillValid(owner)&&isStoragePage()&&owner.serverLevel().getGameTime()-lastRefresh>=10){render();bump();lastRefresh=owner.serverLevel().getGameTime();}
+        boolean active=owner!=null&&owner.containerMenu==this&&stillValid(owner);
+        if(active){
+            long now=owner.serverLevel().getGameTime();
+            if(accessChanged()||(isStoragePage()&&now-lastRefresh>=10)){render();bump();lastRefresh=now;}
+        }
         super.broadcastChanges();
-        if(owner!=null&&owner.containerMenu==this&&stillValid(owner))syncAppearance();
+        if(active)syncAppearance();
     }
+    private boolean accessChanged(){return page==Page.ACCESS&&hub!=null&&shownAccessRevision!=hub.profileRevision;}
     public void action(Packets.Action packet){
         if(owner==null||packet.session()!=session()||packet.revision()!=revision()){sendAllDataToRemote();return;}
         if(!stillValid(owner)){owner.closeContainer();return;}
+        if(accessChanged()){render();bump();sendAllDataToRemote();return;}
         long now=owner.serverLevel().getGameTime();if(lastAction==now)return;lastAction=now;
         try {
             if(packet.verb().equals("text")){input=packet.text().strip();if(input.length()>128)input=input.substring(0,128);offset=0;}
@@ -415,6 +422,8 @@ public final class StoreMenu extends AbstractContainerMenu {
 
     private void access(){
         if(hub==null||!hub.ownedBy(owner))return;
+        shownAccessRevision=hub.profileRevision;
+        if(selectedMember!=null&&!hub.trusted.contains(selectedMember))selectedMember=null;
         memberPage(hub.trusted.stream().sorted().toList(), id->{
             ServerPlayer online=owner.getServer().getPlayerList().getPlayer(id);
             return online==null?id.toString():online.getGameProfile().getName();
@@ -446,7 +455,7 @@ public final class StoreMenu extends AbstractContainerMenu {
             int mask=maskOf.applyAsInt(selectedMember);
             for(MemberRight right:MemberRight.values()){
                 toggle(28+right.ordinal(),right.glyph,right.title,BasePermissions.allows(mask,right.flag),
-                    ()->hub.setMember(selectedMember,hub.memberMask(selectedMember)^right.flag),
+                    ()->hub.toggleMemberRight(selectedMember,right.flag),
                     "Selected member: "+name,"Applies immediately. Queued transfer plans become stale.",
                     switch(right){
                         case LOG->"Also requires server activityMemberLogs and activityLogging.";

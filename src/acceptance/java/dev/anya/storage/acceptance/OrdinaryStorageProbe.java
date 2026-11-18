@@ -64,6 +64,14 @@ public final class OrdinaryStorageProbe {
         return stack;
     }
 
+    private static void checkChest(StorageEntity chest, int count) {
+        Acceptance.require(chest.getContainerSize() == 54, "Labelled chest capacity");
+        for (int slot = 0; slot < 54; slot++) {
+            ItemStack expected = slot == 0 ? mineral(count) : ItemStack.EMPTY;
+            Acceptance.require(Transactions.same(chest.getItem(slot), expected), "Chest contents in slot " + slot);
+        }
+    }
+
     private static void seed(ServerLevel level) throws Exception {
         for (var pos : List.of(HUB, CHEST, CUBE)) Acceptance.require(level.isEmptyBlock(pos), "Fresh test area required");
         level.setBlockAndUpdate(HUB, Content.HUB.get().defaultBlockState());
@@ -92,21 +100,31 @@ public final class OrdinaryStorageProbe {
         var guard = Network.guard(guest, hub, targets, BasePermissions.VIEW | BasePermissions.WITHDRAW);
         Acceptance.require(Network.hubReason(guest, hub).isEmpty() && !guard.getAsBoolean(), "View-only access boundaries");
         var refused = new Transactions.Plan(List.of(chest, wallet), guard);
-        refused.move(chest, 0, List.of(wallet), 1);
-        Acceptance.require(!refused.commit(level.getServer()).isEmpty() && wallet.isEmpty() && chest.getItem(0).getCount() == 8,
-                "View-only withdrawal mutated storage");
+        Acceptance.require(refused.move(chest, 0, List.of(wallet), 1) == 1
+                && !refused.commit(level.getServer()).isEmpty() && wallet.isEmpty(), "View-only withdrawal must be refused");
+        checkChest(chest, 8);
         hub.setMember(GUEST, BasePermissions.VIEW | BasePermissions.WITHDRAW);
         var allowed = Network.guard(guest, hub, targets, BasePermissions.VIEW | BasePermissions.WITHDRAW);
         Acceptance.require(allowed.getAsBoolean(), "Explicit withdrawal permission must work before claim");
         var claims = OpenPACServerAPI.get(level.getServer()).getServerClaimsManager();
         var dimension = level.dimension().location();
-        claims.claim(dimension, OWNER, 0, HUB.getX() >> 4, HUB.getZ() >> 4, false);
+        int chunkX = CHEST.getX() >> 4, chunkZ = CHEST.getZ() >> 4;
+        Acceptance.require(claims.get(dimension, chunkX, chunkZ) == null, "Expected an unclaimed control chunk");
+        var claimedWithdrawal = new Transactions.Plan(List.of(chest, wallet), allowed);
+        Acceptance.require(claimedWithdrawal.move(chest, 0, List.of(wallet), 1) == 1, "Prepare one named shard for withdrawal");
+        claims.claim(dimension, OWNER, 0, chunkX, chunkZ, false);
         try {
+            var claim = claims.get(dimension, chunkX, chunkZ);
+            Acceptance.require(claim != null && OWNER.equals(claim.getPlayerId()), "OPAC must record the owner's claim");
             Acceptance.require("Claim permission denied".equals(Safety.locationReason(guest, level, CHEST))
                     && !allowed.getAsBoolean(), "Foreign claim must deny the permitted guest");
+            Acceptance.require(!claimedWithdrawal.commit(level.getServer()).isEmpty() && wallet.isEmpty(),
+                    "Active OPAC claim must refuse the prepared withdrawal");
+            checkChest(chest, 8);
         } finally {
-            claims.unclaim(dimension, HUB.getX() >> 4, HUB.getZ() >> 4);
+            claims.unclaim(dimension, chunkX, chunkZ);
         }
+        Acceptance.require(claims.get(dimension, chunkX, chunkZ) == null && allowed.getAsBoolean(), "Unclaim must restore guest access");
         var move = new Transactions.Plan(List.of(chest, wallet), allowed);
         Acceptance.require(move.move(chest, 0, List.of(wallet), 1) == 1 && move.commit(level.getServer()).isEmpty(),
                 "Permitted transfer failed");
@@ -126,16 +144,17 @@ public final class OrdinaryStorageProbe {
         var cube = storage(level, CUBE);
         Acceptance.require(OWNER.equals(chest.owner) && OWNER.equals(hub.owner) && OWNER.equals(cube.owner)
                 && hub.memberMask(GUEST) == BasePermissions.VIEW, "Wrong persisted owner or guest rights");
-        for (int i = 0; i < chest.getContainerSize(); i++)
-            Acceptance.require(Transactions.same(chest.getItem(i), i == 0 ? mineral(7) : ItemStack.EMPTY), "Chest slot " + i);
+        Acceptance.require(hub.getContainerSize() == 1 && hub.isEmpty(), "Hub slot must remain empty");
+        checkChest(chest, 7);
         Acceptance.require(cube.getContainerSize() == 216 && Transactions.same(cube.getItem(0), mineral(1)), "Cube count");
         for (int i = 1; i < 215; i++) Acceptance.require(cube.getItem(i).isEmpty(), "Unexpected occupied cube slot");
         var bag = cube.getItem(215);
         String original = java.nio.file.Files.readString(Acceptance.control().resolve("ordinary-bag-id"));
         Acceptance.require(bag.is(Content.BACKPACK.get()) && bag.getCount() == 1
                 && original.equals(BagInventory.data(bag).getUUID("BagId").toString()), "Bag identity");
-        var contents = NonNullList.withSize(27, ItemStack.EMPTY);
-        bag.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY).copyInto(contents);
+        var contents = bag.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY).stream().toList();
+        Acceptance.require(BagInventory.data(bag).getInt("Capacity") == 27 && contents.size() == 27,
+                "Backpack capacity and untruncated stored slot count");
         for (int i = 0; i < contents.size(); i++)
             Acceptance.require(Transactions.same(contents.get(i), i == 26 ? new ItemStack(Items.TOTEM_OF_UNDYING) : ItemStack.EMPTY),
                     "Nested backpack slot " + i);

@@ -1,10 +1,12 @@
 package dev.anya.storage;
 
 import com.mojang.authlib.GameProfile;
+import dev.anya.storage.ui.ControlGlyph;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.*;
 import net.minecraft.nbt.*;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.*;
 import net.neoforged.neoforge.common.util.FakePlayer;
@@ -19,6 +21,10 @@ public final class SharedBaseGameTests {
     private static ServerPlayer member(GameTestHelper h,String key){
         ServerPlayer p=new FakePlayer(h.getLevel(),new GameProfile(UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)),"BasePolicyTest")){
             @Override public boolean hasPermissions(int level){return false;}
+            @Override public OptionalInt openMenu(MenuProvider provider){
+                containerMenu=provider.createMenu(81,getInventory(),this);
+                return OptionalInt.of(81);
+            }
         };
         BlockPos pos=h.absolutePos(new BlockPos(1,2,1));p.setPos(pos.getX()+.5,pos.getY(),pos.getZ()+.5);return p;
     }
@@ -76,6 +82,56 @@ public final class SharedBaseGameTests {
     @GameTest(template="empty") public static void membersRemainIndependent(GameTestHelper h){
         StorageEntity hub=hub(h);ServerPlayer a=member(h,"member-a"),b=member(h,"member-b");hub.setMember(a.getUUID(),BasePermissions.LEGACY);hub.setMember(b.getUUID(),BasePermissions.VIEW);
         hub.removeMember(a.getUUID());check(h,!hub.allowed(a)&&hub.permits(b,BasePermissions.VIEW)&&!hub.permits(b,BasePermissions.DEPOSIT),"One member's removal cannot change another's rights");h.succeed();
+    }
+    private static Packets.Action click(StoreMenu menu,int slot){
+        return new Packets.Action(menu.containerId,menu.session(),menu.revision(),"slot","",slot);
+    }
+    @GameTest(template="empty") public static void heldMemberMenuTracksConcurrentEdits(GameTestHelper h){
+        StorageEntity hub=hub(h);
+        ServerPlayer manager=member(h,"held-member-menu");
+        hub.owner=manager.getUUID();
+        UUID guest=UUID.randomUUID();
+        hub.setMember(guest,BasePermissions.VIEW);
+        StoreMenu.network(manager,hub);
+        check(h,manager.containerMenu instanceof StoreMenu,"The owner opened the real hub menu");
+        StoreMenu menu=(StoreMenu)manager.containerMenu;
+        menu.action(click(menu,51));
+        h.runAfterDelay(1,()->menu.action(click(menu,12)));
+        h.runAfterDelay(2,()->{
+            check(h,menu.accessView(),"The owner reached member permissions");
+            menu.action(click(menu,0));
+            check(h,menu.controlSlot(29)&&ControlGlyph.read(menu.getSlot(29).getItem()).state()==ControlGlyph.State.OFF,"Guest starts with Deposit off");
+        });
+        h.runAfterDelay(3,()->{
+            Packets.Action oldDeposit=click(menu,29);
+            hub.setMember(guest,BasePermissions.VIEW|BasePermissions.DEPOSIT);
+            menu.action(oldDeposit);
+            check(h,hub.memberMask(guest)==(BasePermissions.VIEW|BasePermissions.DEPOSIT),"An older click preserves the newer Deposit grant");
+            check(h,menu.revision()!=oldDeposit.revision()&&ControlGlyph.read(menu.getSlot(29).getItem()).state()==ControlGlyph.State.ON,"The owner sees the current grant");
+        });
+        h.runAfterDelay(4,()->{
+            int previous=menu.revision();
+            hub.setMember(guest,BasePermissions.VIEW);
+            menu.broadcastChanges();
+            check(h,menu.revision()!=previous&&ControlGlyph.read(menu.getSlot(29).getItem()).state()==ControlGlyph.State.OFF,"An idle open menu reflects an external revocation");
+            menu.action(click(menu,30));
+            check(h,hub.memberMask(guest)==(BasePermissions.VIEW|BasePermissions.WITHDRAW),"A fresh control still edits only the selected right");
+        });
+        h.runAfterDelay(5,()->{
+            Packets.Action oldWithdraw=click(menu,30);
+            hub.removeMember(guest);
+            menu.action(oldWithdraw);
+            check(h,!hub.trusted.contains(guest)&&!hub.memberPermissions.containsKey(guest),"An old control cannot re-add a removed member");
+            check(h,menu.getSlot(27).getItem().isEmpty()&&!menu.controlSlot(30),"Removed member selection and rights controls were cleared");
+            boolean rejected=false;
+            try{hub.toggleMemberRight(guest,BasePermissions.DEPOSIT);}catch(IllegalArgumentException expected){rejected=true;}
+            check(h,rejected&&!hub.trusted.contains(guest)&&!hub.memberPermissions.containsKey(guest),"Rights edits require a current member");
+            hub.setMember(guest,BasePermissions.VIEW);
+            menu.broadcastChanges();
+            check(h,menu.controlSlot(0)&&menu.getSlot(27).getItem().isEmpty(),"Explicitly re-adding a guest requires a new selection");
+            manager.containerMenu=manager.inventoryMenu;
+            h.succeed();
+        });
     }
     @GameTest(template="empty") public static void activityBoundAndPrivacy(GameTestHelper h){
         BaseActivity activity=new BaseActivity();var o=new ExpansionRules.Options();o.activityLogging=true;o.activityActorIds=true;o.activityLogEntries=32;UUID id=UUID.randomUUID();

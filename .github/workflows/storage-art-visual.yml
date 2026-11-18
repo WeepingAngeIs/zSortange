@@ -27,7 +27,7 @@ jobs:
       - name: Prepare the packaged mod and two small launchers
         run: gradle --no-daemon --max-workers=2 jar acceptanceJar stageAcceptanceDependencies exportAcceptanceLaunches
       - name: Install the software display
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 python3-pil
       - name: Photograph the placed blocks and rejoin as the guest
         env:
           LIBGL_ALWAYS_SOFTWARE: 'true'
@@ -40,20 +40,8 @@ jobs:
           test -s control/restart-beta
           test -s socket-kill.txt
           git rev-parse HEAD > SOURCE_COMMIT.txt
-          python3 - <<'PY'
-          from pathlib import Path
-          import struct
-          folder = Path('run-packaged-client-Alpha')
-          images = []
-          for state in ['closed', 'open', 'veil', 'window', 'members']:
-              path = folder / f'art-{state}.png'
-              blob = path.read_bytes()
-              assert blob.startswith(b'\x89PNG\r\n\x1a\n')
-              width, height = struct.unpack('>II', blob[16:24])
-              assert width >= 640 and height >= 400, (path, width, height)
-              images.append(blob)
-          assert len(set(images)) == len(images), 'Duplicate framebuffer captures'
-          PY
+          jar=$(find ../../libs -maxdepth 1 -name 'anya-storage-plus-*.jar' ! -name '*-sources.jar' -print -quit)
+          /usr/bin/python3 ../../../scripts/check_storage_art_frames.py . "$jar"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

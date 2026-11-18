@@ -157,7 +157,11 @@ public final class ClientProbe {
             }
             ticks++;
             if(action.startsWith("art-")){
-                if(ArtVisualClient.run(mc, action, ticks))ack();
+                if (ticks == 1 && action.equals("art-closed")) ArtSoundObserver.arm(ArtVisualProbe.CHEST);
+                if (ArtVisualClient.run(mc, action, ticks)) {
+                    ArtSoundObserver.checkCapture(action);
+                    ack();
+                }
                 return;
             }
             if(action.equals("repairtry")){

@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import dev.anya.storage.AnyaStorage;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -48,17 +49,19 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         pose.translate(.5, .5, .5);
         pose.mulPose(Axis.YP.rotationDegrees(180 - face.toYRot()));
         VertexConsumer material = buffers.getBuffer(RenderType.entityCutout(STUDY));
-        vertex(pose, material, face, .5f, -.5f, 0, 1, light, overlay);
-        vertex(pose, material, face, -.5f, -.5f, 1, 1, light, overlay);
-        vertex(pose, material, face, -.5f, .5f, 1, 0, light, overlay);
-        vertex(pose, material, face, .5f, .5f, 0, 0, light, overlay);
+        // The illustration is a self-lit display. The incoming light is sampled inside the
+        // opaque cube and turns this material brown even outdoors at noon.
+        vertex(pose, material, face, .5f, -.5f, 0, 1, overlay);
+        vertex(pose, material, face, -.5f, -.5f, 1, 1, overlay);
+        vertex(pose, material, face, -.5f, .5f, 1, 0, overlay);
+        vertex(pose, material, face, .5f, .5f, 0, 0, overlay);
         pose.popPose();
     }
 
     private static void vertex(PoseStack pose, VertexConsumer material, Direction face, float x, float y,
-                               float u, float v, int light, int overlay) {
+                               float u, float v, int overlay) {
         material.addVertex(pose.last().pose(), x, y, -.501f)
-                .setColor(255, 255, 255, 255).setUv(u, v).setOverlay(overlay).setLight(light)
+                .setColor(255, 255, 255, 255).setUv(u, v).setOverlay(overlay).setLight(LightTexture.FULL_BRIGHT)
                 .setNormal(face.getStepX(), 0, face.getStepZ());
     }
 }

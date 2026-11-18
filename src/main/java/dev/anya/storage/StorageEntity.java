@@ -52,6 +52,12 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
         if(!trusted.contains(id)&&trusted.size()>=64)throw new IllegalArgumentException("Trust limit reached");
         trusted.add(id);memberPermissions.put(id,rights);profileChanged();
     }
+    void toggleMemberRight(UUID id,int right){
+        if(!trusted.contains(id))throw new IllegalArgumentException("This member no longer belongs to the base.");
+        if(!BasePermissions.valid(right)||Integer.bitCount(right)!=1)throw new IllegalArgumentException("Select one valid permission.");
+        memberPermissions.put(id,memberMask(id)^right);
+        profileChanged();
+    }
     public void removeMember(UUID id){trusted.remove(id);memberPermissions.remove(id);profileChanged();}
     public boolean canReadActivity(ServerPlayer p){return ExpansionRules.get().activityLogging&&(ownedBy(p)||(ExpansionRules.get().activityMemberLogs&&permits(p,BasePermissions.LOG)));}
     public void logTransfer(ServerPlayer p,BaseActivity.Action action,int accepted){
