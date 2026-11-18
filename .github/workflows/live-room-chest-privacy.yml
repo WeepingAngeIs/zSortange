@@ -1,0 +1,74 @@
+name: Experimental live room chest privacy
+on:
+  push:
+    branches: [experiment/live-room-chest-privacy]
+permissions:
+  contents: read
+jobs:
+  chest-privacy:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Record source and verify publisher inputs
+        run: |
+          mkdir -p build/live-view/evidence
+          git rev-parse HEAD > build/live-view/evidence/SOURCE_COMMIT.txt
+          python3 fixtures/renderer-prereq/provenance.py build/renderer-prereq/provenance
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: UpperMoon0/ImmersivePortals
+          ref: ad2e7ee5d73e4ff78bd0befade4f797265e65939
+          path: build/ce-source
+          persist-credentials: false
+      - name: Verify the pinned CE source and compile inputs
+        run: python3 fixtures/ce-control/provenance.py prepare
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: '8.14.3'
+      - name: Build and verify the approved CE compile dependency
+        env:
+          ANYA_WORKSPACE: ${{ github.workspace }}
+        run: |
+          timeout --kill-after=20s 600s bash build/ce-source/gradlew --no-daemon --max-workers=2 \
+            -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" \
+            -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar
+          python3 fixtures/ce-control/provenance.py verify
+          echo '6c58d232328146c9b76ceee1eb53969a149ce97ace5af4b50424a30581bf6187  build/ce-control/approved-ce.jar' | sha256sum -c -
+      - name: Compile the adapter and verify the reviewed mod and safety module
+        run: |
+          timeout --kill-after=15s 300s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle \
+            jar operatorProbeJar liveViewJar
+          base=build/libs/anya-storage-plus-0.3.0-beta.7-art.2.jar
+          safety=build/operator/anya-operator-resolution-experiment-0.3.0-beta.7-art.2.jar
+          adapter=build/live-view/anya-live-view-experiment-0.3.0-beta.7-art.2.jar
+          echo "0a7eb462e4256518b2bed9b52e782b80649a03f4068ebdad0f6742a1a6515ea7  $base" | sha256sum -c -
+          echo "e11ed33cfb44e53bb059dbbb0449f94a87a02fa0f7d6de3ec38477a35f840c57  $safety" | sha256sum -c -
+          sha256sum "$base" "$safety" "$adapter" build/ce-control/approved-ce.jar > build/live-view/evidence/SHA256SUMS.txt
+      - name: Run the isolated chest privacy assertions
+        run: |
+          timeout --kill-after=15s 180s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle liveChestPrivacyTest
+          python3 -m json.tool build/live-view/evidence/chest-privacy.json > /dev/null
+      - name: Retain the chest privacy result and input records
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: live-room-chest-privacy-evidence-${{ github.sha }}
+          path: |
+            build/live-view/evidence/SOURCE_COMMIT.txt
+            build/live-view/evidence/SHA256SUMS.txt
+            build/live-view/evidence/chest-privacy.json
+            build/ce-control/evidence/ce-source.json
+            build/ce-control/evidence/ce-binary.json
+            build/renderer-prereq/provenance/provenance.json
+          if-no-files-found: error

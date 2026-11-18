@@ -1,13 +1,12 @@
 package dev.anya.storage.liveview;
 
-import dev.anya.storage.StorageEntity;
 import dev.anya.storage.pocket.PocketService;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.game.*;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ChunkPos;
@@ -35,13 +34,6 @@ public final class PacketFence {
   SENT.remove(p.getUUID());SENT_ENTITIES.remove(p.getUUID());
  }
  private static boolean column(ServerPlayer p,BlockPos pos){return LiveViews.allowedColumn(p,new ChunkPos(pos).toLong());}
- private static boolean safeTag(CompoundTag t){return t==null||Set.of("Symbol","ShowLabels").containsAll(t.getAllKeys());}
- private static boolean safeChunk(long key){
-  var l=PocketService.dimension(LiveViews.server);var chunk=l==null?null:l.getChunkSource().getChunkNow(ChunkPos.getX(key),ChunkPos.getZ(key));if(chunk==null)return false;
-  for(var be:chunk.getBlockEntities().values()){
-   if(!(be instanceof StorageEntity s)||s.pocketId==null||!safeTag(s.getUpdateTag(l.registryAccess())))return false;privacyChecks++;
-  }return true;
- }
  @SuppressWarnings({"unchecked","rawtypes"}) public static Packet<?> filter(ServerPlayer p,Packet<?> packet){return filter(p,packet,PacketRedirection.getForceRedirectDimension(),0);}
  @SuppressWarnings({"unchecked","rawtypes"}) private static Packet<?> filter(ServerPlayer p,Packet<?> packet,ResourceKey<Level> dimension,int depth){
   if(!LiveViews.ENABLED)return packet;if(depth>8){record(p,"nesting",false);return null;}
@@ -74,12 +66,25 @@ public final class PacketFence {
   if(packet instanceof ClientboundForgetLevelChunkPacket){boolean yes=CLEANUP.get();record(p,"forget",yes);return yes?packet:null;}
   if(packet instanceof ClientboundRemoveEntitiesPacket removed){var sent=SENT_ENTITIES.get(p.getUUID());if(sent==null)return null;var ids=new ArrayList<Integer>();for(int id:removed.getEntityIds())if(sent.remove(id))ids.add(id);record(p,"entity-forget",!ids.isEmpty());return ids.isEmpty()?null:new ClientboundRemoveEntitiesPacket(ids.stream().mapToInt(Integer::intValue).toArray());}
   boolean yes=false;
-  if(packet instanceof ClientboundLevelChunkWithLightPacket chunk){long key=ChunkPos.asLong(chunk.getX(),chunk.getZ());yes=LiveViews.allowedColumn(p,key)&&safeChunk(key);if(yes)SENT.computeIfAbsent(p.getUUID(),k->new HashSet<>()).add(key);}
+  if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
+   long key = ChunkPos.asLong(chunk.getX(), chunk.getZ());
+   ServerLevel room = PocketService.dimension(LiveViews.server);
+   yes = LiveViews.allowedColumn(p, key) && PocketChestPrivacy.publicChunk(room, chunk, LiveViews::pocket);
+   if (yes) {
+    privacyChecks += room.getChunkSource().getChunkNow(chunk.getX(), chunk.getZ()).getBlockEntities().size();
+    SENT.computeIfAbsent(p.getUUID(), k -> new HashSet<>()).add(key);
+   }
+  }
   else if(packet instanceof ClientboundLightUpdatePacket light)yes=LiveViews.allowedColumn(p,ChunkPos.asLong(light.getX(),light.getZ()));
   else if(packet instanceof ClientboundBlockUpdatePacket block)yes=column(p,block.getPos());
   else if(packet instanceof ClientboundSectionBlocksUpdatePacket blocks){boolean[] ok={true};blocks.runUpdates((pos,state)->{if(!column(p,pos))ok[0]=false;});yes=ok[0]&&LiveViews.anyAccess(p);}
-  else if(packet instanceof ClientboundBlockEntityDataPacket be)yes=column(p,be.getPos())&&safeTag(be.getTag());
-  else if(packet instanceof ClientboundBlockEventPacket be)yes=column(p,be.getPos());
+  else if (packet instanceof ClientboundBlockEntityDataPacket update) {
+   yes = column(p, update.getPos())
+       && PocketChestPrivacy.publicUpdate(PocketService.dimension(LiveViews.server), update, LiveViews::pocket);
+  } else if (packet instanceof ClientboundBlockEventPacket event) {
+   BlockPos pos = event.getPos();
+   yes = PocketChestPrivacy.visitorAt(LiveViews.visiting(p), pos) && column(p, pos);
+  }
   else if(packet instanceof ClientboundSetTimePacket||packet instanceof ClientboundGameEventPacket)yes=LiveViews.anyAccess(p);
   // Remote entity previews are intentionally outside the supported first subset.
   else if(LiveViews.visiting(p)!=null&&packet instanceof ClientboundAddEntityPacket entity){yes=column(p,BlockPos.containing(entity.getX(),entity.getY(),entity.getZ()));if(yes)SENT_ENTITIES.computeIfAbsent(p.getUUID(),k->new HashSet<>()).add(entity.getId());}
