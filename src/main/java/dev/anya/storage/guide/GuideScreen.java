@@ -2,6 +2,9 @@ package dev.anya.storage.guide;
 
 import dev.anya.storage.*;
 import dev.anya.storage.appearance.ClientLooks;
+import dev.anya.storage.ui.ControlGlyph;
+import dev.anya.storage.ui.ControlSprites;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -24,19 +27,55 @@ public final class GuideScreen extends Screen {
         bookW=Math.min(460,width-16);bookH=Math.min(286,height-16);left=(width-bookW)/2;top=(height-bookH)/2;
         rightX=left+bookW/2+13;textW=left+bookW-23-rightX;bodyY=top+67;bodyH=bookH-111;
         int y=top+bookH-28;
-        addRenderableWidget(Button.builder(Component.literal("<"),b->{if(index){indexOffset=Math.max(0,indexOffset-indexCapacity());rebuildWidgets();}else setPage(page-1);}).bounds(left+18,y,25,18).build());
-        addRenderableWidget(Button.builder(Component.literal(">"),b->{if(index){indexOffset=Math.min(Math.max(0,pages.size()-indexCapacity()),indexOffset+indexCapacity());rebuildWidgets();}else setPage(page+1);}).bounds(left+bookW-43,y,25,18).build());
-        addRenderableWidget(Button.builder(Component.literal(index?"Read":"Contents"),b->{index=!index;rebuildWidgets();}).bounds(left+48,y,64,18).build());
-        addRenderableWidget(Button.builder(Component.literal("Close"),b->onClose()).bounds(left+bookW-96,y,48,18).build());
+        guideButton(left+18,y,25,18,ControlGlyph.PREVIOUS,"Previous page",true,
+            index?indexOffset>0:page>0,b->{if(index){indexOffset=Math.max(0,indexOffset-indexCapacity());rebuildWidgets();}else setPage(page-1);});
+        guideButton(left+bookW-43,y,25,18,ControlGlyph.NEXT,"Next page",true,
+            index?indexOffset+indexCapacity()<pages.size():page+1<pages.size(),b->{if(index){indexOffset=Math.min(Math.max(0,pages.size()-indexCapacity()),indexOffset+indexCapacity());rebuildWidgets();}else setPage(page+1);});
+        guideButton(left+48,y,64,18,index?ControlGlyph.READ:ControlGlyph.CONTENTS,index?"Read":"Contents",false,true,b->{index=!index;rebuildWidgets();});
+        guideButton(left+bookW-96,y,48,18,ControlGlyph.CLOSE,"Close",false,true,b->onClose());
         indexButtons.clear();
         if(index){
             for(int i=0;i<indexCapacity()&&i+indexOffset<pages.size();i++){
                 int target=i+indexOffset;GuidePage entry=pages.get(target);
                 String label=(target+1)+". "+entry.title();
-                var button=Button.builder(Component.literal(font.plainSubstrByWidth(label,textW-6)),b->setPage(target)).bounds(rightX,bodyY+i*18,textW,17).build();
-                button.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(entry.chapter()+": "+entry.title())));addRenderableWidget(button);indexButtons.add(button);
+                var button=guideButton(rightX,bodyY+i*18,textW,17,chapterGlyph(entry),label,false,true,b->setPage(target));
+                button.setTooltip(Tooltip.create(Component.literal(entry.chapter()+": "+entry.title())));indexButtons.add(button);
             }
         }
+    }
+    private Button guideButton(int x,int y,int w,int h,ControlGlyph glyph,String label,boolean iconOnly,boolean enabled,Button.OnPress press){
+        var button=new Button(x,y,w,h,Component.literal(label),press,java.util.function.Supplier::get){
+            private long pressedUntil;
+            @Override public void onPress(){pressedUntil=net.minecraft.Util.getMillis()+160;super.onPress();}
+            @Override public void renderWidget(GuiGraphics g,int mx,int my,float partial){
+                ControlSprites.button(g,font,glyph,active?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,
+                    getX(),getY(),getWidth(),getHeight(),iconOnly?"":getMessage().getString(),
+                    isHoveredOrFocused(),net.minecraft.Util.getMillis()<pressedUntil);
+            }
+        };
+        button.active=enabled;
+        button.setTooltip(Tooltip.create(Component.literal(label)));
+        return addRenderableWidget(button);
+    }
+
+    private static ControlGlyph chapterGlyph(GuidePage entry){
+        return switch(entry.art()){
+            case "item:minecraft:iron_door"->ControlGlyph.PERMISSIONS;
+            case "item:minecraft:writable_book"->ControlGlyph.ACTIVITY;
+            case "item:minecraft:diamond"->ControlGlyph.FEED_ORE;
+            case "item:minecraft:hopper"->ControlGlyph.QUICKSTACK;
+            case "item:minecraft:cherry_planks"->ControlGlyph.BUILD;
+            case "item:minecraft:lodestone","item:anyastorage:home_void_cube"->ControlGlyph.VISIT;
+            case "item:anyastorage:hub"->ControlGlyph.BASE;
+            case "item:anyastorage:remote"->ControlGlyph.TERMINALS;
+            case "item:anyastorage:chest"->ControlGlyph.CONTAINER;
+            default->switch(entry.chapter()){
+                case "Elements"->ControlGlyph.ELEMENTAL;case "Progression"->ControlGlyph.PROGRESSION;
+                case "Wardrobe"->ControlGlyph.WARDROBE;case "Private interiors"->ControlGlyph.PERSONAL_IMAGES;
+                case "Field notes"->ControlGlyph.MONSTER_BAGS;case "Upgrades"->ControlGlyph.UPGRADES;
+                default->ControlGlyph.CHAPTER;
+            };
+        };
     }
     private int indexCapacity(){return Math.max(4,bodyH/18);}
     private List<FormattedCharSequence> lines(){return font.split(Component.literal(pages.get(page).body()),textW);}
@@ -67,7 +106,8 @@ public final class GuideScreen extends Screen {
         GuidePage p=pages.get(page);int leftW=bookW/2-40;
         g.drawString(font,font.plainSubstrByWidth(index?"FIELD INDEX":p.chapter().toUpperCase(Locale.ROOT),leftW),left+25,top+36,0xff806359,false);
         float scale=Math.max(2.0f,Math.min(5.8f,Math.min(leftW/28f,(bookH-165)/16f)));
-        g.pose().pushPose();g.pose().translate(left+bookW/4-8*scale,top+53,0);g.pose().scale(scale,scale,1);g.renderItem(art(index?"bow_cat":p.art()),0,0);g.pose().popPose();
+        g.pose().pushPose();g.pose().translate(left+bookW/4-8*scale,top+53,0);g.pose().scale(scale,scale,1);if(!index&&p.cells().isEmpty()&&p.art().startsWith("item:minecraft:"))ControlSprites.sprite(g,chapterGlyph(p),0,0);
+        else g.renderItem(art(index?"bow_cat":p.art()),0,0);g.pose().popPose();
         int recipeY=top+bookH-104;
         if(!index&&(p.note().startsWith("UNAVAILABLE")||p.note().startsWith("RECIPE UNAVAILABLE")))g.drawString(font,"RECIPE UNAVAILABLE",left+25,top+49,0xffa04450,false);
         if(!index&&!p.cells().isEmpty()){

@@ -1,0 +1,63 @@
+name: Storage art and guest reconnect
+on:
+  push:
+    branches: [feature/storage-art-preview]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: storage-art-visual-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Prepare the packaged mod and two small launchers
+        run: gradle --no-daemon --max-workers=2 jar acceptanceJar stageAcceptanceDependencies exportAcceptanceLaunches
+      - name: Install the software display
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0
+      - name: Photograph the placed blocks and rejoin as the guest
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_ACCEPTANCE_SCENARIO: art
+        run: xvfb-run -a -s '-screen 0 1280x800x24' python3 scripts/packaged_acceptance.py
+      - name: Verify the art evidence
+        working-directory: build/acceptance/evidence
+        run: |
+          test -s control/PASSED
+          test -s control/restart-beta
+          test -s socket-kill.txt
+          git rev-parse HEAD > SOURCE_COMMIT.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          folder = Path('run-packaged-client-Alpha')
+          images = []
+          for state in ['closed', 'open', 'veil', 'window', 'members']:
+              path = folder / f'art-{state}.png'
+              blob = path.read_bytes()
+              assert blob.startswith(b'\x89PNG\r\n\x1a\n')
+              width, height = struct.unpack('>II', blob[16:24])
+              assert width >= 640 and height >= 400, (path, width, height)
+              images.append(blob)
+          assert len(set(images)) == len(images), 'Duplicate framebuffer captures'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storage-art-captures-${{ github.sha }}
+          path: build/acceptance/evidence/
+          if-no-files-found: warn
+          retention-days: 7

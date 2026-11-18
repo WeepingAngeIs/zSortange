@@ -156,6 +156,10 @@ public final class ClientProbe {
                 AnyaStorage.LOG.info("ANYA_SINGLE_INTENT_READY action={} position={} waitedTicks={}",work.action(),mc.player.position(),waitingTicks);
             }
             ticks++;
+            if(action.startsWith("art-")){
+                if(ArtVisualClient.run(mc, action, ticks))ack();
+                return;
+            }
             if(action.equals("repairtry")){
                 Acceptance.require(ticks<=180,"Repair action deadline; no mutation retry");
                 if(!(mc.player.containerMenu instanceof StoreMenu m)||ticks<5)return;

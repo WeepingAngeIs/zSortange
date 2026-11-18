@@ -26,6 +26,7 @@ with (logdir/'installer.log').open('w') as log:
 (server/'server.properties').write_text('level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nonline-mode=false\nview-distance=3\nsimulation-distance=2\nspawn-protection=0\nserver-ip=127.0.0.1\nserver-port=25577\nallow-flight=true\nmax-tick-time=120000\n')
 room=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='room'
 multi=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='multi'
+art=os.environ.get('ANYA_ACCEPTANCE_SCENARIO')=='art'
 processes=[];handles=[];expected_dead=set();process_names={};native_launches=[]
 def launch(cmd,cwd,name,env=None):
     log=(logdir/(name+'.log')).open('w');handles.append(log)
@@ -56,7 +57,8 @@ def failure():
             tail='\n'.join((logdir/(name+'.log')).read_text(errors='replace').splitlines()[-45:])
             raise RuntimeError(f'Unexpected process exit: {name}, code={code}\n{tail}')
 try:
-    srv=launch(['java','-Xmx1400m','-Xms256m','-Danyastorage.pocketPrototype=true','-Danya.acceptance=true',f'-Danya.remoteTickets={str(efficient).lower()}',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.multiAcceptance={str(multi).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
+    pocket_flag='-Danya.artAcceptance=true' if art else '-Danyastorage.pocketPrototype=true'
+    srv=launch(['java','-Xmx1400m','-Xms256m',pocket_flag,'-Danya.acceptance=true',f'-Danya.remoteTickets={str(efficient).lower()}',f'-Danya.roomAcceptance={str(room).lower()}',f'-Danya.multiAcceptance={str(multi).lower()}',f'-Danya.control={control}',f'-Danya.expectedJar={jar}','@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt','nogui'],server,'packaged-server')
     deadline=time.monotonic()+180
     while not (control/'server-ready').exists():
         failure()
@@ -92,6 +94,9 @@ try:
         assert resume.wait(timeout=150)==0,'Room restart process failed';expected_dead.add(resume.pid)
         failure();assert (control/'ROOM_RESTART_PASSED').exists(),'Room restart verification missing'
         print('ANYA_PACKAGED_ROOM_ACCEPTANCE_OK',flush=True)
+    elif art:
+        assert srv.wait(timeout=45)==0,'Visual fixture server did not stop cleanly'
+        print('ANYA_STORAGE_ART_RECONNECT_OK',flush=True)
     else:print('ANYA_PACKAGED_NETWORK_ACCEPTANCE_OK')
 finally:
     for p in processes:

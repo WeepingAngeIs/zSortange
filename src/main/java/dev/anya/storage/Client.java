@@ -15,7 +15,12 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.*;
 import net.neoforged.neoforge.network.PacketDistributor;
-import net.minecraft.client.gui.components.Button;
+import dev.anya.storage.ui.ControlGlyph;
+import dev.anya.storage.ui.ControlSprites;
+import dev.anya.storage.ui.StorageGrid;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.resources.ResourceLocation;
 import dev.anya.storage.appearance.*;
 import java.nio.file.Path;
@@ -55,6 +60,9 @@ public final class Client {
         private int debounce,ticks,pendingRow=-1,pendingRows=5,lastViewport=-20;
         private String sent="";
         private boolean dragging;
+        private int pressedSlot=-1;
+        private long pressedUntil;
+        private static final String[] PERMISSION_LABELS={"View","Deposit","Withdraw","Activity","Visit","Build"};
         private dev.anya.storage.ui.StorageGrid.Layout layout;
         public Screen(StoreMenu menu,Inventory inventory,Component title){super(menu,inventory,title);}
         private void reflow(){layout=dev.anya.storage.ui.StorageGrid.layout(width,height,menu.resultCount(),menu.storageView());}
@@ -86,7 +94,11 @@ public final class Client {
         private int thumbHeight(){var box=layout.scroll();return Math.max(8,(int)(box.height()*Math.min(1,layout.rows()/(double)Math.max(1,dev.anya.storage.ui.StorageGrid.rows(menu.resultCount())))));}
         private int shown(){return menu.storageView()?Math.min(menu.shownSlots(),layout.rows()*9):45;}
         private int slotAt(double x,double y){
-            int cell=layout.storageAt(x,y,shown());if(cell>=0&&(menu.storageView()||!menu.getSlot(cell).getItem().isEmpty()))return cell;
+            if(menu.accessView()){
+                for(int i=28;i<=34;i++)if(!menu.getSlot(i).getItem().isEmpty()&&memberBox(i).contains(x,y))return i;
+            }
+            int cell=layout.storageAt(x,y,shown());
+            if(cell>=0&&(!menu.accessView()||cell<18)&&(menu.storageView()||!menu.getSlot(cell).getItem().isEmpty()))return cell;
             int inv=layout.inventoryAt(x,y);if(inv>=0)return 54+inv;
             for(int i=0;i<9;i++)if(layout.control(i).contains(x,y)&&!menu.getSlot(45+i).getItem().isEmpty())return 45+i;
             return -1;
@@ -95,14 +107,14 @@ public final class Client {
             reflow();double x=layout.x(mx),y=layout.y(my);
             if(input.mouseClicked(x,y,button)){input.setFocused(true);return true;}input.setFocused(false);
             if(button==0&&x>=12&&x<90){
-                if(y>=153&&y<171&&menu.backpackView()){send("appearance","",0);return true;}
-                if(y>=176&&y<194){ClientLooks.options.particles=!ClientLooks.options.particles;ClientLooks.saveOptions();return true;}
-                if(y>=199&&y<217){ClientLooks.options.images=!ClientLooks.options.images;ClientLooks.saveOptions();return true;}
-                if(y>=222&&y<240){ClientLooks.options.models=!ClientLooks.options.models;ClientLooks.saveOptions();return true;}
+                if(y>=153&&y<171&&menu.backpackView()){press(90);send("appearance","",0);return true;}
+                if(y>=176&&y<194){press(91);ClientLooks.options.particles=!ClientLooks.options.particles;ClientLooks.saveOptions();return true;}
+                if(y>=199&&y<217){press(92);ClientLooks.options.images=!ClientLooks.options.images;ClientLooks.saveOptions();return true;}
+                if(y>=222&&y<240){press(93);ClientLooks.options.models=!ClientLooks.options.models;ClientLooks.saveOptions();return true;}
             }
             if(menu.storageView()&&layout.scroll().contains(x,y)&&button==0){dragging=true;scrollbar(y);return true;}
             int index=slotAt(x,y);
-            if(index>=0&&button>=0&&button<=2){send("slot","",index|((button&3)<<8)|(hasShiftDown()?65536:0));return true;}
+            if(index>=0&&button>=0&&button<=2){press(index);send("slot","",index|((button&3)<<8)|(hasShiftDown()?65536:0));return true;}
             return false;
         }
         @Override public boolean mouseDragged(double x,double y,int button,double dx,double dy){if(dragging&&button==0){scrollbar(layout.y(y));return true;}return false;}
@@ -143,30 +155,80 @@ public final class Client {
             g.fill(box.x()-1,box.y()-1,box.x()+box.width()+1,box.y()+box.height()+1,edge);
             g.fill(box.x(),box.y(),box.x()+box.width(),box.y()+box.height(),fill);
         }
-        private void option(GuiGraphics g,String name,int y,boolean on,boolean hover,int[] colors){
-            g.fill(12,y,90,y+18,hover?0xff53605c:colors[1]);g.fill(12,y,14,y+18,on?colors[2]:0xff756d7c);
-            g.drawString(font,name,18,y+5,on?0xfff0ece7:0xffaaa5ae,false);
+        private StorageGrid.Box memberBox(int slot){
+            if(slot==34)return layout.control(4);
+            int index=slot-28;
+            return new StorageGrid.Box(104+(index%2)*86,86+(index/2)*19,83,17);
+        }
+        private void press(int slot){pressedSlot=slot;pressedUntil=net.minecraft.Util.getMillis()+160;}
+        private boolean pressed(int slot){return slot==pressedSlot&&net.minecraft.Util.getMillis()<pressedUntil;}
+        private void option(GuiGraphics g,int slot,ControlGlyph glyph,String name,int y,ControlGlyph.State state,int mx,int my){
+            ControlSprites.button(g,font,glyph,state,12,y,78,18,name,mx>=12&&mx<90&&my>=y&&my<y+18,pressed(slot));
+        }
+        private void drawSlot(GuiGraphics g,int slot,StorageGrid.Box box,boolean hover,String label,int[] colors){
+            var stack=menu.getSlot(slot).getItem();
+            ControlGlyph.Face face=menu.controlSlot(slot)?ControlGlyph.read(stack):null;
+            if(face!=null){
+                ControlSprites.button(g,font,face.glyph(),face.state(),box.x(),box.y(),box.width(),box.height(),label,hover,pressed(slot));
+            }else{
+                frame(g,box,hover?0xff514954:0xff18252a,colors[1]);
+                if(!stack.isEmpty()){
+                    g.renderItem(stack,box.x(),box.y());
+                    g.renderItemDecorations(font,stack,box.x(),box.y());
+                }
+            }
+        }
+        private String actionLabel(int slot,ItemStack stack){
+            if(menu.storageView()){
+                ControlGlyph.Face face=ControlGlyph.read(stack);
+                if(face!=null)return switch(face.glyph()){
+                    case SCROLL_UP->"Scroll up";case SCROLL_DOWN->"Scroll down";case ORGANIZE->"Organize";
+                    case QUICKSTACK->"QuickStack";case DUMP->"Dump";case PROTECT->"Lock slots";case UPGRADES->"Upgrades";
+                    case BASE->"Base";case SYMBOL->"Symbol";case EXIT->"Pocket";case FAVORITES->"Favorites";case INFO->"Info";
+                    default->stack.getHoverName().getString();
+                };
+            }
+            if(menu.accessView())return switch(slot){
+                case 46->"Previous";case 47->"Next";case 50->"Select/add";default->stack.getHoverName().getString();
+            };
+            return stack.getHoverName().getString();
+        }
+        private void controlTooltip(GuiGraphics g,ItemStack stack,int x,int y){
+            java.util.ArrayList<Component> lines=new java.util.ArrayList<>();
+            lines.add(stack.getHoverName());
+            ItemLore lore=stack.get(DataComponents.LORE);
+            if(lore!=null)lines.addAll(lore.lines());
+            g.renderComponentTooltip(font,lines,x,y);
         }
         @Override public void render(GuiGraphics g,int mx,int my,float partial){
             reflow();int x=(int)layout.x(mx),y=(int)layout.y(my);int[] colors=palette();
             g.fill(0,0,width,height,0x990c1017);g.pose().pushPose();g.pose().translate(layout.left(),layout.top(),0);g.pose().scale((float)layout.scale(),(float)layout.scale(),1);
             g.fill(0,0,382,layout.height(),0xff111823);g.fill(2,2,380,layout.height()-2,colors[0]);g.fill(8,8,374,10,colors[2]);
-            g.drawString(font,font.plainSubstrByWidth(title.getString(),250),12,15,0xfff4eaf1,false);
+            g.drawString(font,font.plainSubstrByWidth(menu.accessView()?"Member permissions":title.getString(),250),12,15,0xfff4eaf1,false);
             g.drawString(font,"ACTIONS",290,29,colors[2],false);input.render(g,x,y,partial);
             var look=ClientInteriors.current;String texture=look==null?"plain":look.texture();
             g.fill(12,35,90,126,colors[1]);ResourceLocation custom=ClientInteriors.texture();
-            if(custom!=null){int[] size=ClientInteriors.size();float scale=Math.min(74f/size[0],83f/size[1]);g.pose().pushPose();g.pose().translate(51-size[0]*scale/2,80-size[1]*scale/2,0);g.pose().scale(scale,scale,1);g.blit(custom,0,0,0,0,size[0],size[1],size[0],size[1]);g.pose().popPose();}
-            else{g.pose().pushPose();g.pose().translate(17,43,0);g.pose().scale(4.2f,4.2f,1);g.renderItem(ClientLooks.shell(texture),0,0);g.pose().popPose();}
-            g.drawString(font,font.plainSubstrByWidth(Looks.title(texture),78),12,131,colors[2],false);
-            option(g,"Wardrobe",153,menu.backpackView(),x>=12&&x<90&&y>=153&&y<171,colors);
-            option(g,"Particles",176,ClientLooks.options.particles,x>=12&&x<90&&y>=176&&y<194,colors);
-            option(g,"Images",199,ClientLooks.options.images,x>=12&&x<90&&y>=199&&y<217,colors);
-            option(g,"Models",222,ClientLooks.options.models,x>=12&&x<90&&y>=222&&y<240,colors);
+            if(menu.accessView()){
+                g.pose().pushPose();g.pose().translate(21,49,0);g.pose().scale(3.7f,3.7f,1);ControlSprites.sprite(g,ControlGlyph.MEMBERS,0,0);g.pose().popPose();
+                g.drawCenteredString(font,"Home base",51,112,0xffe6cddd);
+                ItemStack member=menu.getSlot(27).getItem();
+                g.drawString(font,font.plainSubstrByWidth(member.isEmpty()?"Select a member":member.getHoverName().getString(),78),12,131,colors[2],false);
+            }else{
+                if(custom!=null){int[] size=ClientInteriors.size();float scale=Math.min(74f/size[0],83f/size[1]);g.pose().pushPose();g.pose().translate(51-size[0]*scale/2,80-size[1]*scale/2,0);g.pose().scale(scale,scale,1);g.blit(custom,0,0,0,0,size[0],size[1],size[0],size[1]);g.pose().popPose();}
+                else{g.pose().pushPose();g.pose().translate(17,43,0);g.pose().scale(4.2f,4.2f,1);g.renderItem(ClientLooks.shell(texture),0,0);g.pose().popPose();}
+                g.drawString(font,font.plainSubstrByWidth(Looks.title(texture),78),12,131,colors[2],false);
+            }
+            option(g,90,ControlGlyph.WARDROBE,"Wardrobe",153,menu.backpackView()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
+            option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            option(g,92,ControlGlyph.IMAGE,"Images",199,ClientLooks.options.images?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            option(g,93,ControlGlyph.MODELS,"Models",222,ClientLooks.options.models?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
             int hover=slotAt(x,y);
             for(int i=0;i<shown();i++){
-                var stack=menu.getSlot(i).getItem();if(!menu.storageView()&&stack.isEmpty())continue;
-                var box=layout.storage(i);frame(g,box,hover==i?0xff53605c:0xff18252a,colors[1]);
-                if(!stack.isEmpty()){g.renderItem(stack,box.x(),box.y());g.renderItemDecorations(font,stack,box.x(),box.y());}
+                var stack=menu.getSlot(i).getItem();
+                if(!menu.storageView()&&stack.isEmpty()||menu.accessView()&&i==27)continue;
+                boolean permission=menu.accessView()&&i>=28&&i<=34;
+                String label=permission?(i==34?"Remove":PERMISSION_LABELS[i-28]):"";
+                drawSlot(g,i,permission?memberBox(i):layout.storage(i),hover==i,label,colors);
             }
             if(menu.privateView())g.drawWordWrap(font,Component.literal("Contents are private. Click your inventory to deposit when permitted."),104,53,160,colors[2]);
             else if(menu.storageView()&&menu.resultCount()==0)g.drawString(font,"No matching items",104,55,colors[2],false);
@@ -178,10 +240,7 @@ public final class Client {
             }
             for(int i=0;i<9;i++){
                 var stack=menu.getSlot(45+i).getItem();if(stack.isEmpty())continue;var box=layout.control(i);
-                frame(g,box,hover==45+i?0xff53605c:colors[1],colors[0]);g.renderItem(stack,box.x()+2,box.y()+1);
-                String label=menu.storageView()?new String[]{"Up","Down","Organize","QuickStack","Dump","Lock slots","Upgrades","Favorites","Info"}[i]:stack.getHoverName().getString();
-                if(menu.storageView()&&!menu.backpackView()&&i==6)label="Base";
-                g.drawString(font,font.plainSubstrByWidth(label,58),box.x()+21,box.y()+6,0xffeee8e8,false);
+                drawSlot(g,45+i,box,hover==45+i,actionLabel(45+i,stack),colors);
             }
             int iy=layout.inventoryY();String summary=menu.privateView()?"Private contents":menu.storageView()?(menu.filteredView()?menu.resultCount()+" matches / "+menu.capacity()+" slots":menu.occupiedSlots()+" occupied / "+menu.capacity()+" slots"):"Your inventory";
             g.drawString(font,font.plainSubstrByWidth(summary,170),104,iy-19,colors[2],false);
@@ -192,7 +251,10 @@ public final class Client {
             g.drawString(font,"Left: stack / Right: one",104,layout.height()-19,0xffc6c6c8,false);
             g.drawString(font,"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
             g.pose().popPose();
-            if(hover>=0){var stack=menu.getSlot(hover).getItem();if(!stack.isEmpty())g.renderTooltip(font,stack,mx,my);else if(hover<45&&menu.storageView())g.renderTooltip(font,Component.literal("Empty real slot "+(menu.firstSlot()+hover+1)+". Click your inventory to deposit."),mx,my);}
+            if(hover>=0){var stack=menu.getSlot(hover).getItem();if(!stack.isEmpty()){
+                if(menu.controlSlot(hover))controlTooltip(g,stack,mx,my);
+                else g.renderTooltip(font,stack,mx,my);
+            }else if(hover<45&&menu.storageView())g.renderTooltip(font,Component.literal("Empty real slot "+(menu.firstSlot()+hover+1)+". Click your inventory to deposit."),mx,my);}
         }
     }
 }

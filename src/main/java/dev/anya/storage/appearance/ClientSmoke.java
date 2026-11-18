@@ -64,8 +64,24 @@ public final class ClientSmoke {
                 for(String name:gridCaptures)if(!mc.gameDirectory.toPath().resolve("screenshots").resolve(name).toFile().isFile())throw new IllegalStateException("Missing grid capture "+name);
                 AnyaStorage.LOG.info("ANYA_CLIENT_SMOKE_OK: 22 models, six interiors, guide and {} production-screen fixtures; scales 1..4; binding conflict detected without changes",GRIDS.length);
                 AnyaStorage.LOG.info("ANYA_UI_PROFILE: capture sequence {} ms; sampled total JVM heap {} bytes; render shells bounded to 22; this is software GL, not a hardware FPS/VRAM benchmark",(System.nanoTime()-gridStarted)/1_000_000,java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());
-                phase=12;mc.stop();
+                mc.options.guiScale().set(2);mc.resizeDisplay();
+                var inventory = new net.minecraft.world.entity.player.Inventory(null);
+                var members = new StoreMenu(122, inventory);
+                members.renderAccessFixture();
+                mc.setScreen(new GridPreview(new Client.Screen(members, inventory, Component.literal("Member permissions"))));
+                phase=12;ticks=0;
             }
+        }
+        if (phase == 12 && ticks == 30) {
+            Screenshot.grab(mc.gameDirectory, "anya-member-permissions-client.png", mc.getMainRenderTarget(),
+                    message -> saved.incrementAndGet());
+            phase=13;
+        }
+        if (phase == 13 && saved.get() == 5 + GRIDS.length) {
+            if (!mc.gameDirectory.toPath().resolve("screenshots/anya-member-permissions-client.png").toFile().isFile())
+                throw new IllegalStateException("Member screen screenshot missing");
+            AnyaStorage.LOG.info("ANYA_MEMBER_ART_CAPTURE_OK: production screen with synthetic View-only member");
+            phase=14;mc.stop();
         }
     }
     private static void openGrid(){

@@ -25,13 +25,9 @@ shapes={
  'leaf':['00000110','00011110','00111110','01111100','01111000','11110000','11000000','10000000'],
  'gear':['00100100','01111110','11011011','01100110','01100110','11011011','01111110','00100100']}
 for name,rows in shapes.items():png(f'assets/{MOD}/textures/entity/label_{name}.png',8,8,[PINK if c=='1' else (0,0,0,0) for row in rows for c in row])
-shell=image(64,64,DARK)
-for y in range(64):
-    for x in range(64):
-        if x%14==0 or y%14==0:shell[y*64+x]=EDGE
-        elif y%14==2:shell[y*64+x]=CYAN
-png(f'assets/{MOD}/textures/entity/chest.png',64,64,shell)
-for name in ['hub','chest','uwu_cube']:
+from chest_shell import generate as generate_chest_shell
+generate_chest_shell(ROOT)
+for name in ['hub','uwu_cube']:
     side=image(16,16,DARK);rect(side,16,0,0,16,1,EDGE);rect(side,16,0,15,16,1,EDGE);rect(side,16,1,1,14,1,CYAN)
     front=side.copy()
     if name=='hub':
@@ -43,13 +39,9 @@ for name in ['hub','chest','uwu_cube']:
         for y,row in enumerate(('11011','11111','01110','00100')):
             for x,bit in enumerate(row):
                 if bit=='1':rect(front,16,x+6,y+10,1,1,PINK)
-    else:
-        rect(front,16,1,5,14,1,EDGE)
-        for yy,row in enumerate(shapes['heart']):
-            for xx,c in enumerate(row):
-                if c=='1':front[(yy+5)*16+xx+4]=PINK
     png(f'assets/{MOD}/textures/block/{name}_side.png',16,16,side);png(f'assets/{MOD}/textures/block/{name}_front.png',16,16,front)
     js(f'assets/{MOD}/models/block/{name}.json',{'parent':'minecraft:block/orientable','textures':{'front':f'{MOD}:block/{name}_front','side':f'{MOD}:block/{name}_side','top':f'{MOD}:block/{name}_side'}})
+for name in ['hub','chest','uwu_cube']:
     js(f'assets/{MOD}/blockstates/{name}.json',{'variants':{f'facing={face}':{'model':f'{MOD}:block/{name}','y':rot} for face,rot in [('north',0),('east',90),('south',180),('west',270)]}})
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':f'{MOD}:block/{name}'})
     js(f'data/{MOD}/loot_table/blocks/{name}.json',{'type':'minecraft:block','pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':f'{MOD}:{name}'}],'conditions':[{'condition':'minecraft:survives_explosion'}]}]})
@@ -72,6 +64,7 @@ for index,name in enumerate(items):
     png(f'assets/{MOD}/textures/item/{name}.png',16,16,pixels)
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{MOD}:item/{name}'}})
 lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
+lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
 lang.update({f'block.{MOD}.hub':'Anya Storage Hub',f'block.{MOD}.chest':'Labelled Storage Chest',f'block.{MOD}.uwu_cube':'UwU Storage Cube',f'key.{MOD}.quick':'QuickStack matching items',f'key.{MOD}.dump':'Dump broader matching items',f'key.{MOD}.bag':'Open first backpack',f'key.categories.{MOD}':'Anya Storage'})
 js(f'assets/{MOD}/lang/en_us.json',lang)
 def shaped(name,group,pattern,key,count=1):

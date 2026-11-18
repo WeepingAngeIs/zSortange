@@ -3,6 +3,8 @@ package dev.anya.storage;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.*;
@@ -19,6 +21,13 @@ import java.util.function.Supplier;
 public final class Content {
     public static final DeferredRegister.Blocks BLOCKS=DeferredRegister.createBlocks(AnyaStorage.ID);
     public static final DeferredRegister.Items ITEMS=DeferredRegister.createItems(AnyaStorage.ID);
+    private static final DeferredRegister<SoundEvent> SOUNDS = DeferredRegister.create(Registries.SOUND_EVENT, AnyaStorage.ID);
+    public static final Supplier<SoundEvent> CHEST_OPEN = chestSound("chest_open");
+    public static final Supplier<SoundEvent> CHEST_CLOSE = chestSound("chest_close");
+
+    private static Supplier<SoundEvent> chestSound(String name) {
+        return SOUNDS.register(name, () -> SoundEvent.createFixedRangeEvent(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, name), 7));
+    }
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES=DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE,AnyaStorage.ID);
     private static final DeferredRegister<MenuType<?>> MENUS=DeferredRegister.create(Registries.MENU,AnyaStorage.ID);
     private static final DeferredRegister<RecipeSerializer<?>> RECIPES=DeferredRegister.create(Registries.RECIPE_SERIALIZER,AnyaStorage.ID);
@@ -55,5 +64,5 @@ public final class Content {
             }).build());
     }
     private Content() {}
-    public static void register(IEventBus bus) { BLOCKS.register(bus); ITEMS.register(bus); ENTITIES.register(bus); MENUS.register(bus); RECIPES.register(bus); CONDITIONS.register(bus); TABS.register(bus); PARTICLES.register(bus); }
+    public static void register(IEventBus bus) { BLOCKS.register(bus); ITEMS.register(bus); ENTITIES.register(bus); MENUS.register(bus); RECIPES.register(bus); CONDITIONS.register(bus); TABS.register(bus); PARTICLES.register(bus); SOUNDS.register(bus); }
 }

@@ -1,37 +1,103 @@
 package dev.anya.storage;
 
-import com.mojang.blaze3d.vertex.*;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
-import net.minecraft.client.model.geom.*;
-import net.minecraft.client.model.geom.builders.*;
-import net.minecraft.client.renderer.*;
-import net.minecraft.client.renderer.blockentity.*;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.Sheets;
+import net.minecraft.client.renderer.block.BlockRenderDispatcher;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
+import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.phys.AABB;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ModelEvent;
 
-/** The sticker's two halves use the same texture and follow the base and hinged lid separately. */
+import java.util.HashMap;
+import java.util.Map;
+
+/** The item and placed chest use the same baked shell; only the placed lid rotates. */
+@EventBusSubscriber(modid = AnyaStorage.ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class ChestRenderer implements BlockEntityRenderer<StorageEntity> {
-    private final ModelPart base,lid;
-    private static final ResourceLocation SHELL=ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID,"textures/entity/chest.png");
-    public ChestRenderer(BlockEntityRendererProvider.Context context){
-        MeshDefinition mesh=new MeshDefinition();PartDefinition root=mesh.getRoot();
-        root.addOrReplaceChild("base",CubeListBuilder.create().texOffs(0,19).addBox(-7,0,-7,14,10,14),PartPose.ZERO);
-        root.addOrReplaceChild("lid",CubeListBuilder.create().texOffs(0,0).addBox(-7,0,-14,14,4,14),PartPose.offset(0,10,7));
-        ModelPart model=LayerDefinition.create(mesh,64,64).bakeRoot();base=model.getChild("base");lid=model.getChild("lid");
+    private static final ModelResourceLocation BASE = model("chest_base");
+    private static final ModelResourceLocation LID = model("chest_lid");
+    private static final float HINGE_Y = 8.54f / 16;
+    private static final float HINGE_Z = 14.58f / 16;
+    private static final Map<String, RenderType> LABELS = new HashMap<>();
+    static {
+        for (String symbol : Config.SYMBOLS) {
+            ResourceLocation texture = ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "textures/entity/label_" + symbol + ".png");
+            LABELS.put(symbol, RenderType.entityCutoutNoCull(texture));
+        }
     }
-    @Override public void render(StorageEntity entity,float partial,PoseStack pose,MultiBufferSource buffers,int light,int overlay){
-        if(!entity.kind().equals("chest"))return;
-        pose.pushPose();pose.translate(.5,0,.5);pose.mulPose(Axis.YP.rotationDegrees(180-entity.getBlockState().getValue(StorageBlock.FACING).toYRot()));
-        float angle=Mth.lerp(partial,entity.previousOpenness,entity.openness);angle=1-(1-angle)*(1-angle)*(1-angle);angle*=Mth.HALF_PI;
-        VertexConsumer shell=buffers.getBuffer(RenderType.entityCutout(SHELL));base.render(pose,shell,light,overlay);lid.xRot=angle;lid.render(pose,shell,light,overlay);
-        if(!entity.showLabels){pose.popPose();return;}
-        String symbol=Config.SYMBOLS.contains(entity.symbol)?entity.symbol:"heart";
-        VertexConsumer sticker=buffers.getBuffer(RenderType.entityCutoutNoCull(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID,"textures/entity/label_"+symbol+".png")));
-        quad(pose,sticker,-4/16f,6/16f,4/16f,10/16f,-7.02f/16f,.5f,1,light,overlay);
-        pose.pushPose();pose.translate(0,10/16f,7/16f);pose.mulPose(Axis.XP.rotation(angle));quad(pose,sticker,-4/16f,0,4/16f,4/16f,-14.02f/16f,0,.5f,light,overlay);pose.popPose();pose.popPose();
+
+    private final BlockRenderDispatcher blocks;
+
+    public ChestRenderer(BlockEntityRendererProvider.Context context) {
+        blocks = context.getBlockRenderDispatcher();
     }
-    private static void quad(PoseStack pose,VertexConsumer v,float left,float bottom,float right,float top,float z,float vt,float vb,int light,int overlay){
-        vertex(pose,v,left,bottom,z,0,vb,light,overlay);vertex(pose,v,left,top,z,0,vt,light,overlay);vertex(pose,v,right,top,z,1,vt,light,overlay);vertex(pose,v,right,bottom,z,1,vb,light,overlay);
+
+    private static ModelResourceLocation model(String name) {
+        return ModelResourceLocation.standalone(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "block/" + name));
     }
-    private static void vertex(PoseStack pose,VertexConsumer v,float x,float y,float z,float u,float w,int light,int overlay){v.addVertex(pose.last().pose(),x,y,z).setColor(255,255,255,255).setUv(u,w).setOverlay(overlay).setLight(light).setNormal(0,0,-1);}
+
+    @SubscribeEvent
+    public static void registerModels(ModelEvent.RegisterAdditional event) {
+        event.register(BASE);
+        event.register(LID);
+    }
+
+    @Override
+    public AABB getRenderBoundingBox(StorageEntity chest) {
+        // The open crown clears the top of the block and the rear hinge.
+        return new AABB(chest.getBlockPos()).inflate(.25, 0, .25).expandTowards(0, .6, 0);
+    }
+
+    @Override
+    public void render(StorageEntity chest, float partial, PoseStack pose, MultiBufferSource buffers, int light, int overlay) {
+        if (!chest.kind().equals("chest")) return;
+        pose.pushPose();
+        pose.translate(.5, 0, .5);
+        pose.mulPose(Axis.YP.rotationDegrees(180 - chest.getBlockState().getValue(StorageBlock.FACING).toYRot()));
+        pose.translate(-.5, 0, -.5);
+        drawModel(BASE, chest, pose, buffers, light, overlay);
+        if (chest.showLabels) drawLabel(chest.symbol, pose, buffers, 6.35f, 8.32f, .5f, 1, light, overlay);
+
+        float progress = Mth.lerp(partial, chest.previousOpenness, chest.openness);
+        float eased = progress * progress * (3 - 2 * progress);
+        pose.translate(0, HINGE_Y, HINGE_Z);
+        pose.mulPose(Axis.XP.rotationDegrees(72 * eased));
+        pose.translate(0, -HINGE_Y, -HINGE_Z);
+        drawModel(LID, chest, pose, buffers, light, overlay);
+        if (chest.showLabels) drawLabel(chest.symbol, pose, buffers, 8.65f, 10.62f, 0, .5f, light, overlay);
+        pose.popPose();
+    }
+
+    private void drawModel(ModelResourceLocation id, StorageEntity chest, PoseStack pose, MultiBufferSource buffers,
+                           int light, int overlay) {
+        var model = Minecraft.getInstance().getModelManager().getModel(id);
+        blocks.getModelRenderer().renderModel(pose.last(), buffers.getBuffer(Sheets.cutoutBlockSheet()),
+                chest.getBlockState(), model, 1, 1, 1, light, overlay);
+    }
+
+    private static void drawLabel(String symbol, PoseStack pose, MultiBufferSource buffers, float bottom, float top,
+                                  float vTop, float vBottom, int light, int overlay) {
+        VertexConsumer out = buffers.getBuffer(LABELS.getOrDefault(symbol, LABELS.get("heart")));
+        vertex(out, pose.last(), 6, bottom, 0, vBottom, light, overlay);
+        vertex(out, pose.last(), 6, top, 0, vTop, light, overlay);
+        vertex(out, pose.last(), 10, top, 1, vTop, light, overlay);
+        vertex(out, pose.last(), 10, bottom, 1, vBottom, light, overlay);
+    }
+
+    private static void vertex(VertexConsumer out, PoseStack.Pose pose, float x, float y, float u, float v,
+                               int light, int overlay) {
+        out.addVertex(pose, x/16, y/16, .84f/16).setColor(-1).setUv(u, v)
+                .setOverlay(overlay).setLight(light).setNormal(pose, 0, 0, -1);
+    }
 }

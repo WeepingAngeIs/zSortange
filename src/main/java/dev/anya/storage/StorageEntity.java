@@ -4,6 +4,7 @@ import net.minecraft.core.*;
 import net.minecraft.nbt.*;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.*;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -26,6 +27,7 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public long profileRevision;
     public boolean showLabels=true;
     public float openness,previousOpenness;
+    private long nextChestChime;
     public final Map<Long,Route> routes=new HashMap<>();
     public static final class Route {
         public String category="any";
@@ -57,12 +59,29 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     }
     public Route route(BlockPos pos){return routes.getOrDefault(pos.asLong(),new Route());}
     public void profileChanged(){profileRevision++;setChanged();if(level!=null)level.sendBlockUpdated(worldPosition,getBlockState(),getBlockState(),3);}
-    public void openViewer(){viewers++;if(level!=null)level.blockEvent(worldPosition,getBlockState().getBlock(),1,viewers);}
-    public void closeViewer(){viewers=Math.max(0,viewers-1);if(level!=null)level.blockEvent(worldPosition,getBlockState().getBlock(),1,viewers);}
-    @Override public boolean triggerEvent(int id,int value){if(id==1){viewers=value;return true;}return super.triggerEvent(id,value);}
+    public void openViewer() {
+        if (++viewers == 1 && level != null) level.blockEvent(worldPosition, getBlockState().getBlock(), 1, 1);
+    }
+    public void closeViewer() {
+        if (viewers > 0 && --viewers == 0 && level != null) level.blockEvent(worldPosition, getBlockState().getBlock(), 1, 0);
+    }
+    @Override public boolean triggerEvent(int id, int value) {
+        if (id != 1) return super.triggerEvent(id, value);
+        if (level != null && level.isClientSide) viewers = value > 0 ? 1 : 0;
+        // Server block events can be delayed and deduplicated within a tick.
+        return level == null || level.isClientSide || (viewers > 0) == (value > 0);
+    }
     public static void tick(Level level,BlockPos pos,BlockState state,StorageEntity be){
         if(!level.isClientSide&&level.getGameTime()%20==0&&be.activity.prune(ExpansionRules.get()))be.setChanged();
-        be.previousOpenness=be.openness;be.openness=Math.max(0,Math.min(1,be.openness+(be.viewers>0?0.12f:-0.12f)));
+        be.previousOpenness=be.openness;be.openness=Math.max(0,Math.min(1,be.openness+(be.viewers>0?0.10f:-0.10f)));
+        if (!level.isClientSide && be.getBlockState().is(Content.CRATE.get()) && level.getGameTime() >= be.nextChestChime) {
+            boolean opening = be.previousOpenness == 0 && be.openness > 0;
+            boolean closed = be.previousOpenness > 0 && be.openness == 0;
+            if (opening || closed) {
+                level.playSound(null, pos, opening ? Content.CHEST_OPEN.get() : Content.CHEST_CLOSE.get(), SoundSource.BLOCKS, .55f, 1);
+                be.nextChestChime = level.getGameTime() + 10;
+            }
+        }
         if(!level.isClientSide&&be.showLabels!=Config.get().labels){be.showLabels=Config.get().labels;level.sendBlockUpdated(pos,state,state,3);}
     }
     @Override public void onLoad(){super.onLoad();if(level!=null&&!level.isClientSide&&kind().equals("hub"))Network.add(this);}
@@ -95,8 +114,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
         routes.clear();ListTag rules=tag.getList("Routes",Tag.TAG_COMPOUND);
         for(int i=0;i<Math.min(512,rules.size());i++){CompoundTag r=rules.getCompound(i);Route route=new Route();route.category=r.getString("Category");if(!Config.CATEGORIES.contains(route.category))route.category="any";route.priority=Math.max(0,Math.min(9,r.getInt("Priority")));route.overflow=r.getBoolean("Overflow");ListTag ids=r.getList("Items",Tag.TAG_STRING);for(int j=0;j<Math.min(64,ids.size());j++)route.items.add(ids.getString(j));routes.put(r.getLong("Pos"),route);}
     }
-    @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup){CompoundTag tag=new CompoundTag();tag.putString("Symbol",symbol);tag.putBoolean("ShowLabels",level!=null&&!level.isClientSide?Config.get().labels:showLabels);return tag;}
-    @Override public void handleUpdateTag(CompoundTag tag,HolderLookup.Provider lookup){symbol=tag.getString("Symbol");showLabels=!tag.contains("ShowLabels")||tag.getBoolean("ShowLabels");}
+    @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup){CompoundTag tag=new CompoundTag();tag.putString("Symbol",symbol);tag.putBoolean("ShowLabels",level!=null&&!level.isClientSide?Config.get().labels:showLabels);if(kind().equals("chest"))tag.putBoolean("LidOpen",viewers>0);return tag;}
+    @Override public void handleUpdateTag(CompoundTag tag,HolderLookup.Provider lookup){symbol=tag.getString("Symbol");showLabels=!tag.contains("ShowLabels")||tag.getBoolean("ShowLabels");if(level!=null&&level.isClientSide&&tag.contains("LidOpen"))viewers=tag.getBoolean("LidOpen")?1:0;}
     @Override public ClientboundBlockEntityDataPacket getUpdatePacket(){return ClientboundBlockEntityDataPacket.create(this);}
     @Override public void onDataPacket(net.minecraft.network.Connection connection,ClientboundBlockEntityDataPacket packet,HolderLookup.Provider lookup){if(packet.getTag()!=null)handleUpdateTag(packet.getTag(),lookup);}
     @Override public int getContainerSize(){return items.size();}
