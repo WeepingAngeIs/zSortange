@@ -67,7 +67,10 @@ public final class LiveViews {
   String reason=PocketService.authorize(p,r,PocketLeases.Kind.REMOTE,false,BasePermissions.VIEW);if(!reason.isEmpty())return reason;
   if(p.distanceToSqr(Vec3.atCenterOf(BlockPos.of(r.anchor().entrance())))>24*24)return "Preview distance exceeded";
   if(persistence&&RepairService.roomBlocked(r.id()))return "Persistence quarantine";
-  return "";
+  // View and home claims do not authorize a raw CE column. StorageAccessEvent can veto a
+  // single destination position and supplies no region-wide grant. This condition also
+  // gates retained load intent during a save, cached handles and source-side portal sync.
+  return "Remote terrain has no complete destination visibility check";
  }
  public static boolean valid(Handle h){
   if(server==null||!server.isSameThread())return false;
@@ -154,11 +157,13 @@ public final class LiveViews {
   if(map!=null){var chunks=map.entrySet().iterator();while(chunks.hasNext()){var row=chunks.next();long chunkKey=row.getKey();var players=row.getValue().entrySet().iterator();while(players.hasNext()){var en=players.next();var recipient=en.getKey();if(!allowedColumn(recipient,chunkKey)){
    // fastutil invalidates its MapEntry when iterator.remove() runs. Keep stable
    // recipient/column values before removal; never read the removed entry again.
-   var rec=en.getValue();rec.isValid=false;players.remove();if(rec.isLoadedToPlayer&&recipient.connection!=null)PacketFence.forget(recipient,chunkKey);
+   var rec=en.getValue();rec.isValid=false;players.remove();
   }}if(row.getValue().isEmpty())chunks.remove();}}
   for(var p:server.getPlayerList().getPlayers()){
    var info=ImmPtlChunkTracking.getPlayerInfo(p);info.additionalChunkLoaders.removeIf(l->protectedDimension(l.dimension()));
    for(var row:info.distanceToPendingChunks)if(row!=null)row.removeIf(rec->protectedDimension(rec.dimension)&&(!rec.isValid||!allowedColumn(p,rec.chunkPos)));
+   // A delivered column can outlive its CE watch or the watch's isLoadedToPlayer flag.
+   PacketFence.reconcileDelivered(p);
    if(!anyAccess(p))info.visibleDimensions.remove(PocketService.DIMENSION);
   }
   var l=PocketService.dimension(server);if(l!=null){Set<Long> union=new HashSet<>();for(var p:server.getPlayerList().getPlayers())union.addAll(requested(p));ImmPtlChunkTickets.get(l).purge(l,union::contains);}
@@ -171,7 +176,9 @@ public final class LiveViews {
  @SubscribeEvent(priority=EventPriority.HIGHEST)
  public static void logout(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent e){
   if(!ENABLED||server==null||!(e.getEntity() instanceof ServerPlayer p)||p.getServer()!=server)return;
-  closePlayer(p);
+  var current = server.getPlayerList().getPlayer(p.getUUID());
+  if (current == null || current == p) closePlayer(p);
+  PacketFence.disconnected(p);
  }
  @SubscribeEvent public static void started(ServerStartedEvent e){server=e.getServer();stopping=failed=pressure=false;HANDLES.clear();PacketFence.clear();if(ENABLED){owner();watches();}}
  @SubscribeEvent(priority=EventPriority.HIGHEST) public static void tick(ServerTickEvent.Pre e){if(!ENABLED||server!=e.getServer())return;try{
