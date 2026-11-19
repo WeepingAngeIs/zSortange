@@ -34,6 +34,7 @@ gradle.beforeProject { p -> p.afterEvaluate {
             systemProperty 'anya.role', role
             systemProperty 'anya.control', new File(base, 'control').absolutePath
             systemProperty 'anya.runtimeManifest', new File(base, 'control/inputs.json').absolutePath
+            if (p.hasProperty('stillFrameTrial')) systemProperty 'anyastorage.stillFramePeek', 'true'
             for (key in ['anyastorage.pocketPrototype', 'anya.nonblockingPrepare', 'anya.minimalOwnership',
                          'anya.serializationBudget', 'anya.backpressure', 'anya.repairJournal']) {
                 systemProperty key, 'true'

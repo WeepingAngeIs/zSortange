@@ -21,6 +21,8 @@ SERVER = BASE / "server"
 ROLES = ("Alpha", "Beta")
 CE_DIGEST = "6c58d232328146c9b76ceee1eb53969a149ce97ace5af4b50424a30581bf6187"
 ART2_DIGEST = "0a7eb462e4256518b2bed9b52e782b80649a03f4068ebdad0f6742a1a6515ea7"
+STILL_TRIAL = os.environ.get("ANYA_STILL_TRIAL") == "1"
+VERSION = "0.3.0-beta.7-still.1" if STILL_TRIAL else "0.3.0-beta.7-art.2"
 SAFETY_FLAGS = ["anyastorage.pocketPrototype", "anya.nonblockingPrepare", "anya.minimalOwnership",
                 "anya.serializationBudget", "anya.backpressure", "anya.repairJournal"]
 SPEC = json.loads((ROOT / "fixtures/renderer-prereq/inputs.json").read_text())
@@ -68,11 +70,18 @@ def verify_inputs():
     ce = ROOT / "build/ce-control/approved-ce.jar"
     check((publisher / "STATIC_VERIFIED").is_file(), "Publisher preflight missing")
     check((ce.parent / "CE_BINARY_VERIFIED").read_text().strip() == CE_DIGEST, "Unverified CE candidate")
-    base = ROOT / "build/libs/anya-storage-plus-0.3.0-beta.7-art.2.jar"
-    safety = ROOT / "build/operator/anya-operator-resolution-experiment-0.3.0-beta.7-art.2.jar"
-    fixture = BASE / "anya-hosted-visual-privacy-0.3.0-beta.7-art.2.jar"
+    base = ROOT / f"build/libs/anya-storage-plus-{VERSION}.jar"
+    safety = ROOT / f"build/operator/anya-operator-resolution-experiment-{VERSION}.jar"
+    fixture = BASE / f"anya-hosted-visual-privacy-{VERSION}.jar"
     publisher_files = {a["mod_id"]: publisher / "verified-jars" / a["filename"] for a in SPEC["artifacts"]}
-    pins = {base: ART2_DIGEST, safety: SPEC["safety_sha256"], ce: CE_DIGEST}
+    base_digest = ART2_DIGEST
+    if STILL_TRIAL:
+        check((EVIDENCE / "SOURCE_COMMIT.txt").read_text().strip() == os.environ["GITHUB_SHA"],
+              "Candidate source differs from the branch run")
+        base_digest, artifact = (EVIDENCE / "still-candidate.sha256").read_text().split()
+        check(artifact == base.relative_to(ROOT).as_posix() and base_digest != ART2_DIGEST,
+              "Candidate build receipt does not identify the still-frame JAR")
+    pins = {base: base_digest, safety: SPEC["safety_sha256"], ce: CE_DIGEST}
     for artifact in SPEC["artifacts"]:
         pins[publisher_files[artifact["mod_id"]]] = artifact["sha256"]
     pins[fixture] = baseline.sha(fixture)
@@ -84,7 +93,7 @@ def verify_inputs():
         for path, pin in pins.items():
             out.write(f"{pin}  {path.relative_to(ROOT)}\n")
     common = {"minecraft": {"version": "1.21.1"}, "neoforge": {"version": "21.1.249"},
-              "anyastorage": {"sha256": pins[base], "version": "0.3.0-beta.7-art.2"},
+              "anyastorage": {"sha256": pins[base], "version": VERSION},
               "anyadurableprobe": {"sha256": pins[safety]}, "anyavisualcheck": {"sha256": pins[fixture]}}
     for mod_id in ("imm_ptl", "immersive_portals_core", "q_misc_util"):
         common[mod_id] = {"version": "6.1.4", "sha256": pins[ce]}
@@ -161,7 +170,8 @@ def prepare(launches):
     write(EVIDENCE / "host.json", {"platform": platform.uname()._asdict(), "ce_source": APPROVAL["commit"],
         "minecraft": SPEC["minecraft"], "neoforge": SPEC["neoforge"], "shader_enabled": False,
         "server_heap_mib": 2048, "client_heap_mib": 1000, "target_gpu": False, "render_options": options,
-        "ce_options": ce_config, "scene": "art.2 illustrated entrance", "live_adapter_loaded": False})
+        "ce_options": ce_config, "scene": "single approved material on a still" if STILL_TRIAL else "art.2 illustrated entrance",
+        "live_adapter_loaded": False})
 
 
 def main():
@@ -204,6 +214,8 @@ def main():
     try:
         prepare(launches)
         flags = ["-D" + name + "=true" for name in SAFETY_FLAGS]
+        if STILL_TRIAL:
+            flags.append("-Danyastorage.stillFramePeek=true")
         flags += [f"-Danya.control={CONTROL}", f"-Danya.runtimeManifest={CONTROL / 'inputs.json'}"]
         server = launch("server", ["java", "-Xmx2048m", "-Xms256m", *flags,
                         "@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt", "nogui"], SERVER)
@@ -224,7 +236,9 @@ def main():
                   f"{role} did not finish its measurements and exit cleanly")
         check(not list(CONTROL.glob("FAILED*")), "A fixture reported a failure")
         for role in ROLES:
-            for phase in ("public", "granted", "revoked"):
+            photos = (("public", "granted", "changed", "cell_denied", "resumed", "revoked", "regranted", "final_public")
+                      if STILL_TRIAL else ("public", "granted", "revoked"))
+            for phase in photos:
                 check((CONTROL / f"{phase}-{role}.png").stat().st_size > 0, f"Frame missing for {phase} {role}")
             for filename in (f"backend-{role}.json", f"runtime-mods-{role}.json"):
                 json.loads((CONTROL / filename).read_text())
@@ -246,7 +260,7 @@ def main():
         for handle in logs:
             handle.close()
         write(EVIDENCE / "process-result.json", {"scene_completed": passed,
-              "frame_verification": "separate check_frames.py receipt required", "launched": list(processes),
+              "frame_verification": "separate framebuffer comparison receipt required", "launched": list(processes),
               "server_exit": processes["server"].returncode if "server" in processes else None})
         write(EVIDENCE / "resources.json", samples)
         shutil.copytree(CONTROL, EVIDENCE / "control")

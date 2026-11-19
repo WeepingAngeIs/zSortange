@@ -9,6 +9,7 @@ import dev.anya.storage.BagInventory;
 import dev.anya.storage.BasePermissions;
 import dev.anya.storage.Content;
 import dev.anya.storage.ExpansionRules;
+import dev.anya.storage.StorageAccessEvent;
 import dev.anya.storage.StorageEntity;
 import dev.anya.storage.pocket.PocketContent;
 import dev.anya.storage.pocket.PocketLeases;
@@ -46,6 +47,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -71,7 +73,8 @@ public final class VisualServer {
     private static final Vec3 WALK_SOUTH = new Vec3(8.5, 81, 3.5);
     private static final Vec3 WALK_EAST = new Vec3(10.5, 81, 1.5);
     private static final String ITEM_NAME = "Visual fixture private chest item";
-    private enum Step { CONNECT, PREPARE, RETURN, PUBLIC, GRANTED, USE, REVOKED, WALK, STOP }
+    private static final boolean STILL = Boolean.getBoolean("anyastorage.stillFramePeek");
+    private enum Step { CONNECT, PREPARE, RETURN, PUBLIC, GRANTED, CHANGED, CELL_DENIED, RESUMED, USE, REVOKED, REGRANTED, FINAL_PUBLIC, WALK, STOP }
     private static Path dir;
     private static MinecraftServer server;
     private static ServerLevel target;
@@ -87,6 +90,9 @@ public final class VisualServer {
     private static final Map<UUID, Integer> sourceUses = new HashMap<>();
     private static final JsonObject result = new JsonObject();
     private static final JsonObject phaseTicks = new JsonObject();
+    private static final JsonObject markerWrites = new JsonObject();
+    private static BlockPos marker;
+    private static int exactVetoes;
     private static int otherUses, dimensionChanges, viewerDimensionChangesSinceLogin, started, observedTicks;
     private static boolean measuring;
     private static Step step;
@@ -175,6 +181,25 @@ public final class VisualServer {
                 case GRANTED -> {
                     if (!bothDone()) return;
                     rights(true);
+                    if (STILL) {
+                        writeMarker("changed", Blocks.PURPLE_CONCRETE);
+                        publish(Step.CHANGED);
+                    } else publish(Step.USE);
+                }
+                case CHANGED -> {
+                    if (!bothDone()) return;
+                    publish(Step.CELL_DENIED);
+                    writeMarker("cell_denied", Blocks.CYAN_CONCRETE);
+                }
+                case CELL_DENIED -> {
+                    if (!bothDone()) return;
+                    require(exactVetoes > 0, "Expected a destination check for the actor at the sampled cell");
+                    rights(true);
+                    publish(Step.RESUMED);
+                }
+                case RESUMED -> {
+                    if (!bothDone()) return;
+                    rights(true);
                     publish(Step.USE);
                 }
                 case USE -> {
@@ -184,13 +209,26 @@ public final class VisualServer {
                     rights(true);
                     hub.removeMember(alpha.getUUID());
                     rights(false);
+                    if (STILL) writeMarker("revoked", Blocks.PURPLE_CONCRETE);
                     publish(Step.REVOKED);
                 }
                 case REVOKED -> {
                     if (!bothDone()) return;
-                    pose(alpha, WALK_SOUTH);
-                    pose(beta, WALK_EAST);
-                    publish(Step.WALK);
+                    if (STILL) {
+                        hub.setMember(alpha.getUUID(), BasePermissions.VIEW);
+                        rights(true);
+                        publish(Step.REGRANTED);
+                    } else startWalk();
+                }
+                case REGRANTED -> {
+                    if (!bothDone()) return;
+                    hub.removeMember(alpha.getUUID());
+                    rights(false);
+                    publish(Step.FINAL_PUBLIC);
+                }
+                case FINAL_PUBLIC -> {
+                    if (!bothDone()) return;
+                    startWalk();
                 }
                 case WALK -> {
                     if (!bothDone()) return;
@@ -271,6 +309,38 @@ public final class VisualServer {
         item.set(DataComponents.CUSTOM_NAME, Component.literal(ITEM_NAME));
         chest.setItem(0, item);
         require(PocketRoomLayout.present(target, room).size() == 5, "Expected four starter chests and pad eight");
+        if (STILL) {
+            marker = new BlockPos(room.x() + 24, 68, room.z() + 24);
+            require(target.isEmptyBlock(marker) && target.getChunkAt(marker).getBlockEntities().isEmpty(),
+                    "Expected an empty decoration cell in the disposable room");
+            writeMarker("setup", Blocks.CYAN_CONCRETE);
+        }
+    }
+
+    private static void writeMarker(String phase, Block block) {
+        require(target.hasChunkAt(marker) && target.setBlockAndUpdate(marker, block.defaultBlockState()),
+                "Expected a genuine change in the warm disposable room");
+        var applied = target.getBlockState(marker);
+        require(applied.is(block), "Marker readback differs from the server edit");
+        var value = new JsonObject();
+        value.addProperty("tick", server.getTickCount());
+        value.addProperty("block", net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(applied.getBlock()).toString());
+        markerWrites.add(phase, value);
+    }
+
+    @SubscribeEvent
+    public static void denySample(StorageAccessEvent event) {
+        if (STILL && step == Step.CELL_DENIED && event.player == alpha && event.level == target
+                && event.position.equals(marker)) {
+            exactVetoes++;
+            event.setCanceled(true);
+        }
+    }
+
+    private static void startWalk() throws IOException {
+        pose(alpha, WALK_SOUTH);
+        pose(beta, WALK_EAST);
+        publish(Step.WALK);
     }
 
     private static void rights(boolean alphaView) {
@@ -352,7 +422,10 @@ public final class VisualServer {
                 && chest.getItem(0).is(Items.EMERALD) && chest.getItem(0).getCount() == 11
                 && chest.getItem(0).getHoverName().getString().equals(ITEM_NAME), "Destination chest or its item changed");
         result.addProperty("room", room.id().toString());
-        result.addProperty("diagram_mask", 143);
+        if (STILL) {
+            result.add("marker_writes", markerWrites);
+            result.addProperty("exact_cell_vetoes", exactVetoes);
+        } else result.addProperty("diagram_mask", 143);
         result.addProperty("authorized_role", "Alpha");
         result.addProperty("never_authorized_role", "Beta");
         result.addProperty("home_only_observation_ticks", observedTicks);
@@ -376,7 +449,9 @@ public final class VisualServer {
         require(target.getForcedChunks().isEmpty(), "Fixture-owned destination column remained forced");
         result.addProperty("forced_columns_after_cleanup", target.getForcedChunks().size());
         result.add("phase_start_ticks", phaseTicks);
-        result.addProperty("scope", "Solid illustrated fallback in art.2 running with CE. Normal source-block click and walking, distinct from an active live portal.");
+        result.addProperty("scope", STILL
+                ? "One real allowlisted block state sampled on the server. The corner and closed chest are public illustrations."
+                : "Solid illustrated fallback in art.2 running with CE. Normal source-block click and walking, distinct from an active live portal.");
         Files.writeString(dir.resolve("server-result.json"), new GsonBuilder().setPrettyPrinting().create().toJson(result) + "\n",
                 StandardOpenOption.CREATE_NEW);
         measuring = false;

@@ -1,7 +1,7 @@
-name: Two-player entrance preview
+name: Two-player still-frame peek
 on:
   push:
-    branches: [experiment/live-room-visual-privacy]
+    branches: [experiment/still-frame-peek]
 permissions:
   contents: read
 concurrency:
@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   visual:
-    name: Two clients before and after trust changes
+    name: Approved tile, two viewers and stale-frame retirement
     if: github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 32
@@ -40,6 +40,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
         with:
           gradle-version: '8.14.3'
+      - name: Check revocation and frame ordering independently
+        run: |
+          mkdir -p "$RUNNER_TEMP/still-state"
+          javac --release 21 -d "$RUNNER_TEMP/still-state" src/main/java/dev/anya/storage/pocket/StillFrameState.java fixtures/visual-privacy/unit/StillFrameStateCheck.java
+          java -cp "$RUNNER_TEMP/still-state" dev.anya.storage.pocket.StillFrameStateCheck
       - name: Build the approved CE source and check its archive
         env:
           ANYA_WORKSPACE: ${{ github.workspace }}
@@ -48,23 +53,25 @@ jobs:
             -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" \
             -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar
           python3 fixtures/ce-control/provenance.py verify
-      - name: Package art.2 and the two-client fixture
+      - name: Package the isolated still candidate and record its binary identity
         run: |
-          timeout --kill-after=15s 300s gradle --no-daemon --max-workers=2 -I fixtures/visual-privacy/init.gradle exportVisualPrivacy
+          timeout --kill-after=15s 300s gradle --no-daemon --max-workers=2 -I fixtures/visual-privacy/init.gradle -PstillFrameTrial exportVisualPrivacy
+          sha256sum build/libs/anya-storage-plus-0.3.0-beta.7-still.1.jar > build/visual-privacy/evidence/still-candidate.sha256
       - name: Prepare software graphics
         run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 python3-pil
       - name: Boot one isolated server and two graphical clients on loopback
         env:
           LIBGL_ALWAYS_SOFTWARE: 'true'
+          ANYA_STILL_TRIAL: '1'
         run: |
           xvfb-run -a -s '-screen 0 1920x1200x24' python3 fixtures/visual-privacy/run.py
       - name: Compare both players' captured frames
         run: |
-          /usr/bin/python3 fixtures/visual-privacy/check_frames.py build/visual-privacy/evidence build/libs/anya-storage-plus-0.3.0-beta.7-art.2.jar
+          /usr/bin/python3 fixtures/visual-privacy/check_still_frames.py build/visual-privacy/evidence build/libs/anya-storage-plus-0.3.0-beta.7-still.1.jar
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: visual-privacy-evidence-${{ github.sha }}
+          name: still-peek-evidence-${{ github.sha }}
           path: |
             build/visual-privacy/evidence/
             build/ce-control/evidence/ce-binary.json

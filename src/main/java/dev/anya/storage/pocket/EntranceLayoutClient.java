@@ -29,6 +29,9 @@ public final class EntranceLayoutClient {
     private static long token;
     private static long nextToken, tick, nextRequest, validUntilTick, validUntilNanos;
     private static int mask = -1;
+    private static boolean still;
+    private static final StillFrameState frame = new StillFrameState();
+    static { PocketPadPackets.stillReceiver = EntranceLayoutClient::receiveStill; }
 
     @SubscribeEvent
     public static void tick(ClientTickEvent.Post event) {
@@ -37,17 +40,20 @@ public final class EntranceLayoutClient {
         ClientPacketListener current = mc.getConnection();
         PocketContent.EntranceEntity picked = pickedEntrance(mc);
         if (target != null && (connection != current || target != picked || expired())) clear(true);
-        if (picked == null || current == null || tick < nextRequest || !current.getConnection().isConnected()
-                || !current.hasChannel(PocketPadPackets.Focus.TYPE)) return;
+        if (picked == null || current == null || tick < nextRequest || !current.getConnection().isConnected()) return;
         if (target == null) {
+            still = PocketPadPackets.STILL_ENABLED && current.hasChannel(PocketPadPackets.StillFocus.TYPE)
+                    && current.hasChannel(PocketPadPackets.StillUpdate.TYPE);
+            if (!still && !current.hasChannel(PocketPadPackets.Focus.TYPE)) return;
             target = picked;
             connection = current;
             // Keep the sequence across disconnects. Every later acquisition has its own nonce.
             token = ++nextToken;
+            if (still) frame.begin(token);
             renewDeadline();
         }
         nextRequest = tick + RENEW_TICKS;
-        PacketDistributor.sendToServer(new PocketPadPackets.Focus(target.getBlockPos(), token, true));
+        sendFocus(current, target, token, still, true);
     }
 
     @SubscribeEvent
@@ -72,7 +78,7 @@ public final class EntranceLayoutClient {
     }
 
     public static void receive(Connection source, PocketPadPackets.Update update) {
-        if (target == null || connection.getConnection() != source || update.token() != token
+        if (still || target == null || connection.getConnection() != source || update.token() != token
                 || !target.getBlockPos().equals(update.pos()) || !validateFocus()) return;
         if (update.mask() < 0) {
             // Retire this nonce immediately; even a delayed grant for it can no longer display.
@@ -81,6 +87,18 @@ public final class EntranceLayoutClient {
         }
         mask = update.mask();
         renewDeadline();
+    }
+
+    public static void receiveStill(Connection source, PocketPadPackets.StillUpdate update) {
+        if (!still || target == null || connection.getConnection() != source || update.token() != token
+                || !target.getBlockPos().equals(update.pos()) || !validateFocus()) return;
+        if (!frame.apply(update.token(), update.sequence(), update.material())) return;
+        if (update.material() == PocketPadPackets.PUBLIC) clear(false);
+        else renewDeadline();
+    }
+
+    public static int visibleStill(PocketContent.EntranceEntity entrance) {
+        return still && target != null && target == entrance && validateFocus() ? frame.material() : PocketPadPackets.PUBLIC;
     }
 
     /** The renderer and the hosted fixture both use this exact visibility decision. */
@@ -119,15 +137,24 @@ public final class EntranceLayoutClient {
         PocketContent.EntranceEntity previous = target;
         ClientPacketListener previousConnection = connection;
         long previousToken = token;
+        boolean previousStill = still;
         mask = -1;
+        still = false;
+        frame.clear();
         target = null;
         connection = null;
         token = 0;
         validUntilTick = validUntilNanos = 0;
         if (previous != null && notify && previousConnection == Minecraft.getInstance().getConnection()
-                && previousConnection.getConnection().isConnected() && previousConnection.hasChannel(PocketPadPackets.Focus.TYPE)) {
-            PacketDistributor.sendToServer(new PocketPadPackets.Focus(previous.getBlockPos(), previousToken, false));
-        }
+                && previousConnection.getConnection().isConnected()) sendFocus(previousConnection, previous, previousToken, previousStill, false);
+    }
+
+    private static void sendFocus(ClientPacketListener listener, PocketContent.EntranceEntity entrance, long nonce,
+                                  boolean useStill, boolean watching) {
+        if (useStill && listener.hasChannel(PocketPadPackets.StillFocus.TYPE))
+            PacketDistributor.sendToServer(new PocketPadPackets.StillFocus(entrance.getBlockPos(), nonce, watching));
+        else if (!useStill && listener.hasChannel(PocketPadPackets.Focus.TYPE))
+            PacketDistributor.sendToServer(new PocketPadPackets.Focus(entrance.getBlockPos(), nonce, watching));
     }
 
     private EntranceLayoutClient() {}

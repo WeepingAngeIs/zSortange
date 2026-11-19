@@ -8,6 +8,6 @@ displayName="Disposable graphical entrance check"
 [[dependencies.anyavisualcheck]]
 modId="anyastorage"
 type="required"
-versionRange="[0.3.0-beta.7-art.2]"
+versionRange="[0.3.0-beta.7-still.1]"
 ordering="AFTER"
 side="BOTH"

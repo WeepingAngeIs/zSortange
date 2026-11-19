@@ -19,13 +19,17 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 
-/** Draws the public study or a short-lived schematic of the eight registered chest pads. */
+/** Draws public artwork, an authorized pad plan, or a synthetic still with one authorized tile. */
 @EventBusSubscriber(modid = AnyaStorage.ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketContent.EntranceEntity> {
     private static final ResourceLocation STUDY = ResourceLocation.fromNamespaceAndPath(
             AnyaStorage.ID, "textures/entity/starter_room_study.png");
     private static final ResourceLocation PLAN = ResourceLocation.fromNamespaceAndPath(
             AnyaStorage.ID, "textures/entity/pocket_pad_plan.png");
+    private static final ResourceLocation CYAN_STILL = ResourceLocation.fromNamespaceAndPath(
+            AnyaStorage.ID, "textures/entity/synthetic_peek_cyan.png");
+    private static final ResourceLocation PURPLE_STILL = ResourceLocation.fromNamespaceAndPath(
+            AnyaStorage.ID, "textures/entity/synthetic_peek_purple.png");
     // Face texels in the art atlas, ordered as the four starters then the four optional pads.
     private static final int[] PAD_X = {88,110,131,153,76,97,161,183};
     private static final int[] PAD_Y = {116,117,119,121,136,137,142,144};
@@ -59,9 +63,18 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         pose.pushPose();
         pose.translate(.5, .5, .5);
         pose.mulPose(Axis.YP.rotationDegrees(180 - face.toYRot()));
-        int mask = EntranceLayoutClient.visibleMask(entrance);
+        // Select anew for this draw. The still contains public model art; its single tile
+        // changes only on a currently authorized sample. The renderer holds no private image.
+        ResourceLocation still = switch (EntranceLayoutClient.visibleStill(entrance)) {
+            case PocketPadPackets.CYAN -> CYAN_STILL;
+            case PocketPadPackets.PURPLE -> PURPLE_STILL;
+            default -> null;
+        };
+        int mask = still == null ? EntranceLayoutClient.visibleMask(entrance) : -1;
         boolean plan = mask >= 0;
-        VertexConsumer material = buffers.getBuffer(RenderType.entityCutout(plan ? PLAN : STUDY));
+        ResourceLocation surface = plan ? PLAN : STUDY;
+        if (still != null) surface = still;
+        VertexConsumer material = buffers.getBuffer(RenderType.entityCutout(surface));
         // The diagram and its repeated chest sprites share one public atlas and one render type.
         quad(pose, material, face, 0, 0, 1, 1, 0, 0, plan ? .5f : 1, 1, -.501f, overlay);
         if (plan) {

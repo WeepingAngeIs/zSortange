@@ -59,9 +59,17 @@ public final class VisualClient {
     private static final String VISIT_DENIAL = "[Anya Storage] Pocket permission denied; Visit is separate from storage rights";
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String ROLE = System.getProperty("anya.role");
+    private static final boolean STILL = Boolean.getBoolean("anyastorage.stillFramePeek");
     private static final AtomicInteger watches = new AtomicInteger();
     private static final AtomicInteger grants = new AtomicInteger();
     private static final AtomicInteger clears = new AtomicInteger();
+    private static final AtomicInteger stillGrants = new AtomicInteger(), stillClears = new AtomicInteger();
+    private static volatile PocketPadPackets.StillUpdate lastCyan;
+    private static volatile long stillFocusToken;
+    private static volatile int positivesAtLastStillClear;
+    private static PocketPadPackets.StillUpdate heldFrame;
+    private static int clearsAtUse, clearsAtGrant, clearsAtRegrant;
+    private static boolean staleRejectedAfterClear, staleRejectedAfterRegrant;
     private static int age, stable, phaseTicks, clearsWhenGranted, initialPocketChunks = -1;
     private static int useTick, walkTicks, contactTicks;
     private static int useDenials;
@@ -75,6 +83,8 @@ public final class VisualClient {
     private static Field clientWorlds;
     private static Vec3 walkStart;
     private static final Set<String> PHOTOS = Set.of("public", "granted", "revoked");
+    private static final Set<String> STILL_PHOTOS = Set.of("public", "granted", "changed", "cell_denied", "resumed",
+            "revoked", "regranted", "final_public");
 
     private static Path control() {
         require("true".equals(System.getenv("GITHUB_ACTIONS")) && Set.of("Alpha", "Beta").contains(ROLE),
@@ -124,6 +134,10 @@ public final class VisualClient {
         state.put("focus_requests", watches.get());
         state.put("grants", grants.get());
         state.put("clears", clears.get());
+        if (STILL) {
+            state.put("still_positive_received", stillGrants.get());
+            state.put("still_clears_received", stillClears.get());
+        }
         state.put("use_denials", useDenials);
         return state;
     }
@@ -144,6 +158,11 @@ public final class VisualClient {
             @Override public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
                 if (msg instanceof ServerboundCustomPayloadPacket packet && packet.payload() instanceof PocketPadPackets.Focus focus
                         && focus.watching() && ENTRANCE.equals(focus.pos())) watches.incrementAndGet();
+                if (STILL && msg instanceof ServerboundCustomPayloadPacket packet && packet.payload() instanceof PocketPadPackets.StillFocus focus
+                        && focus.watching() && ENTRANCE.equals(focus.pos())) {
+                    stillFocusToken = focus.token();
+                    watches.incrementAndGet();
+                }
                 super.write(ctx, msg, promise);
             }
 
@@ -151,6 +170,17 @@ public final class VisualClient {
                 if (msg instanceof ClientboundCustomPayloadPacket packet && packet.payload() instanceof PocketPadPackets.Update update
                         && ENTRANCE.equals(update.pos())) {
                     if (update.mask() >= 0) grants.incrementAndGet(); else clears.incrementAndGet();
+                }
+                if (STILL && msg instanceof ClientboundCustomPayloadPacket packet && packet.payload() instanceof PocketPadPackets.StillUpdate update
+                        && ENTRANCE.equals(update.pos())) {
+                    if (update.material() == 0) {
+                        positivesAtLastStillClear = stillGrants.get();
+                        stillClears.incrementAndGet();
+                    }
+                    else {
+                        stillGrants.incrementAndGet();
+                        if (update.material() == 1) lastCyan = update;
+                    }
                 }
                 super.channelRead(ctx, msg);
             }
@@ -204,7 +234,41 @@ public final class VisualClient {
     }
 
     private static int expectedMask() {
-        return ROLE.equals("Alpha") && (phase.equals("granted") || phase.equals("use")) ? 143 : -1;
+        return !STILL && ROLE.equals("Alpha") && (phase.equals("granted") || phase.equals("use")) ? 143 : -1;
+    }
+
+    private static int expectedStill() {
+        if (!STILL || !ROLE.equals("Alpha")) return 0;
+        return switch (phase) {
+            case "granted", "resumed", "use" -> 1;
+            case "changed", "regranted" -> 2;
+            default -> 0;
+        };
+    }
+
+    private static boolean observedClear() {
+        if (!ROLE.equals("Alpha")) return true;
+        if (!STILL) return !phase.equals("revoked") || clears.get() > clearsWhenGranted;
+        return switch (phase) {
+            case "cell_denied" -> stillClears.get() > clearsAtGrant;
+            case "revoked" -> stillClears.get() > clearsAtUse;
+            case "final_public" -> stillClears.get() > clearsAtRegrant;
+            default -> true;
+        };
+    }
+
+    private static void checkLateFrame(PocketContent.EntranceEntity entrance) {
+        if (!STILL || !ROLE.equals("Alpha") || !phase.equals("revoked") && !phase.equals("regranted")) return;
+        require(heldFrame != null && heldFrame.material() == 1
+                        && (!phase.equals("regranted") || heldFrame.token() != stillFocusToken),
+                "Deferred work must come from the actual retired cyan focus");
+        // Replay a retained client work item from the earlier legal grant. No test packet is sent.
+        int before = EntranceLayoutClient.visibleStill(entrance);
+        EntranceLayoutClient.receiveStill(connection, heldFrame);
+        require(before == expectedStill() && before == EntranceLayoutClient.visibleStill(entrance),
+                "Earlier grant changed the displayed frame");
+        if (phase.equals("revoked")) staleRejectedAfterClear = true;
+        else staleRejectedAfterRegrant = true;
     }
 
     @SubscribeEvent
@@ -269,11 +333,13 @@ public final class VisualClient {
             }
             sourceOnly(mc);
             require(!ROLE.equals("Beta") || grants.get() == 0, "Untrusted viewer received a private pad layout");
+            require(!STILL || grants.get() == 0, "Still negotiation sent a private pad mask");
+            require(!ROLE.equals("Beta") || stillGrants.get() == 0, "Untrusted viewer received a marker material");
             if (phase.equals("walk")) {
                 if (!completed.equals(phase)) walk(mc);
                 return;
             }
-            require(PHOTOS.contains(phase) || phase.equals("use"), "Unknown phase " + phase);
+            require((STILL ? STILL_PHOTOS : PHOTOS).contains(phase) || phase.equals("use"), "Unknown phase " + phase);
             mc.options.hideGui = true;
             mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(ENTRANCE));
             var picked = hit(mc);
@@ -289,8 +355,8 @@ public final class VisualClient {
             }
             int mask = EntranceLayoutClient.visibleMask(entrance);
             observedMask = mask;
-            if (mask != expectedMask() || watches.get() == 0 ||
-                    (phase.equals("revoked") && ROLE.equals("Alpha") && clears.get() <= clearsWhenGranted)) {
+            if (mask != expectedMask() || watches.get() == 0 || !observedClear()
+                    || STILL && EntranceLayoutClient.visibleStill(entrance) != expectedStill()) {
                 stable = 0;
                 waitFor(mc, "applied mask " + expectedMask() + ", focus request and any expected clear");
                 return;
@@ -299,6 +365,7 @@ public final class VisualClient {
                 waitFor(mc, "stable focused image");
                 return;
             }
+            checkLateFrame(entrance);
             if (phase.equals("use")) use(mc, picked);
             else {
                 waitFor(mc, "finished render frame");
@@ -319,6 +386,13 @@ public final class VisualClient {
                     ? EntranceLayoutClient.visibleMask(entrance) : -1;
             if (hit(mc) == null || !(mc.level.getBlockEntity(ENTRANCE) instanceof PocketContent.EntranceEntity)
                     || appliedMask != expectedMask()) {
+                stable = 0;
+                capture = false;
+                return;
+            }
+            var stillEntrance = (PocketContent.EntranceEntity) mc.level.getBlockEntity(ENTRANCE);
+            int appliedStill = STILL ? EntranceLayoutClient.visibleStill(stillEntrance) : 0;
+            if (STILL && appliedStill != expectedStill()) {
                 stable = 0;
                 capture = false;
                 return;
@@ -355,6 +429,18 @@ public final class VisualClient {
             state.put("side", face);
             state.put("watches", watches.get());
             state.put("positive_received", grants.get());
+            if (STILL) {
+                require(appliedStill == 0 || stillGrants.get() > 0, "No entitled still received");
+                if (appliedStill == 0) require(stillGrants.get() == positivesAtLastStillClear,
+                        "Private marker material arrived after a clear or before the first grant");
+                if (ROLE.equals("Alpha") && phase.equals("changed")) clearsAtGrant = stillClears.get();
+                if (ROLE.equals("Alpha") && phase.equals("regranted")) clearsAtRegrant = stillClears.get();
+                state.put("still_material", appliedStill);
+                state.put("still_positive_received", stillGrants.get());
+                state.put("still_clears_received", stillClears.get());
+                state.put("late_frame_rejected_after_clear", staleRejectedAfterClear);
+                state.put("late_frame_rejected_after_new_grant", staleRejectedAfterRegrant);
+            }
             state.put("clears_received", clears.get());
             state.put("portals_rendered_this_frame", portals);
             state.put("rendered_dimensions", dimensions.stream().map(Object::toString).sorted().toList());
@@ -395,6 +481,12 @@ public final class VisualClient {
         if (age - useTick >= 12) {
             // The server waits for this receipt before revoking View.
             if (ROLE.equals("Alpha")) clearsWhenGranted = clears.get();
+            if (STILL && ROLE.equals("Alpha")) {
+                clearsAtUse = stillClears.get();
+                heldFrame = lastCyan;
+                require(heldFrame != null && heldFrame.token() == stillFocusToken && heldFrame.material() == 1,
+                        "Need an actual current authorized cyan frame to defer past revoke");
+            }
             ack(Map.of("home_dimension", mc.level.dimension().location().toString(), "target", picked.getBlockPos().asLong(),
                     "side", side().name(), "interaction_result", useResult, "observed_ticks_after_use", age - useTick,
                     "denial_count", useDenials, "denial_message", denialMessage));

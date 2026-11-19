@@ -13,11 +13,15 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.Connection;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -35,29 +39,40 @@ public final class PocketPadObservation {
     private static final int HEARTBEAT = 10;
     private static final int MAX_SESSION = 1200;
     private static final Map<ServerPlayer, Focus> viewers = new IdentityHashMap<>();
+    // One watermark per connected still viewer. A renewal already in transit cannot reopen a revoked grant.
+    private static final Map<ServerPlayer, Long> retiredStillTokens = new IdentityHashMap<>();
 
     private static final class Focus {
         final BlockPos pos;
         final long token;
         final ServerLevel home;
         final long started;
+        final boolean still;
+        final Connection socket;
         long renewed, sent;
-        int mask = -1;
+        long sequence;
+        boolean published;
         PocketLedger.Pocket pocket;
         PocketContent.EntranceEntity entrance;
         StorageEntity hub;
         final UUID[] originalChests = new UUID[4];
 
-        Focus(ServerPlayer player, BlockPos pos, long token, long now) {
+        Focus(ServerPlayer player, BlockPos pos, long token, long now, boolean still) {
             this.pos = pos.immutable();
             this.token = token;
             home = player.serverLevel();
             started = renewed = now;
+            this.still = still;
+            socket = player.connection.getConnection();
         }
     }
 
     /** A packet requests attention only. The bounded server tick performs every private read. */
     public static void focus(ServerPlayer player, BlockPos pos, long token) {
+        focus(player, pos, token, false);
+    }
+
+    static void focus(ServerPlayer player, BlockPos pos, long token, boolean still) {
         var server = player.getServer();
         if (server == null || !server.isSameThread() || token <= 0 || !PocketService.enabled()
                 || !player.isAlive() || player.isSpectator() || PocketService.inPocket(player.level())
@@ -65,12 +80,19 @@ public final class PocketPadObservation {
                 || server.getPlayerList().getPlayer(player.getUUID()) != player) return;
         long now = server.overworld().getGameTime();
         Focus old = viewers.get(player);
+        if (old != null && old.socket != player.connection.getConnection()) {
+            viewers.remove(player);
+            retiredStillTokens.remove(player);
+            old = null;
+        }
+        if (still && (!PocketPadPackets.STILL_ENABLED || token <= retiredStillTokens.getOrDefault(player, 0L)
+                || old != null && old.still && token < old.token)) return;
         if (old != null && old.token == token) {
-            if (old.home == player.level() && old.pos.equals(pos)) old.renewed = now;
+            if (old.still == still && old.home == player.level() && old.pos.equals(pos)) old.renewed = now;
             return;
         }
         if (old != null) clear(player, old);
-        if (viewers.size() < MAX_VIEWERS) viewers.put(player, new Focus(player, pos, token, now));
+        if (viewers.size() < MAX_VIEWERS) viewers.put(player, new Focus(player, pos, token, now, still));
     }
 
     public static void unfocus(ServerPlayer player, BlockPos pos, long token) {
@@ -80,8 +102,19 @@ public final class PocketPadObservation {
     }
 
     private static void clear(ServerPlayer player, Focus focus) {
-        if (viewers.remove(player, focus) && focus.mask >= 0) {
-            PocketPadPackets.send(player, focus.pos, focus.token, -1);
+        if (viewers.remove(player, focus) && focus.published) {
+            if (focus.still) {
+                retiredStillTokens.merge(player, focus.token, Math::max);
+                sendStill(player, focus, PocketPadPackets.PUBLIC);
+            } else PocketPadPackets.send(player, focus.pos, focus.token, -1);
+        }
+    }
+
+    private static void sendStill(ServerPlayer player, Focus focus, int material) {
+        if (player.connection.getConnection() == focus.socket && focus.socket.isConnected()
+                && player.connection.hasChannel(PocketPadPackets.StillUpdate.TYPE)) {
+            PacketDistributor.sendToPlayer(player, new PocketPadPackets.StillUpdate(
+                    focus.pos, focus.token, ++focus.sequence, material));
         }
     }
 
@@ -92,28 +125,30 @@ public final class PocketPadObservation {
         for (var player : new ArrayList<>(viewers.keySet())) {
             Focus focus = viewers.get(player);
             if (focus == null) continue;
-            if (server.getPlayerList().getPlayer(player.getUUID()) != player) {
+            if (server.getPlayerList().getPlayer(player.getUUID()) != player || player.connection.getConnection() != focus.socket) {
                 viewers.remove(player);
+                retiredStillTokens.remove(player);
                 continue;
             }
-            int mask = -1;
+            int value = -1;
             if (now - focus.renewed < RENEWAL_TIMEOUT && now - focus.started < MAX_SESSION
                     && player.serverLevel() == focus.home && player.isAlive() && !player.isRemoved()
                     && !player.isSpectator() && PocketService.enabled()) {
                 try {
-                    mask = sample(player, focus);
+                    value = sample(player, focus);
                 } catch (RuntimeException unavailable) {
                     // An incompatible claim hook, chunk future or modded outline must fail closed.
-                    mask = -1;
+                    value = -1;
                 }
             }
             if (viewers.get(player) != focus) continue;
-            if (mask < 0) {
+            if (value < 0) {
                 clear(player, focus);
-            } else if (focus.mask < 0 || now - focus.sent >= HEARTBEAT) {
-                focus.mask = mask;
+            } else if (!focus.published || now - focus.sent >= HEARTBEAT) {
+                focus.published = true;
                 focus.sent = now;
-                PocketPadPackets.send(player, focus.pos, focus.token, mask);
+                if (focus.still) sendStill(player, focus, value);
+                else PocketPadPackets.send(player, focus.pos, focus.token, value);
             }
         }
     }
@@ -149,6 +184,26 @@ public final class PocketPadObservation {
         if (!PocketService.homeAccess(player, pocket, hub, BasePermissions.VIEW).isEmpty()) return -1;
         var room = PocketService.dimension(player.getServer());
         if (room == null) return -1;
+        if (focus.still) {
+            BlockPos marker = new BlockPos(pocket.x() + 24, 68, pocket.z() + 24);
+            if (new LoadedPocketBlocks(room).chunk(marker.getX() >> 4, marker.getZ() >> 4) == null
+                    || !Safety.locationReason(player, room, marker).isEmpty()) return -1;
+            // The claim hook may revoke access or replace the watched objects. Validate identity again before reading.
+            if (viewers.get(player) != focus || player.serverLevel() != focus.home || !player.isAlive() || player.isSpectator()
+                    || !validHome(player, focus, pocket, hub, entrance, hubPos, policy)
+                    || !StillRepairGuard.permits(pocket.id(), new ChunkPos(marker).toLong())) return -1;
+            var local = new LoadedPocketBlocks(room);
+            var state = local.getBlockState(marker);
+            if (!local.complete()) return -1;
+            int material;
+            if (state.is(Blocks.CYAN_CONCRETE)) material = PocketPadPackets.CYAN;
+            else if (state.is(Blocks.PURPLE_CONCRETE)) material = PocketPadPackets.PURPLE;
+            else return -1;
+            focus.pocket = pocket;
+            focus.entrance = entrance;
+            focus.hub = hub;
+            return material;
+        }
         if (!new LoadedPocketBlocks(room).fullPlot(pocket)) return -1;
         var positions = new ArrayList<>(PocketService.chestPositions(pocket));
         positions.addAll(PocketRoomLayout.pads(pocket));
@@ -176,21 +231,29 @@ public final class PocketPadObservation {
             }
             mask |= 1 << i;
         }
-        var currentHome = new LoadedPocketBlocks(focus.home);
-        if (!roomBlocks.complete() || currentHome.getBlockEntity(hubPos) != hub
-                || currentHome.getBlockEntity(focus.pos) != entrance || hub.isRemoved() || entrance.isRemoved()
-                || !PocketService.enabled() || RoomEditor.quarantined(pocket.id()) || hub.profileRevision != policy
-                || !pocket.id().equals(entrance.pocket) || !pocket.owner().equals(entrance.owner)
-                || !pocket.owner().equals(hub.owner) || !hub.permits(player, BasePermissions.VIEW) || !Network.inRange(player, hub)
-                || PocketService.loadedPocket(player.getServer(), entrance.pocket) != pocket) return -1;
+        if (!roomBlocks.complete() || !validHome(player, focus, pocket, hub, entrance, hubPos, policy)) return -1;
         focus.pocket = pocket;
         focus.entrance = entrance;
         focus.hub = hub;
         return mask;
     }
 
+    private static boolean validHome(ServerPlayer player, Focus focus, PocketLedger.Pocket pocket, StorageEntity hub,
+                                     PocketContent.EntranceEntity entrance, BlockPos hubPos, long policy) {
+        var currentHome = new LoadedPocketBlocks(focus.home);
+        return currentHome.getBlockEntity(hubPos) == hub && currentHome.getBlockEntity(focus.pos) == entrance
+                && !hub.isRemoved() && !entrance.isRemoved() && !Transactions.quarantined(hub)
+                && PocketService.enabled() && !RoomEditor.quarantined(pocket.id()) && hub.profileRevision == policy
+                && pocket.id().equals(entrance.pocket) && pocket.owner().equals(entrance.owner)
+                && pocket.owner().equals(hub.owner) && hub.permits(player, BasePermissions.VIEW) && Network.inRange(player, hub)
+                && PocketService.loadedPocket(player.getServer(), entrance.pocket) == pocket;
+    }
+
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-        if (event.getEntity() instanceof ServerPlayer player) viewers.remove(player);
+        if (event.getEntity() instanceof ServerPlayer player) {
+            viewers.remove(player);
+            retiredStillTokens.remove(player);
+        }
     }
 
     @SubscribeEvent public static void changeDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
@@ -202,6 +265,7 @@ public final class PocketPadObservation {
 
     @SubscribeEvent public static void stop(ServerStoppingEvent event) {
         viewers.clear();
+        retiredStillTokens.clear();
     }
 
     private PocketPadObservation() {}
