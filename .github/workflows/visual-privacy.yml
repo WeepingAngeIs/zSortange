@@ -1,0 +1,74 @@
+name: Two-player entrance preview
+on:
+  push:
+    branches: [experiment/live-room-visual-privacy]
+permissions:
+  contents: read
+concurrency:
+  group: entrance-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  visual:
+    name: Two clients before and after trust changes
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Record source and verify the exact publisher renderer files
+        run: |
+          mkdir -p build/visual-privacy/evidence
+          git rev-parse HEAD > build/visual-privacy/evidence/SOURCE_COMMIT.txt
+          python3 fixtures/renderer-prereq/provenance.py build/renderer-prereq/provenance
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: UpperMoon0/ImmersivePortals
+          ref: ad2e7ee5d73e4ff78bd0befade4f797265e65939
+          path: build/ce-source
+          persist-credentials: false
+      - name: Verify pinned CE source and compiler inputs
+        run: python3 fixtures/ce-control/provenance.py prepare
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: '8.14.3'
+      - name: Build the approved CE source and check its archive
+        env:
+          ANYA_WORKSPACE: ${{ github.workspace }}
+        run: |
+          timeout --kill-after=20s 600s bash build/ce-source/gradlew --no-daemon --max-workers=2 \
+            -Dorg.gradle.jvmargs=-Xmx3G -p build/ce-source -I "$GITHUB_WORKSPACE/fixtures/ce-control/ce-build-scope.gradle" \
+            -Pneo_version=21.1.249 -PverificationSable=false -PverificationRendererStaged=true jar
+          python3 fixtures/ce-control/provenance.py verify
+      - name: Package art.2 and the two-client fixture
+        run: |
+          timeout --kill-after=15s 300s gradle --no-daemon --max-workers=2 -I fixtures/visual-privacy/init.gradle exportVisualPrivacy
+      - name: Prepare software graphics
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 python3-pil
+      - name: Boot one isolated server and two graphical clients on loopback
+        env:
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+        run: |
+          xvfb-run -a -s '-screen 0 1920x1200x24' python3 fixtures/visual-privacy/run.py
+      - name: Compare both players' captured frames
+        run: |
+          /usr/bin/python3 fixtures/visual-privacy/check_frames.py build/visual-privacy/evidence build/libs/anya-storage-plus-0.3.0-beta.7-art.2.jar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: visual-privacy-evidence-${{ github.sha }}
+          path: |
+            build/visual-privacy/evidence/
+            build/ce-control/evidence/ce-binary.json
+            build/ce-control/evidence/ce-source.json
+            build/renderer-prereq/provenance/provenance.json
+          if-no-files-found: error
+          retention-days: 14
