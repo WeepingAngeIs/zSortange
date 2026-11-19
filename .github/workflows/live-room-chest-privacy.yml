@@ -1,11 +1,15 @@
-name: Experimental live room chest privacy
+name: Experimental live room privacy
+run-name: "${{ github.ref_name }} dedicated server check"
 on:
   push:
-    branches: [experiment/live-room-chest-privacy]
+    branches: [experiment/live-room-chest-privacy, experiment/live-room-position-privacy]
 permissions:
   contents: read
 jobs:
-  chest-privacy:
+  privacy:
+    name: "${{ github.ref_name == 'experiment/live-room-position-privacy' && 'Position privacy and clean restart' || 'Chest privacy' }}"
+    env:
+      PRIVACY_CHECK: "${{ github.ref_name == 'experiment/live-room-position-privacy' && 'position' || 'chest' }}"
     if: github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -47,35 +51,67 @@ jobs:
           echo '6c58d232328146c9b76ceee1eb53969a149ce97ace5af4b50424a30581bf6187  build/ce-control/approved-ce.jar' | sha256sum -c -
       - name: Compile the adapter and verify the reviewed mod and safety module
         run: |
-          timeout --kill-after=15s 300s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle \
-            jar operatorProbeJar liveViewJar
+          tasks=(jar operatorProbeJar liveViewJar)
+          if [[ "$PRIVACY_CHECK" == position ]]; then
+            tasks+=(-PpositionPrivacy livePositionCheckJar)
+          fi
+          timeout --kill-after=15s 300s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle "${tasks[@]}"
           base=build/libs/anya-storage-plus-0.3.0-beta.7-art.2.jar
           safety=build/operator/anya-operator-resolution-experiment-0.3.0-beta.7-art.2.jar
           adapter=build/live-view/anya-live-view-experiment-0.3.0-beta.7-art.2.jar
           echo "0a7eb462e4256518b2bed9b52e782b80649a03f4068ebdad0f6742a1a6515ea7  $base" | sha256sum -c -
           echo "e11ed33cfb44e53bb059dbbb0449f94a87a02fa0f7d6de3ec38477a35f840c57  $safety" | sha256sum -c -
           sha256sum "$base" "$safety" "$adapter" build/ce-control/approved-ce.jar > build/live-view/evidence/SHA256SUMS.txt
-      - name: Run the isolated chest privacy assertions
+          if [[ "$PRIVACY_CHECK" == position ]]; then
+            fixture=build/live-view/check-runtime/anya-hosted-position-check-0.3.0-beta.7-art.2.jar
+            sha256sum "$fixture" >> build/live-view/evidence/SHA256SUMS.txt
+          fi
+      - name: Run the dedicated privacy check
         run: |
-          game=build/live-view/chest-privacy-game
+          game="build/live-view/$PRIVACY_CHECK-privacy-game"
+          evidence="build/live-view/evidence"
           mkdir -p "$game"
           test ! -e "$game/world"
-          test ! -e build/live-view/evidence/chest-privacy.json
+          test ! -e "$evidence/$PRIVACY_CHECK-privacy.json"
+          test ! -e "$evidence/position-restart.json"
           printf 'eula=true\n' > "$game/eula.txt"
           printf '%s\n' 'level-name=world' 'level-type=minecraft:flat' 'generate-structures=false' \
             'view-distance=2' 'simulation-distance=2' 'spawn-protection=0' 'server-ip=127.0.0.1' \
             'server-port=0' 'enable-query=false' 'enable-rcon=false' > "$game/server.properties"
-          timeout --kill-after=15s 180s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle liveChestPrivacyTest
-          python3 -m json.tool build/live-view/evidence/chest-privacy.json > /dev/null
-      - name: Retain the chest privacy result and input records
+          args=(liveChestPrivacyTest)
+          if [[ "$PRIVACY_CHECK" == position ]]; then
+            args=(-PpositionPrivacy livePositionPrivacyTest)
+          fi
+          timeout --kill-after=15s 240s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle "${args[@]}" \
+            2>&1 | tee "$evidence/$PRIVACY_CHECK-first.log"
+          python3 -m json.tool "$evidence/$PRIVACY_CHECK-privacy.json" > /dev/null
+      - name: Restart the same disposable world and verify the saved state
+        if: env.PRIVACY_CHECK == 'position'
+        run: |
+          game=build/live-view/position-privacy-game
+          evidence=build/live-view/evidence
+          test -s "$game/world/level.dat"
+          test -s "$evidence/position-privacy.json"
+          test ! -e "$evidence/position-restart.json"
+          sha256sum "$evidence/position-privacy.json" > "$RUNNER_TEMP/position-first.sha256"
+          timeout --kill-after=15s 240s gradle --no-daemon --max-workers=2 -I fixtures/live-view/init.gradle \
+            -PpositionPrivacy -PpositionRestart livePositionPrivacyTest 2>&1 | tee "$evidence/position-restart.log"
+          sha256sum -c "$RUNNER_TEMP/position-first.sha256"
+          sha256sum -c "$evidence/SHA256SUMS.txt"
+          python3 -m json.tool "$evidence/position-restart.json" > /dev/null
+      - name: Retain the privacy results and input records
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: live-room-chest-privacy-evidence-${{ github.sha }}
+          name: live-room-${{ env.PRIVACY_CHECK }}-privacy-evidence-${{ github.sha }}
           path: |
             build/live-view/evidence/SOURCE_COMMIT.txt
             build/live-view/evidence/SHA256SUMS.txt
-            build/live-view/evidence/chest-privacy.json
+            build/live-view/evidence/${{ env.PRIVACY_CHECK }}-privacy.json
+            build/live-view/evidence/position-restart.json
+            build/live-view/evidence/position-save-oracle.json
+            build/live-view/evidence/position-first.log
+            build/live-view/evidence/position-restart.log
             build/ce-control/evidence/ce-source.json
             build/ce-control/evidence/ce-binary.json
             build/renderer-prereq/provenance/provenance.json

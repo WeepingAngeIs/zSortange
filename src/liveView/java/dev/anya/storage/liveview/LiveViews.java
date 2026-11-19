@@ -63,14 +63,7 @@ public final class LiveViews {
  public static String viewReason(ServerPlayer p,PocketLedger.Pocket r){return viewReason(p,r,true);}
  private static String viewReason(ServerPlayer p,PocketLedger.Pocket r,boolean persistence){
   if(!ENABLED||failed||stopping||server==null||p==null||p.isRemoved()||server.getPlayerList().getPlayer(p.getUUID())!=p)return "Preview unavailable";
-  if(r==null||r.stage()!=PocketLedger.Stage.READY)return "Only an existing READY pocket can be previewed";
-  String reason=PocketService.authorize(p,r,PocketLeases.Kind.REMOTE,false,BasePermissions.VIEW);if(!reason.isEmpty())return reason;
-  if(p.distanceToSqr(Vec3.atCenterOf(BlockPos.of(r.anchor().entrance())))>24*24)return "Preview distance exceeded";
-  if(persistence&&RepairService.roomBlocked(r.id()))return "Persistence quarantine";
-  // View and home claims do not authorize a raw CE column. StorageAccessEvent can veto a
-  // single destination position and supplies no region-wide grant. This condition also
-  // gates retained load intent during a save, cached handles and source-side portal sync.
-  return "Remote terrain has no complete destination visibility check";
+  return PositionTerrainPolicy.remoteTerrainReason(p,r,id->persistence&&RepairService.roomBlocked(id));
  }
  public static boolean valid(Handle h){
   if(server==null||!server.isSameThread())return false;
@@ -125,11 +118,9 @@ public final class LiveViews {
  }
  public static Handle portalHandle(UUID uuid){for(var h:HANDLES.values())if(h.portal.getUUID().equals(uuid))return h;return null;}
  public static PocketLedger.Pocket visiting(ServerPlayer p){
-  if(p==null||server==null||!server.isSameThread()||!PocketService.inPocket(p.level()))return null;
-  var l=PocketService.lease(p.getUUID());if(l==null||l.kind()!=PocketLeases.Kind.VISIT)return null;
-  var r=pocket(l.pocket());if(r==null||r.epoch()!=l.epoch()||!PocketService.authorize(p,r,l.kind(),false,0).isEmpty())return null;return r;
+  return PositionTerrainPolicy.visitAtDelivery(server,p,LiveViews::pocket);
  }
- public static boolean covers(PocketLedger.Pocket r,long key){int x=ChunkPos.getX(key),z=ChunkPos.getZ(key);return Math.abs(x-(r.x()>>4))<=DATA_RADIUS&&Math.abs(z-(r.z()>>4))<=DATA_RADIUS;}
+ public static boolean covers(PocketLedger.Pocket r,long key){return PositionTerrainPolicy.covers(r,key);}
  public static boolean allowedColumn(ServerPlayer p,long key){
   if(server==null||!server.isSameThread())return false;
   var visit=visiting(p);if(visit!=null&&covers(visit,key))return true;

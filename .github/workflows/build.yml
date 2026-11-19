@@ -1,7 +1,7 @@
 name: Build and verify Anya Storage
 on:
   push:
-    branches-ignore: [experiment/live-room-chest-privacy]
+    branches-ignore: [experiment/live-room-chest-privacy, experiment/live-room-position-privacy]
     tags: ['**']
   pull_request:
   workflow_dispatch:

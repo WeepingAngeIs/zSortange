@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="anyapositioncheck"
+version="1.0"
+displayName="Hosted pocket position privacy check"
+[[dependencies.anyapositioncheck]]
+modId="anyastorage"
+type="required"
+versionRange="[0.3.0-beta.7-art.2]"
+ordering="AFTER"
+side="SERVER"

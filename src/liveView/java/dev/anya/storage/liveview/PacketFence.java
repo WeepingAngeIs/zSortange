@@ -1,8 +1,6 @@
 package dev.anya.storage.liveview;
 
-import dev.anya.storage.pocket.PocketLedger;
 import dev.anya.storage.pocket.PocketService;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.game.*;
@@ -20,17 +18,12 @@ import java.util.*;
 public final class PacketFence {
  public static long accepted,denied,forgotten,privacyChecks;
  public static final Map<UUID,Map<String,Long>> COUNTS=new HashMap<>();
- public static final Map<UUID,Set<Long>> SENT=new HashMap<>();
- private static final Map<UUID,Set<Integer>> SENT_ENTITIES=new HashMap<>();
- private static final Map<UUID,ServerGamePacketListenerImpl> connections=new HashMap<>();
+ private static final PositionDeliveryLedger<ServerGamePacketListenerImpl> delivered = new PositionDeliveryLedger<>();
+ public static final Map<UUID,Set<Long>> SENT = delivered.columns;
  private record ForgetRequest(ServerGamePacketListenerImpl connection, long column) {}
  private static final ThreadLocal<ForgetRequest> CLEANUP = new ThreadLocal<>();
- public static void clear(){accepted=denied=forgotten=privacyChecks=0;COUNTS.clear();SENT.clear();SENT_ENTITIES.clear();connections.clear();}
+ public static void clear(){accepted=denied=forgotten=privacyChecks=0;COUNTS.clear();delivered.clear();}
  public static synchronized void record(ServerPlayer p,String kind,boolean allow){if(allow)accepted++;else denied++;COUNTS.computeIfAbsent(p.getUUID(),k->new HashMap<>()).merge((allow?"allow:":"deny:")+kind,1L,Long::sum);}
- private static void clearDelivered(UUID player) {
-  SENT.remove(player);
-  SENT_ENTITIES.remove(player);
- }
  /** A reconnect may use the same player UUID. Only its current socket may access the delivery ledger. */
  private static boolean bindCurrentConnection(ServerPlayer player) {
   LiveViews.owner();
@@ -38,12 +31,12 @@ public final class PacketFence {
   UUID id = player.getUUID();
   if (connection == null || connection.player != player || !connection.getConnection().isConnected()
       || LiveViews.server.getPlayerList().getPlayer(id) != player) return false;
-  if (connections.put(id, connection) != connection) clearDelivered(id);
+  delivered.bind(id, connection);
   return true;
  }
  public static void disconnected(ServerPlayer player) {
   LiveViews.owner();
-  if (connections.remove(player.getUUID(), player.connection)) clearDelivered(player.getUUID());
+  delivered.disconnected(player.getUUID(), player.connection);
  }
  private static boolean isCleanupForget(ServerPlayer player, ClientboundForgetLevelChunkPacket packet) {
   var request = CLEANUP.get();
@@ -51,12 +44,13 @@ public final class PacketFence {
  }
  public static void forget(ServerPlayer p,long key){
   if (!bindCurrentConnection(p)) return;
-  var sent=SENT.get(p.getUUID());if(sent==null||!sent.contains(key))return;
+  delivered.forget(p.getUUID(), p.connection, key, column -> sendForget(p, column));
+ }
+ private static void sendForget(ServerPlayer p, long key) {
   var previous = CLEANUP.get();
   CLEANUP.set(new ForgetRequest(p.connection, key));
   try {
    PacketRedirection.sendRedirectedMessage(p,PocketService.DIMENSION,new ClientboundForgetLevelChunkPacket(new ChunkPos(key)));
-   sent.remove(key);
    forgotten++;
   } finally {
    if (previous == null) CLEANUP.remove(); else CLEANUP.set(previous);
@@ -67,14 +61,11 @@ public final class PacketFence {
   if (!bindCurrentConnection(player)) return;
   var id = player.getUUID();
   var sent = SENT.get(id);
-  var entities = SENT_ENTITIES.get(id);
+  var entities = delivered.entities.get(id);
   if ((sent == null || sent.isEmpty()) && (entities == null || entities.isEmpty())) return;
   var visit = LiveViews.visiting(player);
-  if (sent != null && !sent.isEmpty()) {
-   for (long key : new HashSet<>(sent)) {
-    if (visit == null || !LiveViews.covers(visit, key)) forget(player, key);
-   }
-  }
+  delivered.reconcileColumns(id, player.connection, key -> visit != null && LiveViews.covers(visit, key),
+      key -> sendForget(player, key));
   if (visit == null && entities != null && !entities.isEmpty()) {
    // The removal filter consumes only IDs previously sent on this connection.
    int[] removed = entities.stream().mapToInt(Integer::intValue).toArray();
@@ -84,16 +75,16 @@ public final class PacketFence {
  /** Retire only this connection's projected data before vanilla destroys its client worlds. */
  public static void beforeClientWorldReset(ServerPlayer p){
   if (!bindCurrentConnection(p)) return;
-  for(long key:new HashSet<>(SENT.getOrDefault(p.getUUID(),Set.of())))forget(p,key);
-  if (connections.get(p.getUUID()) == p.connection) clearDelivered(p.getUUID());
- }
- private static boolean visitColumn(PocketLedger.Pocket visit, BlockPos pos) {
-  return LiveViews.covers(visit, ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4));
+  var connection = p.connection;
+  delivered.reconcileColumns(p.getUUID(), connection, key -> false, key -> sendForget(p, key));
+  delivered.clearDelivered(p.getUUID(), connection);
  }
  @SuppressWarnings({"unchecked","rawtypes"}) public static Packet<?> filter(ServerPlayer p,Packet<?> packet){return filter(p,packet,PacketRedirection.getForceRedirectDimension(),0);}
  @SuppressWarnings({"unchecked","rawtypes"}) private static Packet<?> filter(ServerPlayer p,Packet<?> packet,ResourceKey<Level> dimension,int depth){
   if(!LiveViews.ENABLED)return packet;if(depth>8){record(p,"nesting",false);return null;}
-  if(packet instanceof ClientboundBundlePacket bundle){List<Packet<? super ClientGamePacketListener>> out=new ArrayList<>();for(var part:bundle.subPackets()){var kept=filter(p,part,dimension,depth+1);if(kept!=null)out.add((Packet)kept);}return out.isEmpty()?null:new ClientboundBundlePacket(out);}
+  if (packet instanceof ClientboundBundlePacket bundle) {
+   return PositionTerrainPolicy.filterBundle(bundle, part -> filter(p, part, dimension, depth + 1));
+  }
   if(packet instanceof ClientboundCustomPayloadPacket custom){
    if(custom.payload() instanceof PacketRedirection.Payload redirected){
     if(LiveViews.server==null||!LiveViews.server.isSameThread()){record(p,"off-thread-redirection",false);return null;}
@@ -125,65 +116,25 @@ public final class PacketFence {
    record(p, "forget", yes);
    return yes ? packet : null;
   }
-  if(packet instanceof ClientboundRemoveEntitiesPacket removed){var sent=SENT_ENTITIES.get(p.getUUID());if(sent==null)return null;var ids=new ArrayList<Integer>();for(int id:removed.getEntityIds())if(sent.remove(id))ids.add(id);record(p,"entity-forget",!ids.isEmpty());return ids.isEmpty()?null:new ClientboundRemoveEntitiesPacket(ids.stream().mapToInt(Integer::intValue).toArray());}
-  // Cleanup above remains possible after a visit ends. Every positive data send
-  // below requires a physical visit at delivery time, including already queued packets.
+  if (packet instanceof ClientboundRemoveEntitiesPacket removal) {
+   var kept = PositionTerrainPolicy.removeDelivered(removal, delivered.entities.get(p.getUUID()));
+   record(p, "entity-forget", kept != null);
+   return kept;
+  }
+  // The physical visit is resolved at this final send, independently for every recipient.
+  // The removal branch above remains available after its visit has ended.
   var visit = LiveViews.visiting(p);
-  if (visit == null) {
-   record(p, packet.getClass().getSimpleName(), false);
-   return null;
+  ServerLevel room = visit == null ? null : PocketService.dimension(LiveViews.server);
+  Set<Integer> sent = visit != null && packet instanceof ClientboundAddEntityPacket
+      ? delivered.entities.computeIfAbsent(p.getUUID(), id -> new HashSet<>())
+      : delivered.entities.getOrDefault(p.getUUID(), Set.of());
+  var kept = PositionTerrainPolicy.filterData(room, visit, packet, sent, LiveViews::pocket);
+  if (kept instanceof ClientboundLevelChunkWithLightPacket chunk) {
+   privacyChecks += room.getChunkSource().getChunkNow(chunk.getX(), chunk.getZ()).getBlockEntities().size();
+   SENT.computeIfAbsent(p.getUUID(), id -> new HashSet<>()).add(ChunkPos.asLong(chunk.getX(), chunk.getZ()));
   }
-  boolean yes=false;
-  if (packet instanceof ClientboundLevelChunkWithLightPacket chunk) {
-   long key = ChunkPos.asLong(chunk.getX(), chunk.getZ());
-   ServerLevel room = PocketService.dimension(LiveViews.server);
-   yes = LiveViews.covers(visit, key) && PocketChestPrivacy.publicChunk(room, chunk, LiveViews::pocket);
-   if (yes) {
-    privacyChecks += room.getChunkSource().getChunkNow(chunk.getX(), chunk.getZ()).getBlockEntities().size();
-    SENT.computeIfAbsent(p.getUUID(), k -> new HashSet<>()).add(key);
-   }
-  }
-  else if (packet instanceof ClientboundLightUpdatePacket light) {
-   yes = LiveViews.covers(visit, ChunkPos.asLong(light.getX(), light.getZ()));
-  } else if (packet instanceof ClientboundBlockUpdatePacket block) {
-   yes = visitColumn(visit, block.getPos());
-  } else if (packet instanceof ClientboundSectionBlocksUpdatePacket blocks) {
-   boolean[] observed = {false};
-   boolean[] outside = {false};
-   blocks.runUpdates((pos, state) -> {
-    observed[0] = true;
-    if (!visitColumn(visit, pos)) outside[0] = true;
-   });
-   yes = observed[0] && !outside[0];
-  }
-  else if (packet instanceof ClientboundBlockEntityDataPacket update) {
-   yes = visitColumn(visit, update.getPos())
-       && PocketChestPrivacy.publicUpdate(PocketService.dimension(LiveViews.server), update, LiveViews::pocket);
-  } else if (packet instanceof ClientboundBlockEventPacket event) {
-   BlockPos pos = event.getPos();
-   yes = PocketChestPrivacy.visitorAt(visit, pos);
-  }
-  else if(packet instanceof ClientboundSetTimePacket||packet instanceof ClientboundGameEventPacket)yes=true;
-  else if (packet instanceof ClientboundAddEntityPacket spawn) {
-   var entity = p.serverLevel().getEntity(spawn.getId());
-   yes = entity != null && entity.getUUID().equals(spawn.getUUID()) && entity.getType() == spawn.getType()
-       && PocketChestPrivacy.visitorAt(visit, entity.blockPosition())
-       && PocketChestPrivacy.visitorAt(visit, BlockPos.containing(spawn.getX(), spawn.getY(), spawn.getZ()));
-   if (yes) SENT_ENTITIES.computeIfAbsent(p.getUUID(), k -> new HashSet<>()).add(spawn.getId());
-  }
-  else if(packet.getClass().getSimpleName().contains("Entity")){
-   try{Integer id=null;for(String name:List.of("getId","getEntityId","id"))try{Object v=packet.getClass().getMethod(name).invoke(packet);if(v instanceof Integer i){id=i;break;}}catch(NoSuchMethodException ignored){}
-    if (id != null && SENT_ENTITIES.getOrDefault(p.getUUID(), Set.of()).contains(id)) {
-     var entity = p.serverLevel().getEntity(id);
-     yes = entity != null && PocketChestPrivacy.visitorAt(visit, entity.blockPosition());
-     if (packet instanceof ClientboundTeleportEntityPacket teleport) {
-      yes &= PocketChestPrivacy.visitorAt(visit,
-          BlockPos.containing(teleport.getX(), teleport.getY(), teleport.getZ()));
-     }
-    }
-   }catch(Exception ignored){yes=false;}
-  }
-  record(p,packet.getClass().getSimpleName(),yes);return yes?packet:null;
+  record(p, packet.getClass().getSimpleName(), kept != null);
+  return kept;
  }
  private PacketFence(){}
 }
