@@ -2,6 +2,7 @@ package dev.anya.storage.visualcheck;
 
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
 import dev.anya.storage.AnyaStorage;
 import dev.anya.storage.BagInventory;
@@ -177,8 +178,10 @@ public final class VisualServer {
                     publish(Step.USE);
                 }
                 case USE -> {
-                    if (!bothDone() || countUses(alpha) == 0 || countUses(beta) == 0) return;
-                    require(countUses(alpha) == 1 && countUses(beta) == 1 && otherUses == 0, "Unexpected server right-click path");
+                    if (!bothDone()) return;
+                    verifyUseReceipt(alpha, "SOUTH");
+                    verifyUseReceipt(beta, "EAST");
+                    rights(true);
                     hub.removeMember(alpha.getUUID());
                     rights(false);
                     publish(Step.REVOKED);
@@ -308,6 +311,19 @@ public final class VisualServer {
 
     private static int countUses(ServerPlayer viewer) { return sourceUses.getOrDefault(viewer.getUUID(), 0); }
 
+    private static void verifyUseReceipt(ServerPlayer viewer, String face) throws IOException {
+        String role = viewer.getGameProfile().getName();
+        var receipt = JsonParser.parseString(Files.readString(dir.resolve("use-" + role + "-done.json"))).getAsJsonObject();
+        require(receipt.get("target").getAsLong() == ENTRANCE.asLong()
+                && face.equals(receipt.get("side").getAsString())
+                && "minecraft:overworld".equals(receipt.get("home_dimension").getAsString())
+                && "SUCCESS".equals(receipt.get("interaction_result").getAsString())
+                && receipt.get("observed_ticks_after_use").getAsInt() >= 12
+                && receipt.get("denial_count").getAsInt() == 1
+                && "[Anya Storage] Pocket permission denied; Visit is separate from storage rights".equals(receipt.get("denial_message").getAsString()),
+                "Expected a normal use at the home entrance and one matching server denial for " + role);
+    }
+
     private static void verifyObservers() {
         for (var viewer : List.of(alpha, beta)) {
             require(server.getPlayerList().getPlayer(viewer.getUUID()) == viewer && viewer.level() == server.overworld()
@@ -343,8 +359,10 @@ public final class VisualServer {
         result.addProperty("dimension_changes_during_observation", dimensionChanges);
         result.addProperty("graphical_player_dimension_changes_since_login", viewerDimensionChangesSinceLogin);
         result.addProperty("setup", "Separate non-operator server actor linked, visited, returned and disconnected before either graphical client started.");
-        result.addProperty("alpha_source_right_clicks", countUses(alpha));
-        result.addProperty("beta_source_right_clicks", countUses(beta));
+        result.addProperty("alpha_uuid", alpha.getUUID().toString());
+        result.addProperty("beta_uuid", beta.getUUID().toString());
+        result.addProperty("alpha_source_right_click_events_observed", countUses(alpha));
+        result.addProperty("beta_source_right_click_events_observed", countUses(beta));
         result.addProperty("other_block_uses", otherUses);
         result.addProperty("alpha_walk_metres", WALK_SOUTH.z - alpha.getZ());
         result.addProperty("beta_walk_metres", WALK_EAST.x - beta.getX());

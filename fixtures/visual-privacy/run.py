@@ -11,6 +11,7 @@ import subprocess
 import time
 import zipfile
 from pathlib import Path
+from uuid import UUID
 
 ROOT = Path.cwd().resolve()
 BASE = ROOT / "build/visual-privacy"
@@ -40,6 +41,26 @@ def check(condition, message):
 
 def settings(values):
     return "".join(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n" for key, value in values.items())
+
+
+def verify_denied_visits():
+    """Match each targeted client click with its actual server-side permission decision."""
+    scene = json.loads((CONTROL / "server-result.json").read_text())
+    log = (EVIDENCE / "server.log").read_text(errors="replace")
+    use_marker = "Disposable fallback phase USE"
+    revoked_marker = "Disposable fallback phase REVOKED"
+    check(log.count(use_marker) == log.count(revoked_marker) == 1, "Missing server action phase boundary")
+    use_log = log.split(use_marker, 1)[1].split(revoked_marker, 1)[0]
+    counts = {}
+    for role in ROLES:
+        player = str(UUID(scene[f"{role.lower()}_uuid"]))
+        started = json.loads((CONTROL / f"client-ready-{role}.json").read_text())
+        check(str(UUID(started["uuid"])) == player and started["name"] == role, f"Player identity differs for {role}")
+        reason = "Pocket permission denied; Visit is separate from storage rights"
+        decision = f"Pocket action stopped for {player}: java.io.IOException: {reason}"
+        counts[role] = use_log.count(decision)
+        check(counts[role] == 1, f"Expected one denied Visit from the normal entrance click for {role}")
+    write(EVIDENCE / "use-server-proof.json", counts)
 
 
 def verify_inputs():
@@ -209,6 +230,7 @@ def main():
                 json.loads((CONTROL / filename).read_text())
         for name in ("runtime-mods-server.json", "server-result.json"):
             json.loads((CONTROL / name).read_text())
+        verify_denied_visits()
         passed = True
         print("Two clients completed their scene. Independent framebuffer check follows.", flush=True)
     finally:

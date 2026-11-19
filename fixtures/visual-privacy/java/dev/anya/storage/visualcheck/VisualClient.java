@@ -47,6 +47,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientChatReceivedEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import org.lwjgl.opengl.GL11;
@@ -55,6 +56,7 @@ import org.lwjgl.opengl.GL11;
 @EventBusSubscriber(modid = "anyavisualcheck", value = Dist.CLIENT)
 public final class VisualClient {
     private static final BlockPos ENTRANCE = new BlockPos(8, 81, 1);
+    private static final String VISIT_DENIAL = "[Anya Storage] Pocket permission denied; Visit is separate from storage rights";
     private static final Gson JSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String ROLE = System.getProperty("anya.role");
     private static final AtomicInteger watches = new AtomicInteger();
@@ -62,6 +64,8 @@ public final class VisualClient {
     private static final AtomicInteger clears = new AtomicInteger();
     private static int age, stable, phaseTicks, clearsWhenGranted, initialPocketChunks = -1;
     private static int useTick, walkTicks, contactTicks;
+    private static int useDenials;
+    private static String denialMessage;
     private static long focusedTicks, phaseStart, lastNotice;
     private static String waiting = "";
     private static Integer observedMask;
@@ -120,6 +124,7 @@ public final class VisualClient {
         state.put("focus_requests", watches.get());
         state.put("grants", grants.get());
         state.put("clears", clears.get());
+        state.put("use_denials", useDenials);
         return state;
     }
 
@@ -366,18 +371,33 @@ public final class VisualClient {
         }
     }
 
+    @SubscribeEvent
+    public static void systemChat(ClientChatReceivedEvent.System event) {
+        if (!phase.equals("use") || useTick == 0 || event.isOverlay()) return;
+        String received = event.getMessage().getString();
+        if (VISIT_DENIAL.equals(received)) {
+            denialMessage = received;
+            if (++useDenials > 1) fail(Minecraft.getInstance(), new IllegalStateException("Repeated Visit denial for a single use"));
+        }
+    }
+
     private static void use(Minecraft mc, BlockHitResult picked) throws Exception {
         if (useTick == 0) {
             require(mc.player.getMainHandItem().isEmpty() && mc.player.getOffhandItem().isEmpty(),
                     "Expected empty hands for normal use");
-            useResult = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, picked).toString();
             useTick = age;
+            useResult = mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, picked).toString();
+        }
+        if (useDenials == 0) {
+            waitFor(mc, "the mod's Visit denial for the entrance click");
+            return;
         }
         if (age - useTick >= 12) {
             // The server waits for this receipt before revoking View.
             if (ROLE.equals("Alpha")) clearsWhenGranted = clears.get();
             ack(Map.of("home_dimension", mc.level.dimension().location().toString(), "target", picked.getBlockPos().asLong(),
-                    "side", side().name(), "interaction_result", useResult, "observed_ticks_after_use", age - useTick));
+                    "side", side().name(), "interaction_result", useResult, "observed_ticks_after_use", age - useTick,
+                    "denial_count", useDenials, "denial_message", denialMessage));
         }
     }
 
