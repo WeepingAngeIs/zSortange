@@ -14,6 +14,7 @@ import dev.anya.storage.pocket.PocketLeases;
 import dev.anya.storage.pocket.PocketLedger;
 import dev.anya.storage.pocket.PocketRoomLayout;
 import dev.anya.storage.pocket.PocketService;
+import io.netty.channel.embedded.EmbeddedChannel;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,10 +28,16 @@ import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -45,11 +52,11 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
 
 /** Test-only orchestration. Both observations use the packaged mod's normal focus, access and network paths. */
 @Mod("anyavisualcheck")
@@ -73,11 +80,13 @@ public final class VisualServer {
     private static PocketLedger.Pocket room;
     private static UUID chestId;
     private static ServerPlayer alpha, beta;
+    private static ServerPlayer setupOwner;
+    private static EmbeddedChannel setupChannel;
     private static final List<ChunkPos> forced = new ArrayList<>();
     private static final Map<UUID, Integer> sourceUses = new HashMap<>();
     private static final JsonObject result = new JsonObject();
     private static final JsonObject phaseTicks = new JsonObject();
-    private static int otherUses, dimensionChanges, started, observedTicks;
+    private static int otherUses, dimensionChanges, viewerDimensionChangesSinceLogin, started, observedTicks;
     private static boolean measuring;
     private static Step step;
 
@@ -109,8 +118,8 @@ public final class VisualServer {
             server.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false, server);
             server.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false, server);
             server.getGameRules().getRule(GameRules.RULE_DOMOBSPAWNING).set(false, server);
-            next(Step.CONNECT);
-            Files.writeString(dir.resolve("server-ready"), "Waiting for two graphical players\n", StandardOpenOption.CREATE_NEW);
+            createRoom();
+            next(Step.PREPARE);
         } catch (Exception | Error failure) {
             fail(failure);
         }
@@ -124,23 +133,32 @@ public final class VisualServer {
             require(age < (step == Step.CONNECT ? 9000 : 3600), "Timeout at " + step);
             if (measuring) verifyObservers();
             switch (step) {
+                case PREPARE -> {
+                    if (setupOwner.level() != target || ledger.returning(setupOwner.getUUID()) == null) return;
+                    seedRoom();
+                    PocketService.recover(setupOwner);
+                    next(Step.RETURN);
+                }
+                case RETURN -> {
+                    if (setupOwner.level() != server.overworld() || ledger.returning(setupOwner.getUUID()) != null
+                            || PocketService.lease(setupOwner.getUUID()) != null || PocketService.ownedTicketRequests() != 0) return;
+                    removeSetupOwner();
+                    require(server.getPlayerList().getPlayerCount() == 0, "Setup actor remained registered");
+                    next(Step.CONNECT);
+                    Files.writeString(dir.resolve("server-ready"), "Setup Visit complete and owner removed; accepting two graphical players\n",
+                            StandardOpenOption.CREATE_NEW);
+                }
                 case CONNECT -> {
                     alpha = server.getPlayerList().getPlayerByName("Alpha");
                     beta = server.getPlayerList().getPlayerByName("Beta");
                     if (alpha == null || beta == null || !exists("client-ready-Alpha.json") || !exists("client-ready-Beta.json")) return;
-                    createRoom();
-                    next(Step.PREPARE);
-                }
-                case PREPARE -> {
-                    if (alpha.level() != target || ledger.returning(alpha.getUUID()) == null) return;
-                    seedRoom();
-                    PocketService.recover(alpha);
-                    next(Step.RETURN);
-                }
-                case RETURN -> {
-                    if (alpha.level() != server.overworld() || ledger.returning(alpha.getUUID()) != null
-                            || PocketService.lease(alpha.getUUID()) != null || PocketService.ownedTicketRequests() != 0) return;
-                    hub.removeMember(alpha.getUUID());
+                    for (var viewer : List.of(alpha, beta)) {
+                        require(viewer.serverLevel() == server.overworld() && !viewer.hasPermissions(2)
+                                && !server.getPlayerList().isOp(viewer.getGameProfile()), "Expected fresh non-operators in the Overworld");
+                        viewer.setGameMode(GameType.SURVIVAL);
+                        viewer.getInventory().clearContent();
+                        viewer.inventoryMenu.broadcastChanges();
+                    }
                     pose(alpha, SOUTH);
                     pose(beta, EAST);
                     rights(false);
@@ -190,30 +208,44 @@ public final class VisualServer {
     }
 
     private static void createRoom() throws IOException {
-        for (var viewer : List.of(alpha, beta)) {
-            require(!viewer.hasPermissions(2) && !server.getPlayerList().isOp(viewer.getGameProfile()), "Expected non-operators");
-            viewer.setGameMode(GameType.SURVIVAL);
-            viewer.getInventory().clearContent();
-            viewer.inventoryMenu.broadcastChanges();
-        }
-        pose(alpha, SOUTH);
-        pose(beta, EAST);
-        var owner = new FakePlayer(server.overworld(), new GameProfile(UUID.randomUUID(), "VisualOwner")) {
-            @Override public boolean hasPermissions(int level) { return false; }
+        require(server.getPlayerList().getPlayerCount() == 0, "Graphical observers must join after setup");
+        // Use the same registered setup actor pattern as the hosted position fixture.
+        // Its packets terminate in memory. Both graphical clients join only after its Visit ends.
+        var profile = new GameProfile(UUID.randomUUID(), "VisualOwner");
+        setupOwner = new ServerPlayer(server, server.overworld(), profile, ClientInformation.createDefault()) {
+            @Override public boolean hasPermissions(int ignored) { return false; }
         };
-        owner.setPos(8.5, 81, 3.5);
-        hub.owner = entrance.owner = owner.getUUID();
-        hub.setMember(alpha.getUUID(), BasePermissions.VISIT);
+        var connection = new Connection(PacketFlow.SERVERBOUND) {
+            @Override public boolean isMemoryConnection() { return true; }
+            @Override public void send(Packet<?> packet, PacketSendListener callback, boolean flush) {}
+        };
+        setupChannel = new EmbeddedChannel(connection);
+        NetworkRegistry.configureMockConnection(connection);
+        server.getPlayerList().placeNewPlayer(connection, setupOwner, CommonListenerCookie.createInitial(profile, false));
+        require(!server.getPlayerList().isOp(profile), "Setup owner must be a non-operator");
+        setupOwner.setPos(8.5, 81, 3.5);
+        hub.owner = entrance.owner = setupOwner.getUUID();
         var remote = new ItemStack(Content.REMOTE.get());
         var data = BagInventory.data(remote);
         data.putString("HubDimension", server.overworld().dimension().location().toString());
         data.putLong("HubPos", HUB.asLong());
         BagInventory.data(remote, data);
-        PocketService.link(owner, entrance, remote);
+        PocketService.link(setupOwner, entrance, remote);
         require(entrance.pocket != null && ledger.get(entrance.pocket).stage() == PocketLedger.Stage.RESERVED, "Home link did not reserve a room");
-        PocketService.enter(alpha, entrance);
-        var lease = PocketService.lease(alpha.getUUID());
+        PocketService.enter(setupOwner, entrance);
+        var lease = PocketService.lease(setupOwner.getUUID());
         require(lease != null && lease.kind() == PocketLeases.Kind.VISIT, "The temporary setup Visit was denied");
+    }
+
+    private static void removeSetupOwner() {
+        if (setupOwner != null && server.getPlayerList().getPlayer(setupOwner.getUUID()) == setupOwner) {
+            server.getPlayerList().remove(setupOwner);
+        }
+        setupOwner = null;
+        if (setupChannel != null) {
+            setupChannel.finishAndReleaseAll();
+            setupChannel = null;
+        }
     }
 
     private static void seedRoom() throws IOException {
@@ -269,6 +301,8 @@ public final class VisualServer {
 
     @SubscribeEvent
     public static void changedWorld(PlayerEvent.PlayerChangedDimensionEvent event) {
+        String name = event.getEntity().getGameProfile().getName();
+        if (name.equals("Alpha") || name.equals("Beta")) viewerDimensionChangesSinceLogin++;
         if (measuring && (event.getEntity() == alpha || event.getEntity() == beta)) dimensionChanges++;
     }
 
@@ -282,7 +316,8 @@ public final class VisualServer {
                     "Viewing opened storage or acquired a lease");
             require(!viewer.getBoundingBox().intersects(CUBE_INTERIOR), "Player passed into the source cube");
         }
-        require(ledger.returnCount() == 0 && PocketService.ownedTicketRequests() == 0 && dimensionChanges == 0 && otherUses == 0,
+        require(ledger.returnCount() == 0 && PocketService.ownedTicketRequests() == 0 && dimensionChanges == 0
+                        && viewerDimensionChangesSinceLogin == 0 && otherUses == 0,
                 "Unexpected travel, alternate interaction target or storage ticket");
         observedTicks++;
     }
@@ -306,6 +341,8 @@ public final class VisualServer {
         result.addProperty("never_authorized_role", "Beta");
         result.addProperty("home_only_observation_ticks", observedTicks);
         result.addProperty("dimension_changes_during_observation", dimensionChanges);
+        result.addProperty("graphical_player_dimension_changes_since_login", viewerDimensionChangesSinceLogin);
+        result.addProperty("setup", "Separate non-operator server actor linked, visited, returned and disconnected before either graphical client started.");
         result.addProperty("alpha_source_right_clicks", countUses(alpha));
         result.addProperty("beta_source_right_clicks", countUses(beta));
         result.addProperty("other_block_uses", otherUses);
@@ -369,7 +406,9 @@ public final class VisualServer {
             AnyaStorage.LOG.error("Unable to write the failure report", writing);
         } finally {
             step = null;
-            try { release(); } finally { server.halt(false); }
+            try { removeSetupOwner(); } finally {
+                try { release(); } finally { server.halt(false); }
+            }
         }
     }
 

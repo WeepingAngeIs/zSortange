@@ -9,6 +9,7 @@ import dev.anya.storage.pocket.PocketService;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +22,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -60,10 +62,13 @@ public final class VisualClient {
     private static final AtomicInteger clears = new AtomicInteger();
     private static int age, stable, phaseTicks, clearsWhenGranted, initialPocketChunks = -1;
     private static int useTick, walkTicks, contactTicks;
-    private static long focusedTicks;
+    private static long focusedTicks, phaseStart, lastNotice;
+    private static String waiting = "";
+    private static Integer observedMask;
     private static String phase = "", completed = "", useResult;
     private static boolean connecting, ready, capture, failed, walking, watchingGrant;
     private static Connection connection;
+    private static Field clientWorlds;
     private static Vec3 walkStart;
     private static final Set<String> PHOTOS = Set.of("public", "granted", "revoked");
 
@@ -94,11 +99,37 @@ public final class VisualClient {
         mc.options.keyUp.setDown(false);
         dev.anya.storage.AnyaStorage.LOG.error("Visual check failed for {} during {}", ROLE, phase, failure);
         try {
-            json("FAILED-client-" + ROLE + ".json", Map.of("phase", phase, "error", failure.toString(), "tick", age));
+            json("FAILED-client-" + ROLE + ".json", Map.of("phase", phase, "error", failure.toString(), "tick", age,
+                    "readiness", status(mc)));
         } catch (Exception nested) {
             dev.anya.storage.AnyaStorage.LOG.error("Could not record visual check failure", nested);
         }
         mc.stop();
+    }
+
+    private static Map<String, Object> status(Minecraft mc) {
+        var state = new LinkedHashMap<String, Object>();
+        state.put("waiting", waiting);
+        state.put("world", mc.level == null ? null : mc.level.dimension().location().toString());
+        state.put("position", mc.player == null ? null : mc.player.position().toString());
+        state.put("screen", mc.screen == null ? null : mc.screen.getClass().getSimpleName());
+        state.put("home_column", mc.level != null && mc.level.hasChunkAt(ENTRANCE));
+        state.put("hit", mc.hitResult instanceof BlockHitResult h
+                ? List.of(h.getType().name(), h.getBlockPos().toShortString(), h.getDirection().name()) : String.valueOf(mc.hitResult));
+        state.put("mask", observedMask);
+        state.put("focus_requests", watches.get());
+        state.put("grants", grants.get());
+        state.put("clears", clears.get());
+        return state;
+    }
+
+    private static void waitFor(Minecraft mc, String condition) {
+        waiting = condition;
+        long now = System.nanoTime();
+        if (lastNotice == 0 || now - lastNotice >= TimeUnit.SECONDS.toNanos(15)) {
+            lastNotice = now;
+            dev.anya.storage.AnyaStorage.LOG.info("Entrance visual check {} {} {}", ROLE, phase, status(mc));
+        }
     }
 
     private static void observe(Connection current) {
@@ -148,9 +179,11 @@ public final class VisualClient {
 
     private static int pocketChunks() throws ReflectiveOperationException {
         // Reading this map does not ask CE to create a remote world or load a column.
-        var field = Class.forName("qouteall.imm_ptl.core.ClientWorldLoader").getDeclaredField("CLIENT_WORLD_MAP");
-        field.setAccessible(true);
-        var level = (ClientLevel) ((Map<?, ?>)field.get(null)).get(PocketService.DIMENSION);
+        if (clientWorlds == null) {
+            clientWorlds = Class.forName("qouteall.imm_ptl.core.ClientWorldLoader").getDeclaredField("CLIENT_WORLD_MAP");
+            clientWorlds.setAccessible(true);
+        }
+        var level = (ClientLevel) ((Map<?, ?>)clientWorlds.get(null)).get(PocketService.DIMENSION);
         return level == null ? 0 : level.getChunkSource().getLoadedChunksCount();
     }
 
@@ -191,12 +224,19 @@ public final class VisualClient {
                         "name", mc.player.getGameProfile().getName()));
                 ready = true;
             }
+            // Both graphical players stay home from login. Room preparation runs independently on the server.
+            require(mc.level == null || mc.level.dimension().equals(Level.OVERWORLD), "Viewer traveled outside the home world");
+            require(pocketChunks() == 0, "The client acquired a destination column");
             Path signal = root.resolve("phase.txt");
             if (!Files.isRegularFile(signal)) return;
             String requested = Files.readString(signal).strip();
             if (!phase.equals(requested)) {
                 require(phase.isEmpty() || completed.equals(phase), "Phase changed before client acknowledgement: " + phase);
                 phase = requested;
+                waiting = "phase start";
+                observedMask = null;
+                phaseStart = System.nanoTime();
+                lastNotice = 0;
                 stable = phaseTicks = 0;
                 capture = false;
             }
@@ -208,14 +248,20 @@ public final class VisualClient {
                 mc.stop();
                 return;
             }
+            if (!completed.equals(phase)) {
+                require(System.nanoTime() - phaseStart < TimeUnit.SECONDS.toNanos(100),
+                        "Timed out waiting for " + waiting);
+            }
             if (mc.level == null || mc.player == null || mc.gameMode == null || mc.getOverlay() != null ||
                     mc.screen instanceof ReceivingLevelScreen) {
                 require(completed.isEmpty() && phase.equals("public"), "Lost game world during " + phase);
+                waitFor(mc, "playable home screen");
                 return;
             }
-            // The phase file and the return teleport travel independently during setup.
-            if (phase.equals("public") && completed.isEmpty() &&
-                    (!mc.level.dimension().equals(Level.OVERWORLD) || !mc.level.hasChunkAt(ENTRANCE))) return;
+            if (phase.equals("public") && completed.isEmpty() && !mc.level.hasChunkAt(ENTRANCE)) {
+                waitFor(mc, "entrance column");
+                return;
+            }
             sourceOnly(mc);
             require(!ROLE.equals("Beta") || grants.get() == 0, "Untrusted viewer received a private pad layout");
             if (phase.equals("walk")) {
@@ -233,17 +279,26 @@ public final class VisualClient {
                     + " clears=" + clears + " hit=" + mc.hitResult + " player=" + mc.player.position());
             if (picked == null || mc.getCameraEntity() != mc.player || !(mc.level.getBlockEntity(ENTRANCE) instanceof PocketContent.EntranceEntity entrance)) {
                 stable = 0;
+                waitFor(mc, "entrance under first-person crosshair on " + side());
                 return;
             }
             int mask = EntranceLayoutClient.visibleMask(entrance);
+            observedMask = mask;
             if (mask != expectedMask() || watches.get() == 0 ||
                     (phase.equals("revoked") && ROLE.equals("Alpha") && clears.get() <= clearsWhenGranted)) {
                 stable = 0;
+                waitFor(mc, "applied mask " + expectedMask() + ", focus request and any expected clear");
                 return;
             }
-            if (++stable < 16) return;
+            if (++stable < 16) {
+                waitFor(mc, "stable focused image");
+                return;
+            }
             if (phase.equals("use")) use(mc, picked);
-            else capture = true;
+            else {
+                waitFor(mc, "finished render frame");
+                capture = true;
+            }
         } catch (Throwable failure) {
             fail(mc, failure);
         }
@@ -271,7 +326,7 @@ public final class VisualClient {
             for (var entity : mc.level.entitiesForRendering()) require(!portal.isInstance(entity), "A portal entity appeared at home");
             int chunks = pocketChunks();
             if (phase.equals("public")) initialPocketChunks = chunks;
-            require(chunks <= initialPocketChunks && (!ROLE.equals("Beta") || chunks == 0), "Remote pocket cache grew during preview");
+            require(chunks == 0, "Remote pocket cache contained a destination column in the measured frame");
             require(!(ROLE.equals("Beta") || phase.equals("public")) || grants.get() == 0, "Public control received a private layout");
             if (expectedMask() >= 0) require(grants.get() > 0, "No private layout response observed");
             String label = phase + "-" + ROLE;
@@ -330,7 +385,10 @@ public final class VisualClient {
         require(++phaseTicks < 360, "Walking check timed out at " + mc.player.position());
         if (!walking) {
             Vec3 start = side() == Direction.SOUTH ? new Vec3(8.5,81,3.5) : new Vec3(10.5,81,1.5);
-            if (start.distanceToSqr(mc.player.position()) > .08 * .08) return;
+            if (start.distanceToSqr(mc.player.position()) > .08 * .08) {
+                waitFor(mc, "walking start at " + start);
+                return;
+            }
             mc.options.autoJump().set(false);
             mc.player.setYRot(side() == Direction.SOUTH ? 180 : 90);
             mc.player.setXRot(0);
@@ -343,7 +401,10 @@ public final class VisualClient {
         double gap = side() == Direction.SOUTH ? box.minZ - ENTRANCE.getZ() - 1 : box.minX - ENTRANCE.getX() - 1;
         require(gap >= -.003, "Player crossed the cube face");
         contactTicks = mc.player.horizontalCollision && gap < .02 ? contactTicks + 1 : 0;
-        if (contactTicks < 5) return;
+        if (contactTicks < 5) {
+            waitFor(mc, "five consecutive source-block collisions");
+            return;
+        }
         mc.options.keyUp.setDown(false);
         require(walkStart.distanceTo(mc.player.position()) > .5, "Walking control did not approach the source face");
         ack(Map.of("home_dimension", mc.level.dimension().location().toString(), "held_forward_ticks", walkTicks,

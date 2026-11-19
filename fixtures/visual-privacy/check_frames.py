@@ -77,12 +77,16 @@ def compare(evidence, jar):
             other = "public" if mask >= 0 else "diagram"
             camera = json.loads((directory / f"{name}-camera.json").read_text())
             state = json.loads((directory / f"{name}-state.json").read_text())
-            if state["mask"] != mask or state["role"] != role or camera["side"] != side:
+            if (state["mask"] != mask or state["role"] != role or state["phase"] != phase
+                    or state["side"] != side or camera["side"] != side
+                    or camera["entrance"] != [8, 81, 1]):
                 raise ValueError(f"{name} has an inconsistent player, camera or client state")
             png = directory / f"{name}.png"
             with Image.open(png) as image:
                 if image.format != "PNG" or image.width < 640 or image.height < 400:
                     raise ValueError(f"{name} is missing a full-resolution PNG framebuffer")
+                if list(image.size) != [camera["width"], camera["height"]]:
+                    raise ValueError(f"{name} has inconsistent framebuffer dimensions")
                 shots[role, phase] = image.convert("RGB")
                 face = sample_frame(image, camera)
             masks[role, phase] = face.crop(inner)
