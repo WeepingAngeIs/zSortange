@@ -295,18 +295,20 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private void pocketControls(boolean mayView, int chestCount) {
         boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
-        String upgradeHint = "Visit through the linked Void Cube. With Build access, open chat and click Room upgrades.";
+        String upgradeHint = "Visit through the linked Void Cube and click Room upgrades in chat.";
+        String upgradeAccess = "Room editing must be enabled. Requires Build, View, Deposit and Withdraw.";
+        String upgradeCommand = "While visiting, you can also run /anya pocket build plan.";
         Consumer<Click> action = c -> {
             if (PocketService.inPocket(owner.level())) PocketService.recover(owner);
             else AnyaStorage.tell(owner, "Home-radius storage only. Visit is a separate permission. Physical pocket: "
-                    + pocket.id() + (showUpgrades ? ". " + upgradeHint : ""));
+                    + pocket.id() + (showUpgrades ? ". " + upgradeHint + " " + upgradeAccess + " " + upgradeCommand : ""));
         };
         if (showUpgrades) {
             // The client also draws the first line of this server-owned control beneath the slot total.
             int occupiedPads = chestCount - RoomBounds.starterChestCount();
             button(POCKET_ACTION_SLOT, ControlGlyph.POCKET_EDIT, "Room upgrades", action,
-                    occupiedPads + "/" + RoomBounds.PAD_X.size() + " upgrade pads occupied", upgradeHint,
-                    "The planner also requires room editing and View, Deposit and Withdraw access.");
+                    occupiedPads + "/" + RoomBounds.PAD_X.size() + " upgrade pads occupied",
+                    upgradeHint, upgradeAccess, upgradeCommand);
         } else {
             button(POCKET_ACTION_SLOT, ControlGlyph.EXIT, "Pocket exit / information", action);
         }
