@@ -1,18 +1,26 @@
 # Anya Storage Plus field kit
 
-Experimental candidate `0.3.0-beta.7-containerpath.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
+Experimental candidate `0.3.0-beta.7-shycupid.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
-## Place a keepsake shelf
+## Use a backpack on the ground
 
-Both **Keepsake Shelf** and **Delivery Hatch** are craftable and appear in the Anya Storage creative tab. Place either in an ordinary build where you have permission. Inside an enabled pocket, use the room editor to put furniture in the editable part of the room. Pocket furniture belongs to the pocket owner, including when a builder places it on the owner's behalf.
+Crouch and right-click solid ground with your backpack. Right-click the bag with a completed skin patch, elemental binding or upgrade disc to apply it. To increase capacity, hold the full material cost for its next tier and right-click once. An empty hand opens the bag. Crouch and right-click it empty-handed to pick it up. Crouch-use the carried bag in the air for upgrade settings.
 
-Use the shelf while holding an item. It takes one item from the stack. In first person with your HUD visible, aim at the shelf within five blocks to see the item and label. Use an empty hand to read a long caption in chat. While looking at it, type `/anya furniture caption From our first cave` to write a caption. Use `/anya furniture show` to share the display or `/anya furniture hide` for an owner-only display. The shelf starts private. The visual uses the item's base model. The shelf keeps the original item with its components. Sneak and use the shelf with an empty hand to take it back.
+Names follow the visible design and storage tier. For example, an oak leaf design at the Gold tier reads **Leaf Backpack · Gold**. Custom anvil names keep priority. In any Anya storage inventory, click **Tooltips: On** in the upper right to hide hover tips. Click **Tooltips: Off** to restore them. The choice is saved for your player in that world.
+
+## Place a Keepsake Globe
+
+Craft a **Keepsake Globe** with three glass blocks and one plank of any type. Put glass at the top center, middle left and middle right of a crafting table, with the plank at the bottom center. The globe and **Delivery Hatch** also appear in the Anya Storage creative tab.
+
+Place a globe like a normal block. Right-click it with an item to put one inside. The item turns behind the glass and can be seen from any side. Right-click with an empty hand to take it out. Breaking the globe drops the displayed item with its original components. Anyone who can interact or break blocks there can use it, subject to the world's claim rules.
+
+Existing shelves become globes at the same position. If an old shelf contained a hidden keepsake, its original owner must pick that item up once. The globe then works like a newly crafted one. Inside a pocket, use the room editor to place or remove an empty globe. Room permissions apply there, and the displayed model appears when a permitted visitor aims at it.
 
 ## Send a parcel
 
 Look at your hatch and use `/anya furniture invite PlayerName` to invite an online friend. At the hatch, they can use their held stack or type `/anya furniture deliver Berries for your next trip`. The hatch keeps up to nine separate stacks with their notes. Senders have deposit access only. The owner can sneak and use an empty hand to collect one whole parcel and read the note. A full inventory leaves the parcel in place. Use `/anya furniture close` to clear the invitations.
 
-Claims still apply. In a pocket, viewing a shared display needs Visit and View, sending needs Visit and Deposit, and collecting needs the owner's View and Withdraw rights. Empty furniture can be removed by its owner.
+Claims still apply. Inside a pocket, the visitor needs View to see a keepsake, Deposit to place one and View and Withdraw to take one. Delivery Hatches also require their sender invitation or owner rights. Empty the hatch before its owner removes it.
 
 ## Enable pockets in a test world
 

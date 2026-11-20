@@ -37,7 +37,8 @@ public final class ShelfRenderer {
                 || mc.player.level()!=mc.level || camera.getPosition().distanceToSqr(mc.player.getEyePosition())>4
                 || !(mc.hitResult instanceof BlockHitResult h) || h.getType()!=HitResult.Type.BLOCK
                 || mc.player.getEyePosition().distanceToSqr(h.getLocation())>25 || !mc.level.hasChunkAt(h.getBlockPos())) return null;
-        return mc.level.getBlockEntity(h.getBlockPos()) instanceof FurnitureEntity f && !f.isRemoved() && f.shelf() ? f : null;
+        return mc.level.getBlockEntity(h.getBlockPos()) instanceof FurnitureEntity f && !f.isRemoved() && f.shelf()
+                && f.publicModel.isEmpty() ? f : null;
     }
     private static void clearDisplay() { model=ItemStack.EMPTY;caption=""; }
     private static void reset() { clearDisplay();target=null;projectedTarget=null;grant.clear(); }

@@ -1,8 +1,8 @@
-name: Build and film the moon console candidate
+name: Build and test Cupid and backpack interactions
 
 on:
   push:
-    branches: [experiment/tablet-moon-console]
+    branches: [experiment/cupid-shy-tablet]
 
 permissions:
   contents: read
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.2.jar)
+          jar=$(realpath build/libs/anya-storage-plus-*-shycupid.1.jar)
           cp_file="$PWD/build/durable-audit/check.args"
           printf -- '-classpath\n"%s"\n' "$(cat build/durable-audit/classpath.txt)" > "$cp_file"
           args=(--jdk "$JAVA_HOME" --classpath-file "$cp_file" --support-jar "$jar")
@@ -48,11 +48,17 @@ jobs:
           python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_use.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_native_arm.py "${args[@]}"
+          /usr/bin/python3 fixtures/tablet-handling/check_shy_sprites.py "$jar"
+          client_jar="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$client_jar"
+          printf -- '-classpath\n"%s:%s"\n' "$(cat build/durable-audit/classpath.txt)" "$client_jar" > "$cp_file"
+          python3 -B fixtures/furniture/check.py "${args[@]}"
       - name: Check packaged model geometry, pixels and cube audio
         run: |
-          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.2.jar)
+          jar=$(realpath build/libs/anya-storage-plus-*-shycupid.1.jar)
           /usr/bin/python3 scripts/check_hub_console.py "$jar" --preview build/moon-review/hub-console.gif
           python3 scripts/check_moon_cube_jar.py "$jar"
+          /usr/bin/python3 fixtures/moon-console/disc_gallery.py "$jar" build/moon-review/upgrade-discs.png
       - name: Film the packaged mod on a disposable Minecraft client
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
@@ -60,19 +66,23 @@ jobs:
         run: |
           mkdir -p build/moon-review/client
           printf 'onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\nrenderDistance:5\nsimulationDistance:5\n' > build/moon-review/client/options.txt
-          timeout 12m xvfb-run -a -s '-screen 0 1024x768x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > build/moon-review/launch.log 2>&1 || { tail -n 100 build/moon-review/launch.log; exit 1; }
+          timeout 12m xvfb-run -a -s '-screen 0 1024x768x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > build/moon-review/launch.log 2>&1 || { tail -n 155 build/moon-review/launch.log; exit 1; }
           test -s build/moon-review/client/camera.txt
-          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.2.jar)
+          jar=$(realpath build/libs/anya-storage-plus-*-shycupid.1.jar)
           grep -F "$(sha256sum "$jar" | cut -d' ' -f1)" build/moon-review/client/camera.txt
           /usr/bin/python3 fixtures/moon-console/check_frames.py "$jar" build/moon-review/client/screenshots
+          /usr/bin/python3 fixtures/moon-console/check_room_frames.py "$jar" build/moon-review/client/screenshots
+          test -s build/moon-review/client/storage-checks.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: moonconsole-camera
+          name: shycupid-camera
           path: |
             build/moon-review/client/screenshots/*.png
             build/moon-review/client/camera.txt
-            build/moon-review/hub-console.gif
+            build/moon-review/upgrade-discs.png
+            build/moon-review/client/room-camera.txt
+            build/moon-review/client/storage-checks.txt
           if-no-files-found: ignore
           retention-days: 14
       - name: Verify and prepare the test artifact
@@ -109,7 +119,9 @@ jobs:
 
               assets = "assets/anyastorage/"
               model = json.loads(jar.read(assets + "models/item/cupid_tablet.json"))
-              assert len(model["elements"]) == 1 and len(model["elements"][0]["faces"]) == 6
+              assert model["parent"] == "anyastorage:item/cupid_tablet_shell"
+              shell = json.loads(jar.read(assets + "models/item/cupid_tablet_shell.json"))
+              assert len(shell["elements"]) == 1 and len(shell["elements"][0]["faces"]) == 6
               for name in ("cupid_tablet_face.png", "cupid_tablet_face.png.mcmeta", "cupid_tablet_case.png"):
                   entry = assets + "textures/item/" + name
                   assert jar.read(entry) == (Path("src/main/resources") / entry).read_bytes()
@@ -140,14 +152,14 @@ jobs:
           PY
           sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/MOONCONSOLE.2-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/MOONCONSOLE.2-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/SHYCUPID-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/SHYCUPID-PLAYTEST.txt upload/PLAYTEST.txt
           cp docs/SERVER_SETTINGS.md upload/SERVER-SETTINGS.md
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-moonconsole.2
+          name: anya-storage-plus-shycupid.1
           path: upload/
           if-no-files-found: error
           retention-days: 14

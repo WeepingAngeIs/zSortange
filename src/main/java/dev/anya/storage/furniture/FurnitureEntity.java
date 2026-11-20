@@ -3,7 +3,11 @@ package dev.anya.storage.furniture;
 import dev.anya.storage.Content;
 import dev.anya.storage.Transactions;
 import net.minecraft.core.*;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.*;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.SimpleContainer;
@@ -11,6 +15,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import java.util.*;
+import dev.anya.storage.pocket.PocketService;
 
 /** No Container implementation, item handler, menu, or chunk data exposes the stores to neighbors. */
 public final class FurnitureEntity extends BlockEntity {
@@ -24,6 +29,8 @@ public final class FurnitureEntity extends BlockEntity {
     private long revision;
     String caption = "";
     boolean visible;
+    private boolean legacyPrivate;
+    ItemStack publicModel = ItemStack.EMPTY;
 
     public FurnitureEntity(BlockPos pos, BlockState state) {
         super(Content.FURNITURE.get(), pos, state);
@@ -39,22 +46,49 @@ public final class FurnitureEntity extends BlockEntity {
         setChanged();
     }
     public boolean emptyForRemoval() { return inventory.isEmpty() && !Transactions.quarantined(inventory); }
-    public boolean ownerMayRemove(ServerPlayer p) { return p.getUUID().equals(owner); }
+    public boolean ownerMayRemove(ServerPlayer p) { return shelf() && !legacyPrivate || p.getUUID().equals(owner); }
     public boolean belongsTo(UUID owner, UUID pocket) {
         return owner != null && owner.equals(this.owner) && Objects.equals(pocket,this.pocket);
     }
     boolean shelf() { return getBlockState().is(Content.SHELF.get()); }
-    boolean mayView(UUID actor) { return owner!=null && shelf() && (owner.equals(actor) || visible); }
-    boolean maySend(UUID actor) { return owner!=null && (owner.equals(actor) || !shelf() && invited.contains(actor)); }
+    boolean mayView(UUID actor) { return shelf() && (!legacyPrivate || actor.equals(owner)); }
+    boolean maySend(UUID actor) { return shelf() ? mayView(actor) : owner!=null && (owner.equals(actor) || invited.contains(actor)); }
+    boolean sealedKeepsake() { return legacyPrivate; }
+    void finishCollection() {
+        if (shelf()) {
+            legacyPrivate=false;
+            caption="";
+        }
+    }
+    void changedDisplay() {
+        setChanged();
+        if (shelf() && level!=null && !level.isClientSide)
+            level.sendBlockUpdated(worldPosition,getBlockState(),getBlockState(),2);
+    }
     long revision() { return revision; }
     @Override public void setChanged() { revision++;super.setChanged(); }
     @Override public boolean onlyOpCanSetNbt() { return true; }
-    @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup) { return new CompoundTag(); }
+    @Override public CompoundTag getUpdateTag(HolderLookup.Provider lookup) {
+        CompoundTag tag=new CompoundTag();
+        // An unbound public globe may publish a base item ID. Neither item components nor pocket contents travel in chunk data.
+        if (shelf() && !legacyPrivate && pocket==null && level!=null && !PocketService.inPocket(level) && !inventory.isEmpty())
+            tag.putString("GlobeItem",BuiltInRegistries.ITEM.getKey(inventory.getItem(0).getItem()).toString());
+        return tag;
+    }
+    @Override public void handleUpdateTag(CompoundTag tag,HolderLookup.Provider lookup) {
+        var id=ResourceLocation.tryParse(tag.getString("GlobeItem"));
+        publicModel=id==null ? ItemStack.EMPTY : BuiltInRegistries.ITEM.getOptional(id).map(ItemStack::new).orElse(ItemStack.EMPTY);
+    }
+    @Override public ClientboundBlockEntityDataPacket getUpdatePacket() { return ClientboundBlockEntityDataPacket.create(this); }
+    @Override public void onDataPacket(Connection connection,ClientboundBlockEntityDataPacket packet,HolderLookup.Provider lookup) {
+        handleUpdateTag(packet.getTag(),lookup);
+    }
     @Override protected void saveAdditional(CompoundTag tag, HolderLookup.Provider lookup) {
         super.saveAdditional(tag,lookup);
         if (owner != null) tag.putUUID("Owner",owner);
         if (pocket != null) tag.putUUID("Pocket",pocket);
         tag.putBoolean("GuestsSeeShelf",visible);
+        if (shelf()) tag.putBoolean("LegacyPrivateGlobe",legacyPrivate);
         tag.putString("Caption",caption);
         NonNullList<ItemStack> slots = NonNullList.withSize(receipts.length,ItemStack.EMPTY);
         ListTag notes = new ListTag();
@@ -81,6 +115,9 @@ public final class FurnitureEntity extends BlockEntity {
             inventory.setItem(i,slots.get(i));
             receipts[i] = i < notes.size() && !slots.get(i).isEmpty() ? savedText(notes.getString(i),TEXT_LIMIT+24) : "";
         }
+        // The former shelf held a real private item. Keep it sealed until its owner retrieves it once.
+        legacyPrivate=shelf() && owner!=null && !inventory.isEmpty() && (tag.contains("LegacyPrivateGlobe")
+                ? tag.getBoolean("LegacyPrivateGlobe") : !visible);
         invited.clear();
         for (Tag friend : tag.getList("Invited",Tag.TAG_INT_ARRAY)) {
             if(invited.size()>=GUEST_LIMIT) break;

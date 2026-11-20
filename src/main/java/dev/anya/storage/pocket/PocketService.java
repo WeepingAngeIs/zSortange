@@ -116,7 +116,9 @@ public final class PocketService {
                 pocket=l.reserve(p.getUUID(),anchor,"galaxy",ExpansionRules.get().pocketLimit);
                 entrance.pocket=pocket.id();entrance.setChanged();
             }else{pocket=l.get(entrance.pocket);if(pocket==null||home(p,pocket)!=hub)throw new IOException("Copied or moved entrance refused; owner reanchor required");}
-            var data=BagInventory.data(remote);data.putUUID("PocketId",pocket.id());BagInventory.data(remote,data);
+            var data=BagInventory.data(remote);
+            if(data.hasUUID("PocketId") && pocket.id().equals(data.getUUID("PocketId")))return;
+            data.putUUID("PocketId",pocket.id());BagInventory.data(remote,data);
             AnyaStorage.tell(p,"Linked to pocket "+pocket.id()+". Stand up and right-click the cube to visit. Use the bound item in air to open storage within the hub radius.");
         }catch(Exception e){error(p,e);}
     }
@@ -158,7 +160,9 @@ public final class PocketService {
         try{var r=ledger(p.getServer()).get(tag.getUUID("PocketId"));if(r==null||home(p,r)!=hub)throw new IOException("Pocket remote binding is stale");start(p,r,PocketLeases.Kind.REMOTE,stack.is(Content.CUPID_TABLET.get()));}catch(Exception e){error(p,e);}return true;
     }
     private static void start(ServerPlayer p,PocketLedger.Pocket r,PocketLeases.Kind kind,boolean tablet)throws IOException {
-        if(PENDING.containsKey(p.getUUID())||LEASES.get(p.getUUID())!=null)throw new IOException("A pocket operation is already active");
+        Pending pending=PENDING.get(p.getUUID());
+        if(pending!=null && pending.player()==p && pending.pocket().equals(r.id()) && pending.kind()==kind)return;
+        if(pending!=null||LEASES.get(p.getUUID())!=null)throw new IOException("A pocket operation is already active");
         String denied=authorize(p,r,kind,true,0);if(!denied.isEmpty())throw new IOException(denied);
         if(dimension(p.getServer())==null)throw new IOException("Pocket dimension is missing; restart a disposable world with the matching data pack");
         if(r.stage()==PocketLedger.Stage.BUILDING&&!PREPARING.containsKey(r.id()))throw new IOException("Interrupted room preparation: fail-closed, no regeneration. Preserve this world for manual inspection");
@@ -166,7 +170,6 @@ public final class PocketService {
         p.closeContainer(); // Close an older view before creating the new lease.
         if(!LEASES.acquire(p.getUUID(),r.id(),kind,r.epoch(),clock,ExpansionRules.get().activePocketLimit,16,80,ExpansionRules.get().pocketSessionTicks))throw new IOException("Active-pocket or player budget reached");
         PENDING.put(p.getUUID(),new Pending(p,r.id(),kind,tablet));syncTickets(p.getServer());
-        AnyaStorage.tell(p,"Preparing bounded pocket access. The destination is leased only for active users; the preview is not a live view.");
     }
     private static Set<Ticket> pocketTickets(PocketLedger.Pocket p){
         Set<Ticket> out=new HashSet<>();var key=ResourceKey.create(Registries.DIMENSION,ResourceLocation.parse(p.anchor().dimension()));
@@ -248,6 +251,7 @@ public final class PocketService {
             if(valid&&pending==null&&l.kind()==PocketLeases.Kind.REMOTE)valid=p.containerMenu instanceof StoreMenu m&&m.hasPocket(l.pocket());
             if(valid)valid=LEASES.renew(l.player(),r.epoch(),clock,80);
             if(!valid)endLease(l.player(),p);
+            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT)RoomHologram.visit(p,r,clock);
         }
         LEASES.expire(clock);syncTickets(server);
         // One pocket receives preparation work per tick, never one budget per viewer.
@@ -345,6 +349,7 @@ public final class PocketService {
         PENDING.remove(player);
         LEASES.release(player);
         RoomPlans.endVisit(currentServer,player);
+        RoomHologram.end(currentServer,player);
     }
     public static void closeView(ServerPlayer p){var l=LEASES.get(p.getUUID());if(l!=null&&l.kind()==PocketLeases.Kind.REMOTE)release(p.getUUID());}
     public static PocketLeases.Lease lease(UUID player){return LEASES.get(player);}
@@ -357,6 +362,7 @@ public final class PocketService {
         try{if(!physicalAllowed(p,chest))throw new IOException("Pocket chest access denied");var r=ledger.get(chest.pocketId);StoreMenu.pocketChest(p,new PocketView(p,r,PocketLeases.Kind.VISIT,chest));}catch(Exception e){error(p,e);}
     }
     public static void stop(MinecraftServer server){
+        RoomHologram.clear();
         for(Ticket t:TICKETS){ServerLevel l=server.getLevel(t.dimension());if(l!=null)l.getChunkSource().removeRegionTicket(TICKET,t.chunk(),2,t.pocket());}
         TICKETS.clear();RECOVERY_TICKETS.clear();LEASES.clear();PENDING.clear();RECOVERY.clear();RETRY.clear();PREPARING.clear();TEST_PLAYERS.clear();RoomEditor.clear();ledger=null;failure=null;currentServer=null;clock=0;
     }

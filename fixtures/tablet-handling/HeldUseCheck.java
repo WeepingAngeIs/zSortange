@@ -28,6 +28,7 @@ public final class HeldUseCheck {
     private static float paint(long now) {
         int before = TabletDevice.draws;
         Util.now = now;
+        CLIENT.player.tickCount = (int)(now / 50);
         HeldTablet.beginFrame(new RenderFrameEvent.Pre(null));
         var render = new RenderHandEvent(MAIN, null, null, 15728880, .5f, 0, .12f, .17f, CLIENT.player.main);
         HeldTablet.hand(render);
@@ -38,7 +39,8 @@ public final class HeldUseCheck {
                 && held.progress() == TabletDevice.progress && held.stack() == CLIENT.player.main
                 && held.player() == CLIENT.player && held.hand() == MAIN && held.slot() == CLIENT.player.inv.selected
                 && held.time() == now && held.grip().light() == 15728880
-                && held.portrait() == TabletDevice.face && TabletDevice.liveAtlas,
+                && held.portrait() == TabletDevice.face && TabletDevice.liveAtlas
+                && TabletDevice.faceOf(held.portrait()) == TabletFaces.face(held.stack()),
                 "The bridge records exactly the grip and lift actually painted this frame");
         return held.progress();
     }
@@ -57,7 +59,41 @@ public final class HeldUseCheck {
         HeldTablet.tick(null);
     }
 
+    private static void inventoryFaces() {
+        var player = new LocalPlayer();
+        var a = new ItemStack(Content.CUPID_TABLET.get());
+        var b = new ItemStack(Content.CUPID_TABLET.get());
+        player.main = a;
+        player.inv.slots[1] = b;
+        TabletFaces.sample(player, false);
+        player.tickCount = 11;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(a) == TabletIdle.Face.GLANCE && TabletFaces.face(b) == TabletIdle.Face.SQUINT,
+                "Two identical tablets must have their own visits");
+        player.main = b;
+        player.inv.slots[1] = a;
+        TabletFaces.sample(player, false);
+        player.tickCount = 15;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(a) == TabletIdle.Face.DARK && TabletFaces.face(b) == TabletIdle.Face.SQUINT,
+                "Moving identical stacks must preserve the first tablet's departure");
+        var copy = new ItemStack(Content.CUPID_TABLET.get());
+        player.main = copy;
+        player.tickCount = 18;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(copy) == TabletIdle.Face.SHUT, "Server-synced same-slot copy restarted the exit");
+        player.off = copy;
+        player.main = a;
+        player.inv.slots[1] = null;
+        player.tickCount = 26;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(a) == TabletIdle.Face.DARK && TabletFaces.face(copy) == TabletIdle.Face.DARK,
+                "Moving a caught tablet to the other hand must not reveal it again");
+        TabletFaces.clear();
+    }
+
     public static void main(String[] args) {
+        inventoryFaces();
         CLIENT.player = new LocalPlayer();
         CLIENT.camera = CLIENT.player;
         CLIENT.player.main = new ItemStack(Content.REMOTE.get());
@@ -131,24 +167,25 @@ public final class HeldUseCheck {
         CLIENT.player.inv.selected++;
         check(paint(985) == 0, "A new slot cannot inherit the old lift");
 
-        long visiting = 985;
-        while (TabletDevice.face == null && visiting < 112_000) paint(visiting += 20);
-        check(TabletDevice.face != null && TabletDevice.face.column() == 0 && TabletDevice.visits == 1,
-                "The actual HUD starts a rare visit once after uninterrupted holding");
-        paint(visiting + 400);
-        check(TabletDevice.face.row() == 4 && TabletDevice.face.column() == 4 && TabletDevice.visits == 1,
-                "The same visit advances to the viewer-facing beat");
-        input(visiting + 410, MAIN, true);
-        check(paint(visiting + 411) > 0 && TabletDevice.face != null && TabletDevice.face.column() == 4,
-                "Using the Cupid Tablet must lift the face already visible on the device");
-        check(paint(visiting + 470) > 0 && TabletDevice.face != null && TabletDevice.face.column() == 4, "The hand raise restarted the visit");
+        long visiting = 1_000;
+        check(paint(visiting) == 0 && TabletFaces.face(CLIENT.player.main) == TabletIdle.Face.DARK,
+                "An equipped tablet must finish hiding even if a matching stack was synced");
+        // A genuinely new tablet in an unused slot has its own shy exit.
+        CLIENT.player.inv.selected = 5;
+        CLIENT.player.main = new ItemStack(Content.CUPID_TABLET.get());
+        paint(visiting);
+        check(TabletDevice.faceOf(TabletDevice.face) == TabletIdle.Face.SQUINT, "Fresh held squint");
+        input(visiting + 5, MAIN, true);
+        check(paint(visiting + 25) > 0 && TabletDevice.faceOf(TabletDevice.face) == TabletIdle.Face.SQUINT,
+                "Use keeps the physical face already on the glass");
+        paint(visiting + 80);
         var beforePause = TabletDevice.saved;
         var pause = new PauseScreen();
         HeldTablet.screenOpening(new ScreenEvent.Opening(null, pause));
         CLIENT.screen = pause;
         CLIENT.player.viewYRot = 28;
         CLIENT.player.walkDist = 2;
-        long resumed = visiting + 5_470;
+        long resumed = visiting + 5_080;
         check(paint(resumed) == beforePause.progress()
                 && TabletDevice.saved.grip() == beforePause.grip()
                 && TabletDevice.face.equals(beforePause.portrait()), "Pause changed the held grip, lift or face");
@@ -161,6 +198,8 @@ public final class HeldUseCheck {
         HeldTablet.screenOpening(new ScreenEvent.Opening(null, storage));
         CLIENT.screen = storage;
         Util.now = resumed + 8_005;
+        CLIENT.player.tickCount = (int)((resumed + 8_005) / 50);
+        HeldTablet.beginFrame(new RenderFrameEvent.Pre(null));
         CLIENT.screen = null;
         HeldTablet.tick(null);
         check(paint(resumed + 8_010) == 0 && TabletDevice.face.equals(beforePause.portrait()),
@@ -188,8 +227,8 @@ public final class HeldUseCheck {
         HeldTablet.screenOpening(new ScreenEvent.Opening(null, unrelated));
         CLIENT.screen = unrelated;
         CLIENT.screen = null;
-        check(paint(closeAt + 1_202) == 0 && TabletDevice.face == null && TabletDevice.visits == 1,
-                "An unrelated screen must release the prior visit");
+        check(paint(closeAt + 1_202) == 0 && TabletDevice.faceOf(TabletDevice.face) == TabletFaces.face(CLIENT.player.main),
+                "Unrelated screens must release the lowering override");
         System.out.println("PASS: shared hand motion, view bob option, carried face through lift and Escape, smooth 190 ms return with pause/resume");
     }
 }

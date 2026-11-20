@@ -41,7 +41,7 @@ def main(options):
                 JAVA / "StoreMenu.java", JAVA / "Config.java", JAVA / "ExpansionRules.java",
                 JAVA / "ServerSettings.java", JAVA / "pocket/PocketService.java",
                 JAVA / "appearance/TabletHandMotion.java", JAVA / "appearance/TabletHandlingPose.java",
-                JAVA / "appearance/GuardianBlink.java", JAVA / "appearance/TabletDevice.java",
+                JAVA / "appearance/GuardianBlink.java", JAVA / "appearance/TabletIdle.java", JAVA / "appearance/TabletDevice.java",
                 JAVA / "appearance/TabletBootScreen.java",
             ], scratch)
             app = os.pathsep.join((compiled.as_posix(), support))

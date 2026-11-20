@@ -8,6 +8,8 @@ import dev.anya.storage.Content;
 import dev.anya.storage.StorageBlock;
 import dev.anya.storage.StorageEntity;
 import dev.anya.storage.StoreMenu;
+import dev.anya.storage.appearance.TabletDevice;
+import dev.anya.storage.ui.StorageGrid;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,6 +22,8 @@ import net.minecraft.Util;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.renderer.item.ItemProperties;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
@@ -28,7 +32,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
@@ -52,8 +55,10 @@ import org.lwjgl.glfw.GLFW;
 @Mod("anyamoonreview")
 @EventBusSubscriber(modid = "anyamoonreview", value = Dist.CLIENT)
 public final class MoonCamera {
-    private enum Step { TITLE, JOIN, PLACED, CLOSED, OPEN, SHUT, TABLET, RIGHT, LEFT, TURN, PAUSE,
-        RESUME, WATCH_FACE, INTRO, GRID, RETURN, FINISH, DONE }
+    private enum Step { TITLE, JOIN, PLACED, GROUND_MODEL, GLOBE_MODEL, CLOSED, OPEN, SHUT, TABLET, EQUIP, AWAY, RESELECT, RIGHT, LEFT, TURN, PAUSE,
+        RESUME, USE_TABLET, INTRO, GRID, TOOLTIP_ON, TOOLTIP_OFF, RETURN, FINISH, DONE }
+    private static final int TABLET_SLOT = 1;
+    private static final ResourceLocation FACE = ResourceLocation.fromNamespaceAndPath("anyastorage", "cupid_face");
     private static final BlockPos CUBE = new BlockPos(0, 80, 0);
     private static final BlockPos HUB = CUBE.west(2);
     private static final Vec3 CENTER = Vec3.atCenterOf(CUBE);
@@ -95,6 +100,7 @@ public final class MoonCamera {
         require(cube.getContainerSize() == 216, "Cube capacity");
         require(Config.setTabletOpeningChancePercent(player, Config.get().revision, 100), "Enable a deterministic tablet appearance in this world");
         player.teleportTo(level, -1.25,80,-3.75, -15, 13);
+        RootChecks.setup(player);
     }
 
     private static void giveTablet(ServerPlayer player) {
@@ -103,7 +109,7 @@ public final class MoonCamera {
         binding.putString("HubDimension", player.level().dimension().location().toString());
         binding.putLong("HubPos", HUB.asLong());
         BagInventory.data(tablet, binding);
-        player.setItemInHand(InteractionHand.MAIN_HAND, tablet);
+        player.getInventory().setItem(TABLET_SLOT, tablet);
         player.inventoryMenu.broadcastChanges();
     }
 
@@ -111,6 +117,11 @@ public final class MoonCamera {
         var server = mc.getSingleplayerServer();
         var id = mc.player.getUUID();
         operation = server.submit(() -> action.accept(server.getPlayerList().getPlayer(id)));
+    }
+
+    private static StorageGrid.Layout grid(Minecraft mc, StoreMenu menu) {
+        int width = mc.getWindow().getGuiScaledWidth(), height = mc.getWindow().getGuiScaledHeight();
+        return TabletDevice.fitMenu(StorageGrid.layout(width, height, menu.resultCount(), menu.storageView()), width, height);
     }
 
     private static void shot(Minecraft mc, String name) {
@@ -143,6 +154,21 @@ public final class MoonCamera {
 
     @SubscribeEvent public static void frame(RenderFrameEvent.Post event) {
         var mc = Minecraft.getInstance();
+        if (step == Step.EQUIP && mc.player != null && mc.player.getInventory().selected == TABLET_SLOT) {
+            var stack = mc.player.getMainHandItem();
+            var property = ItemProperties.getProperty(stack, FACE);
+            require(property != null, "Missing Cupid item override");
+            int value = Math.round(4 * property.call(stack, mc.level, mc.player, 0));
+            String name = switch (value) {
+                case 1 -> "held-squint";
+                case 2 -> "held-shut";
+                case 3 -> "held-glance";
+                case 0 -> "held-dark";
+                default -> throw new IllegalStateException("Unexpected tablet state " + value);
+            };
+            // Wait until vanilla's equip animation actually hands off to the physical model.
+            if (!shots.contains(name) && (value != 1 || portraitVisible(mc))) shot(mc, name);
+        }
         boolean opening = step == Step.INTRO && mc.screen instanceof Client.Screen;
         boolean closing = step == Step.RETURN && mc.screen == null;
         if ((!opening && !closing) || sequence >= SAMPLE_TIMES.length) return;
@@ -189,9 +215,24 @@ public final class MoonCamera {
             }
             case PLACED -> {
                 if (!(mc.level.getBlockEntity(CUBE) instanceof StorageEntity) || mc.player.getY() < 79.9) return;
-                mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, CENTER);
+                mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(GroundBagCheck.BAG));
+                mc.player.getInventory().selected = 0;
                 mc.options.hideGui = true;
                 mc.getToasts().clear();
+                enter(Step.GROUND_MODEL);
+            }
+            case GROUND_MODEL -> {
+                if (ticks < 25 || !(mc.level.getBlockEntity(GroundBagCheck.BAG) instanceof dev.anya.storage.PlacedBackpackEntity bag)
+                        || bag.displayStack().isEmpty()) return;
+                require(dev.anya.storage.appearance.Looks.of(bag.displayStack()).texture().equals("galaxy"), "Expected the public galaxy bag");
+                shot(mc, "display-backpack");
+                mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, Vec3.atCenterOf(CUBE.east()));
+                enter(Step.GLOBE_MODEL);
+            }
+            case GLOBE_MODEL -> {
+                if (ticks < 15) return;
+                shot(mc, "display-globe");
+                mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, CENTER);
                 enter(Step.CLOSED);
             }
             case CLOSED -> {
@@ -215,9 +256,36 @@ public final class MoonCamera {
                 enter(Step.TABLET);
             }
             case TABLET -> {
-                if (!mc.player.getMainHandItem().is(Content.CUPID_TABLET.get()) || ticks < 15) return;
+                var stack = mc.player.getInventory().getItem(TABLET_SLOT);
+                if (!stack.is(Content.CUPID_TABLET.get()) || ticks < 8) return;
+                require(mc.player.getInventory().selected == 0 && !mc.player.getMainHandItem().is(Content.CUPID_TABLET.get()),
+                        "The tablet must begin in an unselected hotbar slot");
+                var property = ItemProperties.getProperty(stack, FACE);
+                require(property != null && property.call(stack, mc.level, mc.player, 0) == .25f, "Missing unselected squint");
                 mc.options.mainHand().set(net.minecraft.world.entity.HumanoidArm.RIGHT);
                 mc.gui.getChat().clearMessages(true);
+                shot(mc,"hotbar-squint");
+                mc.player.getInventory().selected = TABLET_SLOT;
+                enter(Step.EQUIP);
+            }
+            case EQUIP -> {
+                if (!shots.contains("held-dark") || ticks < 20) return;
+                require(shots.containsAll(List.of("held-squint", "held-shut", "held-glance")), "Incomplete equip exit " + shots);
+                mc.player.getInventory().selected = 0;
+                enter(Step.AWAY);
+            }
+            case AWAY -> {
+                if (ticks < 5) return;
+                shot(mc,"hotbar-dark");
+                mc.player.getInventory().selected = TABLET_SLOT;
+                enter(Step.RESELECT);
+            }
+            case RESELECT -> {
+                if (ticks < 6) return;
+                var stack = mc.player.getMainHandItem();
+                require(stack.is(Content.CUPID_TABLET.get()) && ItemProperties.getProperty(stack, FACE).call(stack, mc.level, mc.player, 0) == 0,
+                        "Selecting the tablet again replayed the visit");
+                shot(mc,"held-reselected");
                 enter(Step.RIGHT);
             }
             case RIGHT -> {
@@ -246,16 +314,15 @@ public final class MoonCamera {
             case RESUME -> {
                 if (ticks < 8) return;
                 mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(CENTER.x, 81.9, CENTER.z));
-                enter(Step.WATCH_FACE);
+                enter(Step.USE_TABLET);
             }
-            case WATCH_FACE -> {
-                if (ticks < 8 || ticks % 2 != 0 || !portraitVisible(mc)) return;
-                shot(mc,"held-cupid");
+            case USE_TABLET -> {
+                if (ticks < 4) return;
                 KeyMapping.click(InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_RIGHT));
                 enter(Step.INTRO);
             }
             case INTRO -> {
-                if (!(mc.screen instanceof Client.Screen) || !(mc.player.containerMenu instanceof StoreMenu menu) || ticks < 30) return;
+                if (!(mc.screen instanceof Client.Screen) || !(mc.player.containerMenu instanceof StoreMenu menu) || ticks < 30 || sequence < SAMPLE_TIMES.length) return;
                 require(menu.showsTabletIntro(), "Tablet did not receive server presentation flag");
                 GLFW.glfwSetCursorPos(mc.getWindow().getWindow(),4,4);
                 enter(Step.GRID);
@@ -263,6 +330,29 @@ public final class MoonCamera {
             case GRID -> {
                 if (ticks < 12) return;
                 shot(mc,"tablet-inventory");
+                var menu = (StoreMenu)mc.player.containerMenu;
+                require(menu.tooltipsEnabled() && menu.shownSlots() > 0, "Expected usable storage with tooltips initially enabled");
+                var layout = grid(mc, menu);
+                var slot = layout.storage(0);
+                double scale = mc.getWindow().getGuiScale();
+                GLFW.glfwSetCursorPos(mc.getWindow().getWindow(),
+                        (layout.left() + (slot.x() + 8) * layout.scale()) * scale,
+                        (layout.top() + (slot.y() + 8) * layout.scale()) * scale);
+                enter(Step.TOOLTIP_ON);
+            }
+            case TOOLTIP_ON -> {
+                if (ticks < 6) return;
+                shot(mc, "tooltips-on");
+                var menu = (StoreMenu)mc.player.containerMenu;
+                var layout = grid(mc, menu);
+                require(mc.screen.mouseClicked(layout.left() + 322 * layout.scale(), layout.top() + 19 * layout.scale(), 0),
+                        "Visible tooltip control did not accept a primary click");
+                enter(Step.TOOLTIP_OFF);
+            }
+            case TOOLTIP_OFF -> {
+                var menu = (StoreMenu)mc.player.containerMenu;
+                if (menu.tooltipsEnabled() || ticks < 12) return;
+                shot(mc, "tooltips-off");
                 mc.screen.keyPressed(GLFW.GLFW_KEY_ESCAPE,0,0);
                 require(mc.screen == null, "Escape must release the inventory immediately");
                 enter(Step.RETURN);
@@ -273,6 +363,7 @@ public final class MoonCamera {
                 enter(Step.FINISH);
             }
             case FINISH -> {
+                if (!RootChecks.run(mc)) return;
                 if (ticks < 6 || shots.stream().anyMatch(name -> !Files.isRegularFile(mc.gameDirectory.toPath().resolve("screenshots/"+name+".png")))) return;
                 require(shots.contains("lift-4") && shots.contains("return-4"), "Missing transition framebuffer");
                 var loaded = ModList.get().getModContainerById("anyastorage").orElseThrow().getModInfo().getOwningFile().getFile().getFilePath();

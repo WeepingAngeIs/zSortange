@@ -110,6 +110,7 @@ HOST = {
             public boolean openingRule = true, openingHit = true, remote = true;
             public boolean cameo, privateStorage;
             public boolean backpack = true;
+            public boolean tooltipsEnabled() { return true; }
             public boolean hasTabletOpeningRule() { return openingRule; }
             public boolean showsTabletIntro() { return openingHit; }
             public boolean remoteOpening() { return remote; }

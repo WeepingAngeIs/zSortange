@@ -34,7 +34,7 @@ public final class TabletBootScreen {
         graphics.fill(0, 0, width, height, -900, (Math.round(153 * dim) << 24) | 0x000c1017);
         float progress = origin == null ? 1f : Math.min(1f, origin.progress() + elapsed);
         boolean carrying = progress < 1;
-        TabletDevice.Portrait portrait = carrying ? origin.portrait() : TabletDevice.opening(-1, blink);
+        TabletDevice.Portrait portrait = carrying ? origin.portrait() : TabletDevice.opening(blink);
         drawDevice(graphics, width, height, player, portrait, progress, carrying);
     }
 

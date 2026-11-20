@@ -13,6 +13,7 @@ public final class Profiles extends SavedData {
         final FieldKit.Preferences fieldKit=new FieldKit.Preferences();
         public UUID wornBag;
         public boolean guideGranted;
+        public boolean hideStorageTooltips;
         public final Set<String> favorites=new TreeSet<>();
         public String lastReport="No transfer attempted";
         public long lastAction=-100000;
@@ -33,7 +34,7 @@ public final class Profiles extends SavedData {
         ListTag list=tag.getList("Players",Tag.TAG_COMPOUND);
         for(int i=0;i<list.size();i++) {
             CompoundTag entry=list.getCompound(i); if(!entry.hasUUID("Id")) continue;
-            PlayerState p=new PlayerState(); p.guideGranted=entry.getBoolean("GuideGranted"); if(entry.hasUUID("WornBag"))p.wornBag=entry.getUUID("WornBag"); p.protectedSlots=entry.getLong("Protected")&((1L<<36)-1);
+            PlayerState p=new PlayerState(); p.hideStorageTooltips=entry.getBoolean("HideStorageTooltips"); p.guideGranted=entry.getBoolean("GuideGranted"); if(entry.hasUUID("WornBag"))p.wornBag=entry.getUUID("WornBag"); p.protectedSlots=entry.getLong("Protected")&((1L<<36)-1);
             ListTag favorites=entry.getList("Favorites",Tag.TAG_STRING);
             for(int j=0;j<Math.min(256,favorites.size());j++) p.favorites.add(favorites.getString(j));
             p.fieldKit.read(entry,lookup);
@@ -45,7 +46,7 @@ public final class Profiles extends SavedData {
     }
     @Override public CompoundTag save(CompoundTag tag,HolderLookup.Provider lookup) {
         ListTag list=new ListTag();
-        players.forEach((uuid,p)->{CompoundTag entry=new CompoundTag();entry.putUUID("Id",uuid);entry.putBoolean("GuideGranted",p.guideGranted);if(p.wornBag!=null)entry.putUUID("WornBag",p.wornBag);entry.putLong("Protected",p.protectedSlots);ListTag favorites=new ListTag();p.favorites.forEach(s->favorites.add(StringTag.valueOf(s)));entry.put("Favorites",favorites);p.fieldKit.write(entry,lookup);list.add(entry);});
+        players.forEach((uuid,p)->{CompoundTag entry=new CompoundTag();entry.putUUID("Id",uuid);entry.putBoolean("GuideGranted",p.guideGranted);if(p.hideStorageTooltips)entry.putBoolean("HideStorageTooltips",true);if(p.wornBag!=null)entry.putUUID("WornBag",p.wornBag);entry.putLong("Protected",p.protectedSlots);ListTag favorites=new ListTag();p.favorites.forEach(s->favorites.add(StringTag.valueOf(s)));entry.put("Favorites",favorites);p.fieldKit.write(entry,lookup);list.add(entry);});
         tag.put("Players",list); ListTag dragons=new ListTag();rewardedDragons.forEach(uuid->dragons.add(NbtUtils.createUUID(uuid)));tag.put("Dragons",dragons);return tag;
     }
 }

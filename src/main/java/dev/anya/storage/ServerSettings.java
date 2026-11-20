@@ -162,7 +162,7 @@ public final class ServerSettings {
         integer(entries, "expansion.imageWorldMiB", "World image storage", "Maximum image storage in MiB.", 1, 64,
                 d -> d.expansion.imageWorldMiB, (d, v) -> d.expansion.imageWorldMiB = v);
 
-        add(entries, "expansion.pocketCoreMaterial", Kind.REGISTRY_ID, "Pocket core material", "Full item registry ID used in the Home Void Cube recipe.",
+        add(entries, "expansion.pocketCoreMaterial", Kind.REGISTRY_ID, "Legacy pocket core", "Core for data packs using the legacy entrance recipe type. The standard recipe uses diamonds and Ancient Debris.",
                 null, null, d -> d.expansion.pocketCoreMaterial, (d, v) -> d.expansion.pocketCoreMaterial = v,
                 ServerSettings::parseRegistryId);
         integer(entries, "expansion.pocketSessionTicks", "Pocket session length", "Pocket session limit in server ticks.", 200, 12000,

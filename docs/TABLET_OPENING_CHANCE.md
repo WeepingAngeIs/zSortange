@@ -1,6 +1,6 @@
 # Cupid settings
 
-The server rolls **Tablet opening appearance chance** when a bound Cupid Tablet successfully opens storage the player may view. The default is **24%**. A hit plays Cupid's 1.05-second opening. A miss opens storage as soon as it is ready. Holding the tablet quietly uses a separate timer for the face on its screen. The heart Remote opens storage immediately.
+The server rolls **Tablet opening appearance chance** when a bound Cupid Tablet successfully opens storage the player may view. The default is **24%**. A hit plays Cupid's 1.05-second opening. A miss opens storage as soon as it is ready. An unselected tablet can show a long squint in the hotbar. Selecting it finishes the current expression in up to 15 game ticks. The hotbar and held screen share that expression and then go dark together. The heart Remote opens storage immediately.
 
 Opening a supported Anya Storage Plus chest or backpack directly opens its inventory immediately. The optional cameos are brief portraits beside the inventory and leave the controls usable. Vanilla and other mods' containers use their ordinary behavior.
 

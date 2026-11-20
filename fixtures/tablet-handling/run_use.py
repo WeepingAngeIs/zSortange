@@ -22,7 +22,7 @@ def run(options):
             compiled = scratch / "candidate"
             compiled.mkdir()
             src = HERE.parents[1] / "src/main/java/dev/anya/storage/appearance"
-            production = ("HeldTablet", "TabletIdle", "TabletLift", "TabletHandMotion", "TabletHandlingPose", "TabletArmRenderer",
+            production = ("HeldTablet", "TabletFaces", "TabletIdle", "TabletLift", "TabletHandMotion", "TabletHandlingPose", "TabletArmRenderer",
                           "TabletDevice", "GuardianBlink")
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", os.pathsep.join((app, libs)),
                    "-d", compiled, *(src / (name + ".java") for name in production)], scratch)

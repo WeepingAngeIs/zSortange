@@ -1,0 +1,12 @@
+Anya Storage Plus beta.7-shycupid.1
+Minecraft 1.21.1 • NeoForge 21.1.249 • Java 21
+
+Crouch and use a backpack on the ground to place it. Right-click the placed bag with an upgrade disc, elemental binding, skin patch or the full material cost of its next storage tier. The bag carries its saved items and cosmetic choices with it. The inventory displays its style and tier. Anvil names take precedence.
+
+Anya inventories have a personal Tooltips switch at the upper right. Routine bound tablet opens are quiet. The physical Cupid Tablet and hotbar icon share a close-up face that finishes its expression when selected. The first-person grip tracks the tablet through turns. An occasional decorative full-body Cupid can visit an authorized physical pocket room.
+
+Craft one Home Void Cube from two diamonds and one Ancient Debris, in any three slots. Crafting works with pocket travel off. Operators can enable travel in a disposable world with /anya pocket enable.
+
+The seven upgrades have new round discs. The Storage Core is a tall crystal and the Dragon Victory Token is a gold medallion. The Keepsake Globe replaces the shelf using its existing block ID. See FIELD-KIT.md for controls and handling of old hidden items.
+
+This candidate is for matching test clients and servers. Real GPU, claims-provider and full modpack acceptance are separate playtests.

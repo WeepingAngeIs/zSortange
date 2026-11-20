@@ -25,12 +25,13 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
 /** Adds the detailed first-person grip and face to the selected Cupid Tablet. */
 @EventBusSubscriber(modid = AnyaStorage.ID, value = Dist.CLIENT)
 public final class HeldTablet {
-    private static final TabletIdle IDLE = new TabletIdle(TabletDevice::chooseVisit);
+    private static Held owner;
     private static final TabletLift LIFT = new TabletLift();
     private static boolean useLatched;
     private static HandPose pending;
     private static TabletDevice.Held lowering;
     private static long loweringAt;
+    private static float frameReturn;
     private static long frozenAt = Long.MIN_VALUE;
     private static long coveredTime;
 
@@ -87,7 +88,9 @@ public final class HeldTablet {
             }
         }
         int slot = player.getInventory().selected;
-        if (IDLE.bind(player, stack, hand == InteractionHand.OFF_HAND, slot)) {
+        var current = new Held(player, stack, hand, slot);
+        if (!current.matches(owner)) {
+            owner = current;
             pending = null;
             lowering = null;
             LIFT.reset();
@@ -97,7 +100,7 @@ public final class HeldTablet {
             // The close callback may just have queued a frame for the newly synced stack.
             TabletDevice.forgetWorldFrame();
         }
-        return new Held(player, stack, hand, slot);
+        return current;
     }
 
     private static void reset() {
@@ -107,12 +110,13 @@ public final class HeldTablet {
         useLatched = false;
         frozenAt = Long.MIN_VALUE;
         coveredTime = 0;
-        IDLE.bind(null, null, false, -1);
+        owner = null;
         TabletDevice.forgetHeld();
     }
 
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
         reset();
+        TabletFaces.clear();
     }
 
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
@@ -139,7 +143,6 @@ public final class HeldTablet {
             LIFT.reset(); // The storage screen owns the captured rise until the player closes it.
         } else if (next != null && !(next instanceof PauseScreen)) {
             lowering = null;
-            IDLE.quiet();
             LIFT.reset();
             TabletDevice.forgetHeld();
         }
@@ -158,6 +161,32 @@ public final class HeldTablet {
 
     @SubscribeEvent public static void beginFrame(RenderFrameEvent.Pre event) {
         pending = null;
+        var mc = Minecraft.getInstance();
+        boolean paused = mc.screen instanceof PauseScreen;
+        // Capture one display state before either the native hotbar or the hand is painted.
+        TabletFaces.sample(mc.player, paused || mc.screen instanceof Client.Screen);
+        if (!TabletDevice.enabled() || mc.screen != null && !paused) return;
+        var held = observe(mc);
+        if (held == null) return;
+        long time = animationTime(Util.getMillis(), paused);
+        var close = TabletDevice.takeClosing();
+        if (close != null && close.width() == mc.getWindow().getGuiScaledWidth()
+                && close.height() == mc.getWindow().getGuiScaledHeight()) {
+            lowering = close.afterMenuSync(held.player());
+            loweringAt = time;
+        }
+        frameReturn = lowering == null ? 0 : remaining(time);
+        if (lowering != null && frameReturn > 0 && lowering.stillHeld(held.player())
+                && lowering.width() == mc.getWindow().getGuiScaledWidth()
+                && lowering.height() == mc.getWindow().getGuiScaledHeight()) {
+            TabletFaces.carry(held.stack(), TabletDevice.faceOf(lowering.portrait()));
+        } else {
+            lowering = null;
+        }
+    }
+
+    private static float remaining(long time) {
+        return lowering.progress() - (time - loweringAt) / (float) TabletLift.RETURN_MS;
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -196,16 +225,10 @@ public final class HeldTablet {
         long now = Util.getMillis();
         long visualTime = animationTime(now, paused);
         float progress = LIFT.progress(visualTime);
-        int column = IDLE.paintColumn(visualTime);
-        TabletDevice.Portrait portrait = TabletDevice.visit(IDLE.row(), column);
+        TabletDevice.Portrait portrait = TabletDevice.physicalFace(TabletFaces.face(held.stack()));
         TabletDevice.Grip grip = pose.grip();
-        var close = TabletDevice.takeClosing();
-        if (close != null && close.width() == width && close.height() == height) {
-            lowering = close.afterMenuSync(held.player());
-            loweringAt = visualTime;
-        }
         if (lowering != null) {
-            float remaining = lowering.progress() - (visualTime - loweringAt) / (float) TabletLift.RETURN_MS;
+            float remaining = frameReturn;
             if (remaining <= 0 || !lowering.stillHeld(held.player()) || lowering.width() != width || lowering.height() != height) {
                 lowering = null;
             } else {

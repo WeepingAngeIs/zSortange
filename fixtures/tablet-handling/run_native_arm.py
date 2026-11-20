@@ -86,8 +86,9 @@ def main(options):
         if code is None:
             code = scratch / "compiled"
             code.mkdir()
-            source = HERE.parents[1] / "src/main/java/dev/anya/storage/appearance/TabletArmRenderer.java"
-            invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", libs, "-d", code, source], scratch)
+            directory = HERE.parents[1] / "src/main/java/dev/anya/storage/appearance"
+            sources = [directory / name for name in ("TabletArmRenderer.java", "TabletHandlingPose.java", "TabletHandMotion.java")]
+            invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", libs, "-d", code, *sources], scratch)
         code = code.resolve()
         host = scratch / "host"
         host.mkdir()
@@ -101,7 +102,7 @@ def main(options):
         cp = os.pathsep.join((host.as_posix(), code.as_posix(), libs))
         invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", cp, "-d", host,
                                        *files, HERE / "NativeArmCheck.java"], scratch)
-        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-classpath", cp, "NativeArmCheck"], scratch)
+        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-classpath", cp, "dev.anya.storage.appearance.NativeArmCheck"], scratch)
 
 
 if __name__ == "__main__":

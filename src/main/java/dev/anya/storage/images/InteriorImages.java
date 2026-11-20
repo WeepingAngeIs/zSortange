@@ -124,9 +124,9 @@ public final class InteriorImages {
     public static boolean canView(ServerPlayer p,Entry e,boolean moderation){return e!=null&&(e.owner.equals(p.getUUID())||(moderation&&p.hasPermissions(2))||(ExpansionRules.get().imageSharing&&e.approved&&e.viewers.contains(p.getUUID())));}
     public static void attach(ServerPlayer p,BagInventory bag,UUID id)throws IOException{
         Entry e=entries.get(id);if(!bag.valid()||e==null||!e.owner.equals(p.getUUID()))throw new IOException("Only your own image can be attached");
-        CompoundTag data=BagInventory.data(bag.stack);data.putUUID("InteriorImage",id);BagInventory.data(bag.stack,data);p.getInventory().setChanged();
+        CompoundTag data=BagInventory.data(bag.stack);data.putUUID("InteriorImage",id);BagInventory.data(bag.stack,data);bag.hostChanged();
     }
-    public static void clearAttachment(ServerPlayer p,BagInventory bag){CompoundTag t=BagInventory.data(bag.stack);t.remove("InteriorImage");BagInventory.data(bag.stack,t);p.getInventory().setChanged();}
+    public static void clearAttachment(ServerPlayer p,BagInventory bag){CompoundTag t=BagInventory.data(bag.stack);t.remove("InteriorImage");BagInventory.data(bag.stack,t);bag.hostChanged();}
     private static void view(ServerPlayer p,StoreMenu menu,ExpansionPackets.ImageWire w)throws IOException{
         long now=System.currentTimeMillis();if(now-readTimes.getOrDefault(p.getUUID(),0L)<750)return;readTimes.put(p.getUUID(),now);
         Entry e=entries.get(w.token());BagInventory bag=menu.imageBag();boolean moderation=menu.moderatingImage(w.token());

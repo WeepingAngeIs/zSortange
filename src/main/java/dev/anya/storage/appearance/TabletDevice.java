@@ -11,22 +11,18 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 
-import java.util.concurrent.ThreadLocalRandom;
 
 /** Shared hardware, aperture and placement for the held Cupid Tablet and its storage screen. */
 public final class TabletDevice {
     public static final int WIDTH = TabletHandlingPose.WIDTH, HEIGHT = TabletHandlingPose.HEIGHT;
     private static final int SCREEN_X = 16, SCREEN_Y = 20, SCREEN_W = 400, SCREEN_H = 268;
     private static final ResourceLocation SHELL = gui("tablet_device");
-    private static final ResourceLocation ITEM_FACE = ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "item/cupid_tablet_face");
-    private static final ResourceLocation EXPRESSIONS = gui("tablet_expressions");
-    private static final int CELL_W = 224, CELL_H = 128, COLUMNS = 9, OPENING_ROWS = 4, IDLE_ROWS = 3;
-    private static final int TUMBLE_ROW = OPENING_ROWS + IDLE_ROWS;
-    private static final ResourceLocation TUMBLE = gui("tablet_tumble");
-    private static final Portrait[] TUMBLE_CELLS = row(TUMBLE, 0, 1);
-    private static boolean lastVisitTumbled;
-    private static final Rows VISITS = new Rows(OPENING_ROWS, IDLE_ROWS);
-    private static final Portrait[][] CELLS = expressionSheet();
+    private static final int CELL_W = 224, CELL_H = 128;
+    // These also name the sprite overrides in the physical item model. The detailed hand
+    // samples the exact baked sprite rather than running a second atlas animation.
+    private static final Portrait[] PHYSICAL = java.util.Arrays.stream(TabletIdle.Face.values())
+            .map(face -> new Portrait(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID,
+                    "item/cupid_tablet_face_" + face.sprite), 0, 0, 0, 0, face)).toArray(Portrait[]::new);
     private static final ResourceLocation ORIGINAL = gui("tablet_guardian");
     private static final Portrait OPEN = new Portrait(ORIGINAL, 8, 8, 240, 432);
     private static final Portrait HALF = new Portrait(ORIGINAL, 8, 152, 240, 432);
@@ -34,7 +30,11 @@ public final class TabletDevice {
     private static final Portrait GAZE = new Portrait(gui("tablet_gaze_left"), 8, 8, 240, 144);
 
     public record Bounds(float x, float y, float scale) {}
-    record Portrait(ResourceLocation image, int u, int v, int atlasWidth, int atlasHeight) {}
+    record Portrait(ResourceLocation image, int u, int v, int atlasWidth, int atlasHeight, TabletIdle.Face itemFace) {
+        Portrait(ResourceLocation image, int u, int v, int atlasWidth, int atlasHeight) {
+            this(image, u, v, atlasWidth, atlasHeight, null);
+        }
+    }
     record Grip(boolean right, float swing, float equip, int light, TabletHandMotion motion) {
         Grip(boolean right, float swing, float equip, int light) {
             this(right, swing, equip, light, TabletHandMotion.STILL);
@@ -69,56 +69,7 @@ public final class TabletDevice {
         return ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "textures/gui/" + name + ".png");
     }
 
-    private static Portrait[][] expressionSheet() {
-        var cells = new Portrait[OPENING_ROWS + IDLE_ROWS][];
-        for (int row = 0; row < cells.length; row++) {
-            cells[row] = row(EXPRESSIONS, row, cells.length);
-        }
-        return cells;
-    }
-
-    private static Portrait[] row(ResourceLocation image, int row, int height) {
-        var cells = new Portrait[COLUMNS];
-        for (int col = 0; col < COLUMNS; col++) {
-            cells[col] = new Portrait(image, col * CELL_W, row * CELL_H, COLUMNS * CELL_W, height * CELL_H);
-        }
-        return cells;
-    }
-
-    /** Pick once per visible opening or visit. A pack reload is observed on the next appearance. */
-    private static final class Rows {
-        private final int first, count;
-        private int previous = -1;
-
-        Rows(int first, int count) { this.first = first; this.count = count; }
-
-        int next() {
-            if (Minecraft.getInstance().getResourceManager().getResource(EXPRESSIONS).isEmpty()) return -1;
-            int choice = ThreadLocalRandom.current().nextInt(previous < 0 ? count : count - 1);
-            if (previous >= 0 && choice >= previous) choice++;
-            previous = choice;
-            return first + choice;
-        }
-    }
-
-    static int chooseVisit() {
-        return chooseVisit(ThreadLocalRandom.current().nextInt(8));
-    }
-
-    static int chooseVisit(int roll) {
-        if (roll >= 4) {
-            lastVisitTumbled = false;
-            return -1; // A short Twin Tails glance, using the approved portrait.
-        }
-        int regular = VISITS.next();
-        lastVisitTumbled = regular >= 0 && !lastVisitTumbled && roll == 0
-                && Minecraft.getInstance().getResourceManager().getResource(TUMBLE).isPresent();
-        return lastVisitTumbled ? TUMBLE_ROW : regular;
-    }
-
-    static Portrait opening(int row, GuardianBlink blink) {
-        if (blink.column() < 0) return null;
-        if (row >= 0) return CELLS[row][blink.column()];
+    static Portrait opening(GuardianBlink blink) {
         return switch (blink.frame()) {
             case OPEN -> OPEN;
             case HALF -> HALF;
@@ -126,11 +77,13 @@ public final class TabletDevice {
             default -> null;
         };
     }
-
-    static Portrait visit(int row, int column) {
-        if (column < 0) return null;
-        if (row == TUMBLE_ROW) return TUMBLE_CELLS[column];
-        return row < 0 ? GAZE : CELLS[row][column];
+    static Portrait physicalFace(TabletIdle.Face face) { return PHYSICAL[face.ordinal()]; }
+    static TabletIdle.Face faceOf(Portrait portrait) {
+        if (portrait == OPEN) return TabletIdle.Face.OPEN;
+        if (portrait == HALF) return TabletIdle.Face.SQUINT;
+        if (portrait == CLOSED) return TabletIdle.Face.SHUT;
+        if (portrait != null && portrait.itemFace() != null) return portrait.itemFace();
+        return TabletIdle.Face.DARK;
     }
     static boolean rightSide(LocalPlayer player, InteractionHand hand) {
         return (player.getMainArm() == net.minecraft.world.entity.HumanoidArm.RIGHT) == (hand == InteractionHand.MAIN_HAND);
@@ -207,8 +160,18 @@ public final class TabletDevice {
         try {
             pose.translate(b.x, b.y, 0);
             pose.scale(b.scale, b.scale, 1);
-            // Use the exact current item-atlas frame rather than starting another animation on equip.
-            if (liveAtlas && portrait == null && drawItemFace(g)) return;
+            if ((portrait != null && portrait.itemFace() != null) || (liveAtlas && portrait == null)) {
+                var face = faceOf(portrait);
+                if (drawItemFace(g, physicalFace(face).image())) return;
+                // Resource packs can omit a sprite. Keep the corresponding approved GUI face.
+                portrait = switch (face) {
+                    case SQUINT -> HALF;
+                    case SHUT -> CLOSED;
+                    case GLANCE -> GAZE;
+                    case OPEN -> OPEN;
+                    default -> null;
+                };
+            }
             g.blit(SHELL, 0, 0, 0, 0, WIDTH, HEIGHT, WIDTH, HEIGHT);
             if (portrait != null) {
                 float zoom = SCREEN_W / (float) CELL_W;
@@ -220,8 +183,8 @@ public final class TabletDevice {
             pose.popPose();
         }
     }
-    private static boolean drawItemFace(GuiGraphics graphics) {
-        var sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(ITEM_FACE);
+    private static boolean drawItemFace(GuiGraphics graphics, ResourceLocation face) {
+        var sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(face);
         if (sprite.contents().name().equals(MissingTextureAtlasSprite.getLocation())) return false;
         graphics.blit(0, 0, 0, WIDTH, HEIGHT, sprite);
         return true;

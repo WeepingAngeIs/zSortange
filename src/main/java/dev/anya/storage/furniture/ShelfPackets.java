@@ -51,11 +51,12 @@ public final class ShelfPackets {
             if(previous!=null && now-previous<4) return;
             last.put(p,now);
             FurnitureEntity f=Furniture.target(p);
-            if(f==null || !query.pos().equals(f.getBlockPos()) || !Furniture.canSee(p,f)) {
+            if(f==null || !query.pos().equals(f.getBlockPos()) || !Furniture.canSee(p,f) || f.inventory.isEmpty()) {
                 PacketDistributor.sendToPlayer(p,new Display(query.pos(),query.token(),null,""));return;
             }
             var id=BuiltInRegistries.ITEM.getKey(f.inventory.getItem(0).getItem());
-            PacketDistributor.sendToPlayer(p,new Display(f.getBlockPos(),query.token(),id,f.caption));
+            String caption=f.visible || f.sealedKeepsake() ? f.caption : "";
+            PacketDistributor.sendToPlayer(p,new Display(f.getBlockPos(),query.token(),id,caption));
         });
         r.playToClient(Display.TYPE,Display.CODEC,(display,ctx)->receiver.accept(ctx.connection(),display));
     }

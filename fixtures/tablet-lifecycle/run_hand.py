@@ -29,7 +29,7 @@ HOST = {
     "net.minecraft.world.item.Item": "public class Item {}",
     "dev.anya.storage.StorageItem": "public class StorageItem extends net.minecraft.world.item.Item {}",
     "net.minecraft.world.item.ItemStack": """public class ItemStack {
-        public final Item item; public ItemStack(Item item){this.item=item;}
+        public static final ItemStack EMPTY=new ItemStack(null); public final Item item; public ItemStack(Item item){this.item=item;}
         public boolean is(Item candidate){return item==candidate;}
         public static boolean matches(ItemStack a, ItemStack b){return a.item == b.item;}
     }""",
@@ -60,18 +60,26 @@ HOST = {
         private final OptionInstance<Boolean> bob = new OptionInstance<>(true);
         public OptionInstance<Boolean> bobView(){return bob;}
     }""",
-    "net.minecraft.world.entity.player.Inventory": "public class Inventory { public int selected; }",
+    "net.minecraft.world.entity.player.Inventory": """public class Inventory {
+        public int selected;
+        public net.minecraft.client.player.LocalPlayer player;
+        public final net.minecraft.world.item.ItemStack[] slots=new net.minecraft.world.item.ItemStack[36];
+        public net.minecraft.world.item.ItemStack getItem(int slot){
+            var stack=selected==slot ? player.main : slots[slot];
+            return stack == null ? net.minecraft.world.item.ItemStack.EMPTY : stack;
+        }
+    }""",
     "net.minecraft.client.player.LocalPlayer": """public class LocalPlayer extends net.minecraft.world.entity.Entity {
-        public net.minecraft.world.item.ItemStack main,off; public boolean using;
+        public int tickCount; public net.minecraft.world.item.ItemStack main,off; public boolean using;
         public float xBob,xBobO,yBob,yBobO,walkDist,walkDistO,bob,oBob;
         public float viewXRot,viewYRot;
         public float getViewXRot(float tick){return viewXRot;}
         public float getViewYRot(float tick){return viewYRot;}
         public net.minecraft.world.entity.HumanoidArm arm=net.minecraft.world.entity.HumanoidArm.RIGHT;
         public final net.minecraft.world.entity.player.Inventory inv=new net.minecraft.world.entity.player.Inventory();
-        public net.minecraft.world.entity.player.Inventory getInventory(){return inv;}
+        public net.minecraft.world.entity.player.Inventory getInventory(){inv.player=this;return inv;}
         public net.minecraft.world.item.ItemStack getMainHandItem(){return main;}
-        public net.minecraft.world.item.ItemStack getOffhandItem(){return off;}
+        public net.minecraft.world.item.ItemStack getOffhandItem(){return off==null ? net.minecraft.world.item.ItemStack.EMPTY : off;}
         public net.minecraft.world.item.ItemStack getItemInHand(net.minecraft.world.InteractionHand hand){
             return hand == net.minecraft.world.InteractionHand.MAIN_HAND ? main : off;
         }
@@ -84,11 +92,15 @@ HOST = {
     "net.minecraft.client.gui.screens.Screen": "public class Screen {}",
     "net.minecraft.client.gui.screens.PauseScreen": "public class PauseScreen extends Screen {}",
     "dev.anya.storage.Client": "public class Client { public static class Screen extends net.minecraft.client.gui.screens.Screen {} }",
+    "com.mojang.blaze3d.platform.Window": """public class Window {
+        public int getGuiScaledWidth(){return 640;} public int getGuiScaledHeight(){return 360;}
+    }""",
     "net.minecraft.client.Minecraft": """public class Minecraft {
         private static final Minecraft INSTANCE=new Minecraft(); public static Minecraft getInstance(){return INSTANCE;}
         public final Options options = new Options(); public net.minecraft.client.player.LocalPlayer player;
         public net.minecraft.client.gui.screens.Screen screen; public net.minecraft.world.entity.Entity camera;
         public net.minecraft.world.entity.Entity getCameraEntity(){return camera;}
+        public com.mojang.blaze3d.platform.Window getWindow(){return new com.mojang.blaze3d.platform.Window();}
     }""",
     "net.minecraft.client.gui.GuiGraphics": """public class GuiGraphics {
         public int guiWidth(){return 640;} public int guiHeight(){return 360;}
@@ -134,8 +146,10 @@ HOST = {
         public static Held takeClosing() { var frame = closing; closing = null; return frame; }
         public static Held peekHeld() { return saved; }
         public static void rememberHeld(Held held) { saved = held; }
-        public static int chooseVisit() { visits++; return 4; }
-        public static Portrait visit(int row, int column) { return column < 0 ? null : new Portrait(row, column); }
+        public static Portrait physicalFace(TabletIdle.Face face) { return new Portrait(-1, face.ordinal()); }
+        public static TabletIdle.Face faceOf(Portrait face) {
+            return face == null ? TabletIdle.Face.DARK : TabletIdle.Face.values()[face.column()];
+        }
         public static void drawHandling(net.minecraft.client.gui.GuiGraphics graphics, int width, int height,
                 net.minecraft.client.player.LocalPlayer player, Grip grip, float value, Portrait portrait, boolean atlas) {
             draws++;
@@ -172,7 +186,7 @@ def run(options):
             compiled.mkdir()
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-d", compiled,
                    "-classpath", os.pathsep.join([app,libraries]), *[SRC / (name + ".java") for name in
-                   ("HeldTablet","TabletIdle","TabletLift","TabletHandMotion","TabletHandlingPose","TabletArmRenderer",
+                   ("HeldTablet","TabletFaces","TabletIdle","TabletLift","TabletHandMotion","TabletHandlingPose","TabletArmRenderer",
                     "TabletDevice","GuardianBlink")]], scratch)
             app = os.pathsep.join([compiled.as_posix(), app])
         cp = os.pathsep.join([host.as_posix(), app, libraries])

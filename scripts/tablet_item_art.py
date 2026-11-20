@@ -43,6 +43,9 @@ def generate():
     item = TEXTURES / "item"
     item.mkdir(parents=True, exist_ok=True)
     strip.save(item / "cupid_tablet_face.png", optimize=True)
+    for index, name in enumerate(("dark", "open", "squint", "shut", "glance")):
+        frame = strip.crop((0, index * height, width, (index + 1) * height))
+        frame.save(item / f"cupid_tablet_face_{name}.png", optimize=True)
     metal.save(item / "cupid_tablet_case.png", optimize=True)
 
 

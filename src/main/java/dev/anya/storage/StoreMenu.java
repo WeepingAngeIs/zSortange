@@ -34,7 +34,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
-    private final ContainerData sync=new SimpleContainerData(18);
+    private final ContainerData sync=new SimpleContainerData(19);
     private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256;
     static final int POCKET_ACTION_SLOT = 51;
     private final int openingFlags;
@@ -151,6 +151,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         int index=14+slot/16;
         sync.set(index,sync.get(index)|(1<<(slot%16)));
     }
+    public boolean tooltipsEnabled(){return sync.get(18)==0;}
     public boolean storageView(){return (sync.get(4)&1)!=0;}
     public boolean hasTabletOpeningRule(){return (sync.get(4)&TABLET_RULE)!=0;}
     public boolean showsTabletIntro(){return (sync.get(4)&TABLET_INTRO)!=0;}
@@ -202,7 +203,19 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private boolean accessChanged(){return page==Page.ACCESS&&hub!=null&&shownAccessRevision!=hub.profileRevision;}
     public void action(Packets.Action packet){
-        if(owner==null||packet.session()!=session()||packet.revision()!=revision()){sendAllDataToRemote();return;}
+        if(owner==null||packet.session()!=session())return;
+        // A personal preference has no dependency on the inventory snapshot revision.
+        if(packet.verb().equals("tooltips")){
+            if(!stillValid(owner) || (packet.value()!=0 && packet.value()!=1))return;
+            var preferences=Profiles.of(owner);
+            boolean hide=packet.value()==0;
+            if(preferences.hideStorageTooltips!=hide){
+                preferences.hideStorageTooltips=hide;Profiles.changed(owner);
+            }
+            sync.set(18,hide?1:0);
+            super.broadcastChanges();return;
+        }
+        if(packet.revision()!=revision()){sendAllDataToRemote();return;}
         if(!stillValid(owner)){owner.closeContainer();return;}
         if(accessChanged()){render();bump();sendAllDataToRemote();return;}
         long now=owner.serverLevel().getGameTime();if(lastAction==now)return;lastAction=now;
@@ -224,6 +237,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private boolean isStoragePage(){return page.isStorage();}
     private void render(){
         resetControlSlots();buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
+        sync.set(18,Profiles.of(owner).hideStorageTooltips?1:0);
         sync.set(4,bag!=null?2:0);sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
@@ -744,7 +758,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(47,ControlGlyph.COMPACT,"Compact one safe recipe",c->AnyaStorage.tell(owner,Upgrades.compact(bag)));button(48,ControlGlyph.RESUPPLY,"Supply a tool to an empty selected hotbar slot",c->Upgrades.resupply(bag));
         button(49,ControlGlyph.EDIT_PICKUP,"Toggle pickup filter: "+input,c->Upgrades.filter(bag,"PickupFilter",input),"Type an item ID or click an inventory item below.");
         button(50,ControlGlyph.EDIT_SMELT,"Toggle smelt filter: "+input,c->Upgrades.filter(bag,"SmeltFilter",input));
-        button(51,ControlGlyph.STOP_SMELT,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");tag.remove("SmeltFilter");BagInventory.data(bag.stack,tag);owner.getInventory().setChanged();});
+        button(51,ControlGlyph.STOP_SMELT,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");tag.remove("SmeltFilter");BagInventory.data(bag.stack,tag);bag.hostChanged();});
         button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());
     }
     private void explainSlot(int slot,boolean dump){
@@ -818,31 +832,33 @@ public final class StoreMenu extends AbstractContainerMenu {
         UUID id=data.hasUUID("InteriorImage")?data.getUUID("InteriorImage"):ExpansionPackets.NONE;
         if(page==Page.IMAGES&&selectedImage!=null&&owner.hasPermissions(2))id=selectedImage;
         UUID bagId=data.hasUUID("BagId")?data.getUUID("BagId"):ExpansionPackets.NONE;
-        String signature=look.toString()+id+bagId+page;
+        String title = bag == null || bag.stack.has(DataComponents.CUSTOM_NAME) ? "" : bag.name();
+        if (title.length() > 128) title = title.substring(0,128);
+        String signature=look.toString()+id+bagId+page+title;
         if(signature.equals(lastAppearance))return;lastAppearance=signature;
-        PacketDistributor.sendToPlayer(owner,new ExpansionPackets.Look(-1,bagId,containerId,session(),look.texture(),look.element(),look.interior(),id,page==Page.WARDROBE));
+        PacketDistributor.sendToPlayer(owner,new ExpansionPackets.Look(-1,bagId,containerId,session(),look.texture(),look.element(),look.interior(),id,page==Page.WARDROBE,title));
     }
     private void wardrobe(){
         if(bag==null)return;Looks.Look look=Looks.of(bag.stack);
         for(int i=0;i<Looks.ELEMENTS.size();i++){
             String element=Looks.ELEMENTS.get(i);boolean unlocked=Looks.unlocked(bag.stack,element,true);
             button(i,ControlGlyph.valueOf("ELEMENT_"+element.toUpperCase(Locale.ROOT)),look.element().equals(element)?State.SELECTED:unlocked?State.NORMAL:State.DISABLED,Looks.title(element)+(look.element().equals(element)?" [ACTIVE]":unlocked?" [UNLOCKED]":" [CRAFT BINDING]"),c->{
-                if(!unlocked)throw new IllegalArgumentException("Craft this elemental binding, then combine it with the backpack in a crafting grid.");Looks.apply(bag.stack,element,true);owner.getInventory().setChanged();
+                if(!unlocked)throw new IllegalArgumentException("Craft this elemental binding, then combine it with the backpack in a crafting grid.");Looks.apply(bag.stack,element,true);bag.hostChanged();
             },"One elemental path at a time. Appearance does not grant stats.","Defaults: stone +2 armor; diamond +4; magma 20% less fire damage.","Water +10% swim speed in water; no water breathing or immunity.","Server rules may change these values. Armor/Origins effects are not replaced.");
         }
         for(int i=0;i<Looks.SKINS.size();i++){
             String skin=Looks.SKINS.get(i);boolean unlocked=Looks.unlocked(bag.stack,skin,false);
             button(18+i,ControlGlyph.valueOf("SKIN_"+skin.toUpperCase(Locale.ROOT)),look.skin().equals(skin)?State.SELECTED:unlocked?State.NORMAL:State.DISABLED,Looks.title(skin)+(look.skin().equals(skin)?" [WORN LOOK]":unlocked?" [UNLOCKED]":" [CRAFT PATCH]"),c->{
-                if(!unlocked)throw new IllegalArgumentException("Craft this skin patch, then combine it with the backpack. Unlocked looks can be switched freely.");Looks.apply(bag.stack,skin,false);owner.getInventory().setChanged();
+                if(!unlocked)throw new IllegalArgumentException("Craft this skin patch, then combine it with the backpack. Unlocked looks can be switched freely.");Looks.apply(bag.stack,skin,false);bag.hostChanged();
             },"Cosmetic slot only. No armor or capacity changes.","Tier upgrades preserve this look and all unlocked skins.");
         }
         button(36,ControlGlyph.RECIPE_PREVIEW,"Accessible starter recipes",null,"Leather: 6 leather + 2 string + 1 chest.","Leaf: 4 matching leaves + 2 leather + 2 string.","All eight vanilla leaf species have recipes.","Bindings: stone/cobblestone, diamond, magma, prismarine, leaves.","Skin patches use paper, dyes and themed vanilla materials.","Recipes are supplied as normal crafting JSON; no new ore generation.");
         button(38,ControlGlyph.PROGRESSION,"Independent progression",null,"Element: "+look.element(),"Skin: "+look.skin(),"Storage tier: "+BagInventory.data(bag.stack).getString("TierName"),"Capacity: "+bag.getContainerSize(),"Netherite and descendants may grant a small knockback bonus.");
         button(45,ControlGlyph.BACK,"Back to backpack",c->navigate(Page.BAG));
         boolean worn=BagInventory.data(bag.stack).getUUID("BagId").equals(Profiles.of(owner).wornBag);
-        button(46,ControlGlyph.WEAR,bag.playerSlot<0?State.DISABLED:worn?State.ON:State.OFF,bag.playerSlot<0?"Equipped in Accessories back slot":worn?"Unequip worn backpack":"Wear this backpack",c->{if(bag.playerSlot>=0)Wearables.toggle(owner,bag.stack);},"References this inventory item; no duplicate copy is created.","Only one backpack can grant benefits. Duplicate IDs disable benefits.","Dropping, death or losing the item removes the bonus.");
+        button(46,ControlGlyph.WEAR,bag.playerSlot<0?State.DISABLED:worn?State.ON:State.OFF,bag.playerSlot==BackpackAccess.GROUND_SLOT?"Pick up this backpack to wear it":bag.playerSlot<0?"Equipped in Accessories back slot":worn?"Unequip worn backpack":"Wear this backpack",c->{if(bag.playerSlot>=0)Wearables.toggle(owner,bag.stack);},"References this inventory item; no duplicate copy is created.","Only one backpack can grant benefits. Duplicate IDs disable benefits.","Dropping, death or losing the item removes the bonus.");
         button(48,ControlGlyph.PERSONAL_IMAGES,"My private image library",c->navigate(Page.IMAGES),"Drag ONE PNG file onto this Wardrobe screen to upload.","32..256 px per side; RGB/RGBA 8-bit; at most 64 KiB.","No URLs, filenames or local paths are sent to the server.","Uploads are OFF until your operator permits them.");
-        button(49,ControlGlyph.INTERIOR,"Built-in interior: "+Looks.title(look.interior()),c->{CompoundTag t=BagInventory.data(bag.stack);int i=Looks.INTERIORS.indexOf(look.interior());if(c.shift)t.remove("Interior");else t.putString("Interior",Looks.INTERIORS.get(Math.floorMod(i+(c.button==1?-1:1),Looks.INTERIORS.size())));t.remove("InteriorImage");BagInventory.data(bag.stack,t);owner.getInventory().setChanged();},"Cycles built-in interiors. Shift-click restores automatic theming.","Custom images can be reattached from your library.");
+        button(49,ControlGlyph.INTERIOR,"Built-in interior: "+Looks.title(look.interior()),c->{CompoundTag t=BagInventory.data(bag.stack);int i=Looks.INTERIORS.indexOf(look.interior());if(c.shift)t.remove("Interior");else t.putString("Interior",Looks.INTERIORS.get(Math.floorMod(i+(c.button==1?-1:1),Looks.INTERIORS.size())));t.remove("InteriorImage");BagInventory.data(bag.stack,t);bag.hostChanged();},"Cycles built-in interiors. Shift-click restores automatic theming.","Custom images can be reattached from your library.");
         button(51,ControlGlyph.IMAGE_PRIVACY,"Image privacy",null,"Owner-only by default, including before moderation approval.","Other viewers need approval, sharing enabled and an explicit UUID grant.","Operators may inspect/reject images in the moderation library.","Images never appear on the public backpack model.","Recipients could still save screenshots or copies they already received.");
         button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());
     }

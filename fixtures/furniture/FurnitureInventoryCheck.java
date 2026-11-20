@@ -73,15 +73,33 @@ public final class FurnitureInventoryCheck {
                 && recovered.inventory.getItem(0).isEmpty() && recovered.inventory.getItem(1).getCount()==3,"Collect returns exact components without touching neighbor");
         var shelf=new FurnitureEntity(BlockPos.ZERO,Content.SHELF.get().defaultBlockState());
         shelf.initialize(owner,null);
-        check(!shelf.maySend(guest) && !shelf.mayView(guest) && shelf.mayView(owner),"Private shelf defaults");
-        check(commit(Furniture.depositPlan(hand,0,shelf,0,()->shelf.maySend(owner))) &&
-                hand.getItem(0).getCount()==6 && shelf.inventory.getItem(0).getCount()==1,"Shelf consumes a single real item");
-        shelf.caption="From our first cave";shelf.visible=true;
-        var reloadedShelf=again(registry,shelf);
-        check(reloadedShelf.mayView(guest) && !reloadedShelf.maySend(guest) && reloadedShelf.caption.equals(shelf.caption)
-                && reloadedShelf.belongsTo(owner,null) && !reloadedShelf.emptyForRemoval(),"Shared state persists separately from deposit rights");
-        check(commit(Furniture.collectPlan(hand,reloadedShelf,0,()->true)) && reloadedShelf.emptyForRemoval()
-                && ItemStack.matches(named,hand.getItem(0)),"Exact keepsake returned on collection");
-        System.out.println("PASS real furniture registry, transaction replay, sender revocation, component-preserving return, full-inventory refusal, separate parcel notes, room and shelf NBT, empty chunk tag");
+        check(shelf.maySend(guest) && shelf.mayView(guest),"Globe is public on placement");
+        var insert=Furniture.globePlan(hand,0,shelf,()->shelf.maySend(guest));
+        check(commit(insert) && !commit(insert) && hand.getItem(0).getCount()==6 && shelf.inventory.getItem(0).getCount()==1,
+                "A non-owner inserts exactly one item once");
+        check(Furniture.globePlan(hand,0,shelf,()->true)==null,"An occupied globe cannot replace or consume the next item");
+        var reloaded=again(registry,shelf);
+        check(reloaded.mayView(other) && !reloaded.sealedKeepsake(),"Public status survives reload");
+        check(!commit(Furniture.globePlan(hand,1,reloaded,()->false)) && hand.getItem(1).isEmpty(),"Denied withdrawal keeps item");
+        check(commit(Furniture.globePlan(hand,1,reloaded,()->reloaded.mayView(other))) && reloaded.emptyForRemoval()
+                && ItemStack.matches(named.copyWithCount(1),hand.getItem(1)),"A second non-owner retrieves exact components into chosen hand");
+        var old=shelf.saveWithFullMetadata(registry);
+        old.remove("LegacyPrivateGlobe");
+        old.putString("Caption","From our first cave");
+        var migrated=new FurnitureEntity(shelf.getBlockPos(),shelf.getBlockState());
+        migrated.loadWithComponents(old,registry);
+        check(!migrated.mayView(guest) && !migrated.maySend(guest) && migrated.sealedKeepsake() && migrated.mayView(owner)
+                && migrated.caption.equals("From our first cave"),"An occupied private pre-globe shelf remains sealed");
+        var migratedAgain=again(registry,migrated);
+        check(migratedAgain.sealedKeepsake(),"A second save does not publish a legacy private item");
+        hand.setItem(1,ItemStack.EMPTY);
+        check(commit(Furniture.globePlan(hand,1,migratedAgain,()->migratedAgain.mayView(owner))),"Original owner reclaims old item");
+        migratedAgain.finishCollection();
+        check(migratedAgain.mayView(other) && !migratedAgain.sealedKeepsake() && migratedAgain.caption.isEmpty()
+                && ItemStack.matches(named.copyWithCount(1),hand.getItem(1)),"Private contents recovered and empty globe becomes public");
+        old.putBoolean("GuestsSeeShelf",true);
+        migrated.loadWithComponents(old,registry);
+        check(!migrated.sealedKeepsake() && migrated.mayView(other),"An old shared display stays public");
+        System.out.println("PASS parcel privacy, two-player globe transfers, no overwrite, exact components, replay refusal, legacy private and shared shelf migration");
     }
 }

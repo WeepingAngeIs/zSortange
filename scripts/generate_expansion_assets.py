@@ -139,16 +139,31 @@ for name,colors in THEMES.items():
  stamp(p,w,HEART if name=='atelier' else LEAF if name=='botanical' else STAR,16,38,shade(accent,-10))
  png(f'assets/{M}/textures/gui/{name}.png',w,h,p)
 # Distinct patch and upgrade icons: every function gets its own recognizable pictogram.
-ICONS={'pickup':['  #  ','#####',' ### ','  #  ','  #  '],'feeding':[' ### ','#####','#####',' ### ','  #  '],'refill':['  #  ',' ### ','#####','  #  ','  #  '],'crafting':['# # #','#####',' # # ','#####','# # #'],'smelting':['  #  ',' # # ','## ##','#####',' ### '],'compacting':['#   #','## ##',' ### ','## ##','#   #'],'resupply':['#### ','  ## ','  #  ',' #   ','#    ']}
 PATCHES=['element_'+e for e in ['leaf','stone','diamond','magma','water']]+['skin_'+s for s in ORDER[13:]]
-for name in PATCHES+[u+'_upgrade' for u in ICONS]:
- key=name.removeprefix('element_').removeprefix('skin_').removesuffix('_upgrade');palette=PALETTES.get(key,PALETTES.get('leaf_oak') if key=='leaf' else PALETTES['futuristic']);body,accent,dark,light=map(color,palette)
- p=[(0,0,0,0)]*1024;rect(p,32,3,3,26,26,dark);rect(p,32,4,4,24,23,body);rect(p,32,6,5,20,2,accent)
- for t in range(7,27,4):rect(p,32,t,25,2,1,accent)
- emblem=ICONS.get(key,LEAF if 'leaf' in key or key in ('oak','cherry','dark_oak') else CAT if 'cat' in key else GHOST if 'spooky' in key else STAR if key=='galaxy' else DIAMOND if key in ('stone','diamond') else HEART)
- scale=2;x=(32-len(emblem[0])*scale)//2;y=(32-len(emblem)*scale)//2+1;stamp(p,32,emblem,x+1,y+1,dark,scale);stamp(p,32,emblem,x,y,light,scale)
+for name in PATCHES:
+ key=name.removeprefix('element_').removeprefix('skin_')
+ palette=PALETTES.get(key,PALETTES['leaf_oak'] if key=='leaf' else PALETTES['futuristic'])
+ body,accent,dark,light=map(color,palette)
+ # Rounded fabric patch with a scalloped stitch. Keep bindings and skins distinct from metal upgrades.
+ p=[(0,0,0,0)]*1024
+ for y in range(3,29):
+  for x in range(3,29):
+   d=math.hypot(max(7.5-x,x-23.5,0),max(7.5-y,y-23.5,0))
+   if d<5.8:
+    p[y*32+x]=dark if d>4 or x in (3,28) or y in (3,28) else body
+ for t in range(8,25,4):
+  rect(p,32,t,5,2,1,accent);rect(p,32,t,26,2,1,accent)
+  rect(p,32,5,t,1,2,accent);rect(p,32,26,t,1,2,accent)
+ emblem=LEAF if key in ('leaf','oak','cherry','dark_oak') else CAT if 'cat' in key else GHOST if 'spooky' in key else STAR if key=='galaxy' else DIAMOND if key in ('stone','diamond') else HEART
+ if key=='water':emblem=['   #   ','  ###  ','  ###  ',' ##### ','#######',' ##### ','  ###  ']
+ if key=='magma':emblem=['   #   ','  ##   ','  ### #',' ######','### ###',' ##### ']
+ scale=2;x=(32-len(emblem[0])*scale)//2;y=(32-len(emblem)*scale)//2
+ stamp(p,32,emblem,x+1,y+1,dark,scale);stamp(p,32,emblem,x,y,light,scale)
  if emblem==LEAF:line(p,32,x+2,y+14,x+11,y+2,dark);line(p,32,x+6,y+8,x+5,y+4,dark)
  png(f'assets/{M}/textures/item/{name}.png',32,32,p);js(f'assets/{M}/models/item/{name}.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{M}:item/{name}'}})
+
+from upgrade_discs import generate as generate_discs
+generate_discs(lambda name,pixels: png(f'assets/{M}/textures/item/{name}.png',32,32,pixels))
 # Three restrained particle sprites, each with a 28-tick maximum lifetime in Java.
 for name,shape,c in [('leaf_mote',LEAF,color('A2C787')),('cherry_mote',LEAF,color('F2BBCC')),('star_mote',STAR,color('F7E3BD'))]:
  p=[(0,0,0,0)]*64;stamp(p,8,shape,0,0,c);png(f'assets/{M}/textures/particle/{name}.png',8,8,p);js(f'assets/{M}/particles/{name}.json',{'textures':[f'{M}:{name}']})

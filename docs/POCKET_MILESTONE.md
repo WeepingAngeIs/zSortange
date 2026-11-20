@@ -10,7 +10,7 @@ The dimension definition is registered with the mod, but no entrance is allocate
 
 ## Implemented prototype flow
 
-The **Home Void Cube (Experimental)** recipe consumes four obsidian, two ender pearls, two amethyst shards and one configured `pocketCoreMaterial` (default `minecraft:diamond`), arranged anywhere in a full 3x3 grid. It does not consume an existing hub, backpack or filled container. Missing configured items cannot match. No ore generation is added.
+The **Home Void Cube (Experimental)** takes two diamonds and one Ancient Debris in three separate slots, in any arrangement. The personal crafting grid and crafting table both work. Finding a diamond unlocks the recipe in the recipe book. Crafting works before pocket access is enabled. Data packs using the old custom recipe type can still select its core with the legacy material setting.
 
 Place it near an existing home hub owned by the same player. Bind a remote to the hub, then sneak-use it on the entrance. The remote receives a pocket binding. Ordinary hub binding clears that pocket binding. Right-click the entrance to queue an authorized visit; using the pocket-bound remote queues a storage-view lease. An unprepared pocket must be visited once before remote access.
 

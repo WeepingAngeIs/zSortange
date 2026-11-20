@@ -1,0 +1,8 @@
+Suggested checks in a disposable world with matching test builds
+
+1. Craft a leaf backpack and put a named item in it. Crouch-right-click the ground with the bag. Apply one completed skin patch, an elemental binding, a matching upgrade disc and enough material for its next storage tier. Check the bag name, the consumed item count and the contents. Try a duplicate upgrade and an insufficient stack. Crouch with an empty hand and use the bag to retrieve it.
+2. Turn Tooltips off in an Anya inventory. Hover items, controls and empty slots, close and reopen. Check a second player still sees tooltips. Turn them back on.
+3. Craft one Home Void Cube using two diamonds in separate slots and one Ancient Debris, in any order. Enable travel if testing the experimental room. Bind the tablet to the hub, link the entrance, visit once, return and open storage twice. The inventory should appear quietly each time.
+4. Look for Cupid squinting on an unselected tablet. Select it and watch the held screen and inventory icon finish together. Turn quickly in both directions and try each main-hand setting.
+5. In the physical pocket, look towards the starter chests. Cupid can visit briefly. Check a visitor loses the hologram when access ends.
+6. Place a Keepsake Globe in unclaimed space, insert one item and have another player retrieve it. Repeat inside your claim to check your installed provider. Break an occupied globe in Survival and count what drops.

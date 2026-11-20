@@ -36,6 +36,8 @@ public final class ClientLooks {
         Path file=FMLPaths.CONFIGDIR.get().resolve("anya-storage-plus-client.json");
         try{if(Files.isRegularFile(file)&&Files.size(file)<=4096){Options loaded=Config.JSON.fromJson(Files.readString(file),Options.class);if(loaded!=null)options=loaded;}}catch(Exception ignored){}
         options.particleBudget=Math.max(0,Math.min(8,options.particleBudget));
+        ItemProperties.register(Content.CUPID_TABLET.get(),ExpansionPackets.id("cupid_face"),
+                (stack,level,living,seed)->TabletFaces.face(stack).property());
         ItemProperties.register(Content.BACKPACK.get(),ExpansionPackets.id("appearance"),(stack,level,living,seed)->Math.max(0,TEXTURES.indexOf(Looks.of(stack).texture()))+1);
         ExpansionPackets.lookReceiver=look->{if(look.entity()<0){if(Minecraft.getInstance().player!=null&&Minecraft.getInstance().player.containerMenu.containerId==look.menu())ClientInteriors.look(look);}else if(TEXTURES.contains(look.texture())||look.texture().isEmpty()){if(worn.size()>256)worn.clear();worn.put(look.entity(),look);}};
         ExpansionPackets.imageReceiver=ClientInteriors::accept;

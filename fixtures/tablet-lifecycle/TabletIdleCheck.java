@@ -1,41 +1,39 @@
 package dev.anya.storage.appearance;
 
-/** Headless fixture for the timer behind the first-person hand/HUD presentation. */
+import static dev.anya.storage.appearance.TabletIdle.Face.*;
+
 public final class TabletIdleCheck {
     private static void check(boolean condition, String reason) {
         if (!condition) throw new AssertionError(reason);
     }
 
     public static void main(String[] args) {
-        int[] draws = {0};
-        var idle = new TabletIdle(() -> 1000L, () -> { draws[0]++; return 4; });
-        Object player = new Object(), first = new Object(), second = new Object();
-        check(idle.paintColumn(0) < 0, "Absent Remote painted an idle visit");
-        check(idle.bind(player, first, false, 2), "Initial ownership");
-        check(idle.paintColumn(0) < 0 && idle.paintColumn(999) < 0 && draws[0] == 0, "Quiet hold");
-        int[] starts = {0,85,175,275,385,635,760,885,1010};
-        for (int i = 0; i < starts.length; i++) {
-            check(idle.paintColumn(1000 + starts[i]) == i && idle.row() == 4, "Visit frame " + i);
-            int end = i + 1 < starts.length ? starts[i+1] : 1140;
-            check(idle.paintColumn(999 + end) == i, "Ending frame too early " + i);
-        }
-        check(draws[0] == 1 && idle.paintColumn(2140) < 0, "One selection until disappearance");
-        check(idle.paintColumn(3140) == 0 && draws[0] == 2, "Another quiet interval starts a new visit");
+        var visit = new TabletIdle(100);
+        check(visit.frame(100) == SQUINT && visit.frame(259) == SQUINT, "Eight-second unselected squint");
+        check(visit.frame(260) == SHUT && visit.frame(263) == GLANCE && visit.frame(268) == DARK
+                && visit.frame(1467) == DARK && visit.frame(1468) == SQUINT, "Ambient close and quiet interval");
 
-        idle.quiet();
-        check(idle.paintColumn(3141) < 0 && idle.paintColumn(4141) == 0, "Use or opening resets the visit");
-        check(idle.bind(player, first, false, 3) && idle.paintColumn(4142) < 0, "Hotbar reset");
-        check(idle.bind(player, first, true, 3) && idle.paintColumn(4143) < 0, "Hand reset");
-        check(idle.bind(player, second, true, 3) && idle.paintColumn(4144) < 0, "Stack reset");
-        check(idle.bind(new Object(), second, true, 3) && idle.paintColumn(4145) < 0, "Player reset");
-        check(idle.paintColumn(8600) < 0 && idle.paintColumn(8400) < 0, "Gap and clock reset");
-        check(idle.bind(null, null, false, -1) && idle.paintColumn(9400) < 0, "Disconnect or empty hand");
-
-        var fallback = new TabletIdle(() -> 1000L, () -> -1);
-        fallback.bind(player, first, false, 2);
-        fallback.paintColumn(0);
-        check(fallback.paintColumn(1000) == 0 && fallback.row() == -1, "Original gaze on missing texture");
-        check(fallback.paintColumn(1499) >= 0 && fallback.paintColumn(1500) < 0, "500-ms fallback");
-        System.out.println("PASS: all nine idle visit beats and cancellation, once-per-visit selection, missing-art gaze");
+        visit.select(true, 1477);
+        check(visit.frame(1477) == SQUINT && visit.frame(1483) == SQUINT, "Equip must keep the existing face");
+        visit.select(false, 1480);
+        visit.select(true, 1482);
+        check(visit.frame(1484) == SHUT && visit.frame(1487) == GLANCE && visit.frame(1492) == DARK,
+                "Switching away and back must finish the original exit");
+        check(visit.frame(8000) == DARK, "Remaining equipped must never replay");
+        visit.select(false, 9000);
+        check(visit.frame(10199) == DARK && visit.frame(10200) == SQUINT, "An unselected tablet can visit again");
+        var shut = new TabletIdle(0);
+        shut.select(true, 161);
+        check(shut.frame(161) == SHUT && shut.frame(164) == GLANCE && shut.frame(169) == DARK,
+                "Picking up closed eyes must not rewind to a squint");
+        var glance = new TabletIdle(0);
+        glance.select(true, 165);
+        check(glance.frame(165) == GLANCE && glance.frame(170) == DARK, "Finish the gaze");
+        var quiet = new TabletIdle(0);
+        quiet.select(true, 200);
+        check(quiet.frame(200) == DARK && quiet.frame(2000) == DARK, "Dark tablet must remain dark on equip");
+        check(DARK.property() == 0 && SQUINT.property() == .25f && SHUT.property() == .5f
+                && GLANCE.property() == .75f && OPEN.property() == 1f, "Baked override thresholds");
+        System.out.println("PASS: per-tablet close-ups, long squint, selection exit, quiet interval, rapid switches");
     }
 }

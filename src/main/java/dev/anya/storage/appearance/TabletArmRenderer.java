@@ -19,7 +19,8 @@ public final class TabletArmRenderer {
         var pose = graphics.pose();
         pose.pushPose();
         try {
-            pose.translate(0, 0, -260);
+            // This is a GUI depth layer. Pre-multiply so a yaw or pitch never slides the hand off the bezel.
+            pose.last().pose().translateLocal(0f, 0f, -260f);
             pose.mulPose(matrix);
             if (right) renderer.renderRightHand(pose, graphics.bufferSource(), packedLight, player);
             else renderer.renderLeftHand(pose, graphics.bufferSource(), packedLight, player);

@@ -81,7 +81,7 @@ public final class RoomEditor {
         }
     }
     private static int rights(BlockState state) {
-        return state.is(Content.CRATE.get()) || Furniture.isFurniture(state.getBlock()) ? CHEST_EDIT_RIGHTS : BasePermissions.BUILD;
+        return state.is(Content.CRATE.get()) || state.is(Content.HATCH.get()) ? CHEST_EDIT_RIGHTS : BasePermissions.BUILD;
     }
     private static boolean sight(ServerPlayer p,BlockHitResult hit){
         BlockHitResult now = loadedHit(p);
@@ -104,7 +104,7 @@ public final class RoomEditor {
             denied=PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if(!denied.isEmpty())return "Chest editing additionally requires View, Deposit and Withdraw";
         }else if(!RoomBounds.decoration(x,y,z)||!(DECOR.contains(state.getBlock())||Furniture.isFurniture(state.getBlock())))return "Unsupported block or protected room/exit boundary";
-        if (Furniture.isFurniture(state.getBlock())) {
+        if (state.is(Content.HATCH.get())) {
             denied = PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if (!denied.isEmpty()) return "Furniture needs Build, View, Deposit and Withdraw.";
         }
@@ -137,7 +137,7 @@ public final class RoomEditor {
         }else if (Furniture.isFurniture(proposed.getBlock())) {
             if (!(p.serverLevel().getBlockEntity(pos) instanceof FurnitureEntity furniture)
                     || !furniture.belongsTo(r.owner(), r.id()) || !furniture.ownerMayRemove(p) || !furniture.emptyForRemoval())
-                throw new IOException("Only the owner can remove an emptied shelf or delivery hatch.");
+                throw new IOException("Empty a globe before removing it. Only the owner can remove an empty delivery hatch.");
         }else if(p.serverLevel().getBlockEntity(pos)!=null)throw new IOException("Block entities are not decorative blocks");
         return new Edit(p,access,hit,pos,proposed,removal,registry);
     }

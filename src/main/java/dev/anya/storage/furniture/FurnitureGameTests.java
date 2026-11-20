@@ -72,7 +72,7 @@ public final class FurnitureGameTests {
                 && owner.getMainHandItem().getHoverName().getString().equals("Private parcel"),"Owner receives the item with intact components");
         h.succeed();
     }
-    @GameTest(template="empty") public static void privateShelfUsesOneRealItem(GameTestHelper h) {
+    @GameTest(template="empty") public static void globeDisplaysReturnsAndDropsOneItem(GameTestHelper h) {
         var block=new BlockPos(1,1,2);
         h.setBlock(block,Content.SHELF.get());
         var pos=h.absolutePos(block);
@@ -81,18 +81,28 @@ public final class FurnitureGameTests {
         var guest=viewer(h,"Visitor",pos);
         f.initialize(owner.getUUID(),null);
         owner.getInventory().setItem(0,new ItemStack(Items.AMETHYST_SHARD,3));
-        Furniture.deliver(owner,f,"");
+        owner.getMainHandItem().set(DataComponents.CUSTOM_NAME,Component.literal("Personal engraving"));
+        Furniture.use(owner,f);
         h.assertTrue(f.inventory.getItem(0).getCount()==1 && owner.getMainHandItem().getCount()==2,"Display holds exactly one real item");
-        h.assertTrue(Furniture.canSee(owner,f) && !Furniture.canSee(guest,f),"Private by default");
-        f.visible=true;f.caption="From our first cave";
-        h.assertTrue(Furniture.canSee(guest,f),"Shared physical display visible");
-        Furniture.collect(guest,f);
-        h.assertTrue(guest.getMainHandItem().isEmpty() && !f.emptyForRemoval(),"Visitors cannot take displayed items");
+        var tag=f.getUpdateTag(h.getLevel().registryAccess());
+        h.assertTrue(tag.getAllKeys().equals(Set.of("GlobeItem")) && tag.getString("GlobeItem").equals("minecraft:amethyst_shard"),
+                "Tracking players receive only the base item id");
+        Furniture.use(guest,f);
+        h.assertTrue(guest.getMainHandItem().getHoverName().getString().equals("Personal engraving") && f.emptyForRemoval(),
+                "Second player retrieves the exact item with an empty hand");
+        Furniture.use(guest,f);
         reload(h,f);
-        f.visible=false;
-        h.assertTrue(!Furniture.canSee(guest,f),"Hiding the shelf revokes future displays");
-        Furniture.collect(owner,f);
-        h.assertTrue(f.emptyForRemoval() && owner.getMainHandItem().getCount()==3,"Taking restores the displayed item");
+        h.getLevel().setBlock(pos,f.getBlockState().setValue(dev.anya.storage.StorageBlock.FACING,net.minecraft.core.Direction.WEST),3);
+        h.assertTrue(f.inventory.getItem(0).getCount()==1,"Rotating a globe does not drop an item");
+        h.getLevel().destroyBlock(pos,true,guest);
+        var drops=h.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class,new net.minecraft.world.phys.AABB(pos).inflate(1));
+        int items=0, globes=0;
+        for (var drop:drops) {
+            var stack=drop.getItem();
+            if (stack.is(Items.AMETHYST_SHARD) && stack.getHoverName().getString().equals("Personal engraving")) items+=stack.getCount();
+            if (stack.is(Content.SHELF.get().asItem())) globes+=stack.getCount();
+        }
+        h.assertTrue(items==1 && globes==1,"A broken globe drops exactly its block and its original keepsake");
         h.succeed();
     }
 }

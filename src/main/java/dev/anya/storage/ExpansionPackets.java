@@ -16,11 +16,14 @@ public final class ExpansionPackets {
     public static final UUID NONE=new UUID(0,0);
     public static Consumer<Look> lookReceiver=p->{};
     public static Consumer<ImageReply> imageReceiver=p->{};
-    public record Look(int entity,UUID uuid,int menu,int session,String texture,String element,String interior,UUID image,boolean wardrobe) implements CustomPacketPayload {
+    public record Look(int entity,UUID uuid,int menu,int session,String texture,String element,String interior,UUID image,boolean wardrobe,String bagTitle) implements CustomPacketPayload {
+        public Look(int entity,UUID uuid,int menu,int session,String texture,String element,String interior,UUID image,boolean wardrobe){
+            this(entity,uuid,menu,session,texture,element,interior,image,wardrobe,"");
+        }
         public static final Type<Look> TYPE=new Type<>(id("look"));
         public static final StreamCodec<RegistryFriendlyByteBuf,Look> CODEC=new StreamCodec<>(){
-            public Look decode(RegistryFriendlyByteBuf b){return new Look(b.readVarInt(),b.readUUID(),b.readVarInt(),b.readInt(),b.readUtf(32),b.readUtf(16),b.readUtf(16),b.readUUID(),b.readBoolean());}
-            public void encode(RegistryFriendlyByteBuf b,Look p){b.writeVarInt(p.entity);b.writeUUID(p.uuid);b.writeVarInt(p.menu);b.writeInt(p.session);b.writeUtf(p.texture,32);b.writeUtf(p.element,16);b.writeUtf(p.interior,16);b.writeUUID(p.image);b.writeBoolean(p.wardrobe);}
+            public Look decode(RegistryFriendlyByteBuf b){int entity=b.readVarInt();return new Look(entity,b.readUUID(),b.readVarInt(),b.readInt(),b.readUtf(32),b.readUtf(16),b.readUtf(16),b.readUUID(),b.readBoolean(),entity<0 && b.isReadable()?b.readUtf(128):"");}
+            public void encode(RegistryFriendlyByteBuf b,Look p){b.writeVarInt(p.entity);b.writeUUID(p.uuid);b.writeVarInt(p.menu);b.writeInt(p.session);b.writeUtf(p.texture,32);b.writeUtf(p.element,16);b.writeUtf(p.interior,16);b.writeUUID(p.image);b.writeBoolean(p.wardrobe);if(p.entity<0 && !p.bagTitle.isEmpty())b.writeUtf(p.bagTitle,128);}
         };
         public Type<? extends CustomPacketPayload> type(){return TYPE;}
     }

@@ -167,6 +167,7 @@ public final class Client {
             var box=layout.scroll();int thumb=thumbHeight();double distance=Math.max(1,box.height()-thumb);
             int max=dev.anya.storage.ui.StorageGrid.maxStartRow(menu.resultCount(),layout.rows());scrollTo((int)Math.round((y-box.y()-thumb*.5)/distance*max));
         }
+        private static final StorageGrid.Box TOOLTIP_BUTTON=new StorageGrid.Box(274,11,96,16);
         private int thumbHeight(){var box=layout.scroll();return Math.max(8,(int)(box.height()*Math.min(1,layout.rows()/(double)Math.max(1,dev.anya.storage.ui.StorageGrid.rows(menu.resultCount())))));}
         private int shown(){return menu.storageView()?Math.min(menu.shownSlots(),layout.rows()*9):45;}
         private int slotAt(double x,double y){
@@ -186,6 +187,9 @@ public final class Client {
             }
             reflow();double x=layout.x(mx),y=layout.y(my);
             if(input.mouseClicked(x,y,button)){input.setFocused(true);return true;}input.setFocused(false);
+            if(button==0 && TOOLTIP_BUTTON.contains(x,y)){
+                press(94);send("tooltips","",menu.tooltipsEnabled()?0:1);return true;
+            }
             if(button==0&&x>=12&&x<90){
                 if(y>=153&&y<171&&menu.backpackView()){press(90);send("appearance","",0);return true;}
                 if(y>=176&&y<194){press(91);ClientLooks.options.particles=!ClientLooks.options.particles;ClientLooks.saveOptions();return true;}
@@ -328,9 +332,15 @@ public final class Client {
             } else g.fill(0,0,width,height,0x990c1017);
             g.pose().pushPose();g.pose().translate(layout.left(),layout.top(),0);g.pose().scale((float)layout.scale(),(float)layout.scale(),1);
             g.fill(0,0,382,layout.height(),0xff111823);g.fill(2,2,380,layout.height()-2,colors[0]);g.fill(8,8,374,10,colors[2]);
-            g.drawString(font,font.plainSubstrByWidth(menu.accessView()?"Member permissions":title.getString(),250),12,15,0xfff4eaf1,false);
+            var look=ClientInteriors.current;
+            String header = title.getString();
+            if (menu.backpackView() && look != null && look.menu()==menu.containerId && look.session()==menu.session() && !look.bagTitle().isEmpty()) header = look.bagTitle();
+            g.drawString(font,font.plainSubstrByWidth(menu.accessView()?"Member permissions":header,250),12,15,0xfff4eaf1,false);
+            boolean tips=menu.tooltipsEnabled();
+            ControlSprites.button(g,font,ControlGlyph.INFO,tips?ControlGlyph.State.ON:ControlGlyph.State.OFF,
+                TOOLTIP_BUTTON.x(),TOOLTIP_BUTTON.y(),TOOLTIP_BUTTON.width(),TOOLTIP_BUTTON.height(),tips?"Tooltips: On":"Tooltips: Off",TOOLTIP_BUTTON.contains(x,y),pressed(94));
             g.drawString(font,"ACTIONS",290,29,colors[2],false);input.render(g,x,y,partial);
-            var look=ClientInteriors.current;String texture=look==null?"plain":look.texture();
+            String texture=look==null?"plain":look.texture();
             g.fill(12,35,90,126,colors[1]);ResourceLocation custom=ClientInteriors.texture();
             if(menu.accessView()){
                 g.pose().pushPose();g.pose().translate(21,49,0);g.pose().scale(3.7f,3.7f,1);ControlSprites.sprite(g,ControlGlyph.MEMBERS,0,0);g.pose().popPose();
@@ -380,6 +390,7 @@ public final class Client {
             g.drawString(font,menu.accessView()?"Changes apply immediately.":"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
             drawStorageCameo(g);
             g.pose().popPose();
+            if(!tips)return;
             if(menu.accessView()&&x>=12&&x<90&&y>=129&&y<145&&!menu.getSlot(27).getItem().isEmpty()){
                 controlTooltip(g,menu.getSlot(27).getItem(),mx,my);
             }else if(hover>=0){var stack=menu.getSlot(hover).getItem();if(!stack.isEmpty()){

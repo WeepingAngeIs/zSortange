@@ -38,11 +38,14 @@ public final class Content {
     public static final DeferredBlock<StorageBlock> HUB=BLOCKS.register("hub",()->new StorageBlock("hub",BlockBehaviour.Properties.of().strength(4,1200).noOcclusion()));
     public static final DeferredBlock<StorageBlock> CRATE=BLOCKS.register("chest",()->new StorageBlock("chest",BlockBehaviour.Properties.of().strength(3,1200).noOcclusion()));
     public static final DeferredBlock<StorageBlock> CUBE=BLOCKS.register("uwu_cube",()->new StorageBlock("cube",BlockBehaviour.Properties.of().strength(6,1200).noOcclusion()));
-    public static final DeferredBlock<dev.anya.storage.furniture.FurnitureBlock> SHELF = BLOCKS.register("keepsake_shelf", dev.anya.storage.furniture.FurnitureBlock::create);
+    public static final DeferredBlock<dev.anya.storage.furniture.FurnitureBlock> SHELF = BLOCKS.register("keepsake_shelf", dev.anya.storage.furniture.FurnitureBlock::createGlobe);
     public static final DeferredBlock<dev.anya.storage.furniture.FurnitureBlock> HATCH = BLOCKS.register("delivery_hatch", dev.anya.storage.furniture.FurnitureBlock::create);
     public static final Supplier<BlockEntityType<dev.anya.storage.furniture.FurnitureEntity>> FURNITURE = ENTITIES.register("furniture",
             () -> BlockEntityType.Builder.of(dev.anya.storage.furniture.FurnitureEntity::new, SHELF.get(), HATCH.get()).build(null));
     public static final DeferredItem<StorageItem> BACKPACK=ITEMS.register("backpack",()->new StorageItem("backpack",new Item.Properties().stacksTo(1)));
+    public static final DeferredBlock<PlacedBackpackBlock> PLACED_BACKPACK = BLOCKS.register("placed_backpack", PlacedBackpackBlock::create);
+    public static final Supplier<BlockEntityType<PlacedBackpackEntity>> PLACED_BAG_ENTITY = ENTITIES.register("placed_backpack",
+            () -> BlockEntityType.Builder.of(PlacedBackpackEntity::new, PLACED_BACKPACK.get()).build(null));
     public static final DeferredItem<StorageItem> REMOTE=ITEMS.register("remote",()->new StorageItem("remote",new Item.Properties().stacksTo(1)));
     public static final DeferredItem<StorageItem> CUPID_TABLET = ITEMS.register("cupid_tablet",
             () -> new StorageItem("remote", new Item.Properties().stacksTo(1)));

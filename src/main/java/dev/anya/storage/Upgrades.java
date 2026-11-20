@@ -20,11 +20,19 @@ public final class Upgrades {
     public static ListTag installedItems(ItemStack bag){return BagInventory.data(bag).getList("InstalledUpgrades",Tag.TAG_COMPOUND);}
     public static boolean installed(BagInventory bag,String id){for(Tag entry:installedItems(bag.stack))if(((CompoundTag)entry).getString("Id").equals(id))return true;return false;}
     public static boolean active(BagInventory bag,String id){return Config.get().backpacks&&Boolean.TRUE.equals(Config.get().upgrades.get(id))&&installed(bag,id);}
+    static String installProblem(CompoundTag data,ListTag upgrades,String id){
+        if(!Config.get().backpacks || !Boolean.TRUE.equals(Config.get().upgrades.get(id)))return "This upgrade is disabled by the server.";
+        for(Tag entry:upgrades)if(id.equals(((CompoundTag)entry).getString("Id")))return "This upgrade is already installed.";
+        return upgrades.size()>=data.getInt("UpgradeSlots")?"No free upgrade slots.":"";
+    }
+    static void addDisc(ListTag upgrades,String id,ItemStack disc,ServerPlayer player){
+        CompoundTag entry=new CompoundTag();entry.putString("Id",id);entry.put("Stack",disc.save(player.registryAccess()));upgrades.add(entry);
+    }
     public static boolean change(BagInventory bag,String id,boolean remove){
         ServerPlayer p=bag.player;if(!bag.valid()||bag.playerSlot<0||bag.playerSlot>=36){AnyaStorage.tell(p,"Put the backpack in your main inventory to edit upgrades.");return false;}
         boolean present=installed(bag,id);if(remove!=present)return false;
         CompoundTag tag=BagInventory.data(bag.stack);ListTag upgrades=tag.getList("InstalledUpgrades",Tag.TAG_COMPOUND).copy();
-        if(!remove&&upgrades.size()>=tag.getInt("UpgradeSlots")){AnyaStorage.tell(p,"No free upgrade slots.");return false;}
+        if(!remove){String reason=installProblem(tag,upgrades,id);if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return false;}}
         MainInventory main=new MainInventory(p);Transactions.Plan plan=new Transactions.Plan(List.of(main),bag::valid);
         ItemStack old=bag.stack.copy(),next=old.copy(),upgrade=ItemStack.EMPTY;
         List<ItemStack> consumed=new ArrayList<>(),produced=new ArrayList<>();consumed.add(old);
@@ -33,10 +41,9 @@ public final class Upgrades {
             if(upgrade.isEmpty()){AnyaStorage.tell(p,"Stored upgrade is invalid; left unchanged for recovery.");return false;}
             ItemStack remaining=upgrade.copy();plan.insert(main,remaining);if(!remaining.isEmpty()){AnyaStorage.tell(p,"Make room in your inventory before removing this upgrade.");return false;}produced.add(upgrade.copy());
         }else{
-            if(!Config.get().backpacks||!Boolean.TRUE.equals(Config.get().upgrades.get(id))){AnyaStorage.tell(p,"This upgrade is disabled by the server.");return false;}
             for(int i=0;i<36;i++)if(i!=bag.playerSlot&&plan.work(main)[i].is(Content.UPGRADES.get(id).get())){upgrade=plan.work(main)[i].copyWithCount(1);plan.work(main)[i].shrink(1);break;}
             if(upgrade.isEmpty()){AnyaStorage.tell(p,"Craft and carry a "+id+" upgrade first.");return false;}
-            CompoundTag entry=new CompoundTag();entry.putString("Id",id);entry.put("Stack",upgrade.save(p.registryAccess()));upgrades.add(entry);consumed.add(upgrade);
+            addDisc(upgrades,id,upgrade,p);consumed.add(upgrade);
         }
         tag.put("InstalledUpgrades",upgrades);BagInventory.data(next,tag);plan.work(main)[bag.playerSlot]=next;produced.add(next.copy());
         plan.authorizeRecipe(consumed,produced);String error=plan.commit(p.getServer());if(!error.isEmpty()){AnyaStorage.tell(p,error);return false;}return true;
@@ -46,7 +53,7 @@ public final class Upgrades {
         CompoundTag tag=BagInventory.data(bag.stack);ListTag list=tag.getList(key,Tag.TAG_STRING).copy();boolean removed=false;
         for(int i=0;i<list.size();i++)if(list.getString(i).equals(item)){list.remove(i);removed=true;break;}
         if(!removed){if(list.size()>=64){AnyaStorage.tell(bag.player,"Filter limit reached.");return;}list.add(StringTag.valueOf(item));}
-        tag.put(key,list);BagInventory.data(bag.stack,tag);bag.player.getInventory().setChanged();
+        tag.put(key,list);BagInventory.data(bag.stack,tag);bag.hostChanged();
     }
     public static void craft(BagInventory bag){if(!bag.valid()||!active(bag,"crafting"))return;bag.player.openMenu(new SimpleMenuProvider((id,inv,p)->new CraftingMenu(id,inv,ContainerLevelAccess.NULL),Component.literal("Backpack Crafting")));}
     public static String compact(BagInventory bag){
@@ -137,7 +144,7 @@ public final class Upgrades {
                 } else {AnyaStorage.tell(bag.player,error);return;}
             }else progress=recipe.value().getCookingTime();
         }
-        data.putInt("FuelTicks",fuel);data.putInt("SmeltTicks",progress);BagInventory.data(bag.stack,data);bag.player.getInventory().setChanged();
+        data.putInt("FuelTicks",fuel);data.putInt("SmeltTicks",progress);BagInventory.data(bag.stack,data);bag.hostChanged();
     }
     public static void resupply(BagInventory bag){
         if(!bag.valid()||!active(bag,"resupply"))return;ServerPlayer p=bag.player;int selected=p.getInventory().selected;

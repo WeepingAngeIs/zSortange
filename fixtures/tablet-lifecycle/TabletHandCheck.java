@@ -34,6 +34,7 @@ public final class TabletHandCheck {
     private static void hud() { HeldTablet.hud(new RenderGuiEvent.Post(new GuiGraphics(), null)); }
     private static void mainFrame(long time) {
         Util.now = time;
+        MC.player.tickCount = (int)(time / 50);
         begin();
         require(hand(MAIN, MAIN_TABLET), "Expected selected first-person main hand");
         hud();
@@ -83,24 +84,22 @@ public final class TabletHandCheck {
         MC.options.hideGui = false;
         MC.player.main = MAIN_TABLET;
 
-        // A real randomly scheduled idle interval, accelerated only by the fixture clock.
-        int peeks = TabletDevice.peeks;
-        long t = 100;
+        long t = 3_000;
+        mainFrame(100);
         mainFrame(t);
-        for (; t < 111_200 && TabletDevice.peeks == peeks; t += 100) mainFrame(t);
-        require(TabletDevice.peeks == peeks + 1 && t >= 55_100 && t <= 110_300, "Rare idle scheduling");
+        require(TabletDevice.face.column() == 0, "A tablet held past its exit must have dark glass");
         var heldSample = TabletDevice.saved;
         var use = new InputEvent.InteractionKeyMappingTriggered(1,MC.options.keyUse,MAIN);
         HeldTablet.interaction(use);
         require(!use.isCanceled() && use.shouldSwingHand() && TabletDevice.saved == heldSample, "Use changed vanilla action or lost lift origin");
         mainFrame(t);
-        require(TabletDevice.peeks == peeks + 2 && TabletDevice.face != null,
-                "Use must keep painting the ongoing visit");
+        require(TabletDevice.face.column() == 0,
+                "Use must keep the physical glass dark until a server-approved opening");
         var attack = new InputEvent.InteractionKeyMappingTriggered(0, MC.options.keyAttack, MAIN);
         HeldTablet.interaction(attack);
         MC.options.keyAttack.down = true;
         mainFrame(++t);
-        require(!attack.isCanceled() && attack.shouldSwingHand() && TabletDevice.face != null,
+        require(!attack.isCanceled() && attack.shouldSwingHand() && TabletDevice.face.column() == 0,
                 "Attack changed the click, swing or ongoing visit");
         MC.options.keyAttack.down = false;
         mainFrame(++t);

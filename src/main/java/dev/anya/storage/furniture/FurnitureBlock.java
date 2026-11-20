@@ -22,32 +22,19 @@ import net.minecraft.world.level.block.state.*;
 import net.minecraft.world.level.material.PushReaction;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.*;
-import java.util.EnumMap;
-import java.util.Map;
 
 public final class FurnitureBlock extends BaseEntityBlock {
     private static final MapCodec<FurnitureBlock> CODEC = simpleCodec(FurnitureBlock::new);
-    private static final Map<Direction,VoxelShape> SHELF_SHAPES = shelfShapes();
+    private static final VoxelShape GLOBE_SHAPE = Shapes.or(
+            Block.box(2.5,0,2.5,13.5,3,13.5), Block.box(3,3,3,13,5,13),
+            Block.box(2,5,2,14,7,14), Block.box(1.5,7,1.5,14.5,11,14.5),
+            Block.box(2.25,11,2.25,13.75,13,13.75), Block.box(3.5,13,3.5,12.5,14.5,12.5),
+            Block.box(5.5,14.5,5.5,10.5,15.25,10.5));
     private static final VoxelShape HATCH_SHAPE = Block.box(1, 0, 1, 15, 15, 15);
 
-    private static Map<Direction,VoxelShape> shelfShapes() {
-        VoxelShape north = Shapes.or(
-                Block.box(0,0,1,16,3,15), Block.box(0,3,2,16,4,14),
-                Block.box(2,4,3,14,4.35,12), Block.box(1,4,12,15,12,14),
-                Block.box(0,4,12,1,12,15), Block.box(15,4,12,16,12,15),
-                Block.box(0,12,12,16,13,15), Block.box(2,.65,.5,14,2.9,1),
-                Block.box(1,.8,.45,2,2.75,1), Block.box(14,.8,.45,15,2.75,1));
-        var facings = new EnumMap<Direction,VoxelShape>(Direction.class);
-        facings.put(Direction.NORTH,north);
-        VoxelShape last = north;
-        for (Direction facing : new Direction[]{Direction.EAST,Direction.SOUTH,Direction.WEST}) {
-            VoxelShape turned = Shapes.empty();
-            for (var box : last.toAabbs())
-                turned = Shapes.or(turned, Shapes.create(1-box.maxZ,box.minY,box.minX,1-box.minZ,box.maxY,box.maxX));
-            facings.put(facing,turned);
-            last=turned;
-        }
-        return facings;
+    public static FurnitureBlock createGlobe() {
+        return new FurnitureBlock(Properties.of().strength(0.6f).sound(SoundType.GLASS)
+                .noOcclusion().pushReaction(PushReaction.BLOCK));
     }
 
     public static FurnitureBlock create() {
@@ -68,16 +55,40 @@ public final class FurnitureBlock extends BaseEntityBlock {
     @Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return new FurnitureEntity(pos,state); }
     @Override protected RenderShape getRenderShape(BlockState state) { return RenderShape.MODEL; }
     @Override protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return state.is(Content.SHELF.get()) ? SHELF_SHAPES.get(state.getValue(StorageBlock.FACING)) : HATCH_SHAPE;
+        return state.is(Content.SHELF.get()) ? GLOBE_SHAPE : HATCH_SHAPE;
     }
-    @Override public boolean canEntityDestroy(BlockState state, BlockGetter level, BlockPos pos, Entity entity) { return false; }
+    @Override public boolean canEntityDestroy(BlockState state, BlockGetter level, BlockPos pos, Entity entity) {
+        return state.is(Content.SHELF.get()) && level.getBlockEntity(pos) instanceof FurnitureEntity f && !f.sealedKeepsake()
+                && super.canEntityDestroy(state,level,pos,entity);
+    }
+    @Override protected void onRemove(BlockState state,Level level,BlockPos pos,BlockState next,boolean moving) {
+        if (!level.isClientSide && state.is(Content.SHELF.get()) && !next.is(this)
+                && level.getBlockEntity(pos) instanceof FurnitureEntity globe) {
+            ItemStack keepsake=globe.inventory.removeItemNoUpdate(0);
+            if (!keepsake.isEmpty()) net.minecraft.world.Containers.dropItemStack(level,pos.getX(),pos.getY(),pos.getZ(),keepsake);
+        }
+        super.onRemove(state,level,pos,next,moving);
+    }
     @Override public void setPlacedBy(Level level, BlockPos pos, BlockState state, LivingEntity placer, ItemStack stack) {
         // An operator's explicit NBT placement can already carry an owner; preserve that record.
-        if (placer instanceof ServerPlayer owner && level.getBlockEntity(pos) instanceof FurnitureEntity furniture && furniture.owner==null)
+        if (!state.is(Content.SHELF.get()) && placer instanceof ServerPlayer owner
+                && level.getBlockEntity(pos) instanceof FurnitureEntity furniture && furniture.owner==null)
             furniture.initialize(owner.getUUID(), null);
     }
     @Override protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos,
             Player player, InteractionHand hand, BlockHitResult hit) {
+        if (state.is(Content.SHELF.get()) && level.getBlockEntity(pos) instanceof FurnitureEntity globe) {
+            // Let the actual offhand click reach claim listeners. Both sides make the same
+            // routing decision even when a migrated private display has no client model.
+            if (hand==InteractionHand.MAIN_HAND && stack.isEmpty() && !player.getOffhandItem().isEmpty())
+                return ItemInteractionResult.SKIP_DEFAULT_BLOCK_INTERACTION;
+            if (player instanceof ServerPlayer p) {
+                var transferHand=hand==InteractionHand.OFF_HAND && p.getMainHandItem().isEmpty() && !globe.inventory.isEmpty()
+                        ? InteractionHand.MAIN_HAND : hand;
+                Furniture.useGlobe(p,globe,transferHand);
+            }
+            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+        }
         if (hand == InteractionHand.MAIN_HAND && player instanceof ServerPlayer p && level.getBlockEntity(pos) instanceof FurnitureEntity f)
             Furniture.use(p, f);
         return ItemInteractionResult.sidedSuccess(level.isClientSide);

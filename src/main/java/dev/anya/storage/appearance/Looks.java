@@ -14,12 +14,27 @@ public final class Looks {
     public record Look(String element,String skin,String leaves,String interior){
         public String texture(){return skin.equals("elemental")?(element.equals("leaf")?"leaf_"+leaves:element):skin;}
     }
-    public static Look of(ItemStack stack){
-        CompoundTag t=BagInventory.data(stack);
+    public static Look of(ItemStack stack){return fromTag(BagInventory.data(stack));}
+    private static Look fromTag(CompoundTag t){
         String element=known(ELEMENTS,t.getString("Element"),"plain"),skin=known(SKINS,t.getString("Skin"),"elemental");
         String design=skin.equals("elemental")?element:skin;
         String automatic=switch(design){case "leaf","oak","cherry","dark_oak"->"botanical";case "water","diamond"->"ocean";case "galaxy"->"galaxy";case "futuristic","stone"->"circuit";case "magma","spooky","cute_spooky","midnight_cat"->"midnight";default->"atelier";};
         return new Look(element,skin,known(LEAVES,t.getString("LeafSpecies"),"oak"),known(INTERIORS,t.getString("Interior"),automatic));
+    }
+    /** Read-only even in recipe previews and on bags from older worlds. */
+    public static String backpackName(ItemStack stack) {
+        CompoundTag data = BagInventory.data(stack);
+        String tier = data.getString("TierName").strip();
+        if (tier.isEmpty()) {
+            String id = data.getString("Tier").replace('_', ' ').strip();
+            tier = id.isEmpty() ? "Starter" : Character.toUpperCase(id.charAt(0)) + id.substring(1);
+        }
+        Look look = fromTag(data);
+        String style = look.skin().equals("elemental") ? look.element() : look.skin();
+        if (style.equals("plain")) return tier + " Backpack";
+        String label = title(style);
+        if (style.equals("leaf") && !look.leaves().equals("oak")) label = title(look.leaves()) + " Leaf";
+        return label + " Backpack · " + tier;
     }
     public static String known(List<String> list,String key,String fallback){return list.contains(key)?key:fallback;}
     public static boolean unlocked(ItemStack bag,String key,boolean element){

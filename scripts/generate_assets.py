@@ -35,6 +35,10 @@ for name in ['hub','chest','uwu_cube']:
     js(f'assets/{MOD}/blockstates/{name}.json',{'variants':{f'facing={face}':{'model':f'{MOD}:block/{name}','y':rot} for face,rot in [('north',0),('east',90),('south',180),('west',270)]}})
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':f'{MOD}:block/{name}'})
     js(f'data/{MOD}/loot_table/blocks/{name}.json',{'type':'minecraft:block','pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':f'{MOD}:{name}'}],'conditions':[{'condition':'minecraft:survives_explosion'}]}]})
+# The block entity paints the real bag model from its public look. Supply a particle-only
+# shell to the block atlas so no second shape is drawn over the backpack.
+js(f'assets/{MOD}/blockstates/placed_backpack.json', {'variants': {'': {'model': f'{MOD}:block/placed_backpack'}}})
+js(f'assets/{MOD}/models/block/placed_backpack.json', {'parent': 'minecraft:block/block', 'textures': {'particle': f'{MOD}:backpack/plain_front'}})
 items=['backpack','remote','storage_core','dragon_victory_token']+[f'{u}_upgrade' for u in ['pickup','feeding','refill','crafting','smelting','compacting','resupply']]
 for index,name in enumerate(items):
     pixels=image(16,16)

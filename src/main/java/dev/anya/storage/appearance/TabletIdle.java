@@ -1,76 +1,48 @@
 package dev.anya.storage.appearance;
 
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.IntSupplier;
-import java.util.function.LongSupplier;
-
-/** A silent, local timer, scoped to one player, held object, hand and selected slot. */
+/** One local tablet's visit. Game ticks keep the baked icon and glass on the same beat. */
 final class TabletIdle {
-    private static final int LEGACY_GLANCE_MS = 500;
-    private static final int[] BEAT_END = {85, 175, 275, 385, 635, 760, 885, 1010, 1140};
-    private static final int UNPICKED = -2;
-    private static final int MAX_PAINT_GAP_MS = 1500;
-    private final LongSupplier quietTime;
-    private final IntSupplier chooseRow;
-    private Object owner;
-    private Object stack;
-    private boolean offhand;
-    private int slot = -1;
-    private long lastPaint = Long.MIN_VALUE;
-    private long glanceAt;
-    private int row = UNPICKED;
-
-    TabletIdle(IntSupplier chooseRow) {
-        this(() -> ThreadLocalRandom.current().nextLong(55_000L, 110_001L), chooseRow);
+    enum Face {
+        DARK("dark"), SQUINT("squint"), SHUT("shut"), GLANCE("glance"), OPEN("open");
+        final String sprite;
+        Face(String sprite) { this.sprite = sprite; }
+        float property() { return ordinal() * .25f; }
     }
 
-    TabletIdle(LongSupplier quietTime, IntSupplier chooseRow) {
-        this.quietTime = quietTime;
-        this.chooseRow = chooseRow;
-    }
+    private static final int SQUINT_TICKS = 160, QUIET_TICKS = 1200, EXIT_TICKS = 15;
+    private static final long NEVER = Long.MIN_VALUE;
+    private long nextVisit, leaving = NEVER;
+    private boolean held;
 
-    /** Returns true when the last painted pose can no longer belong to the same held Remote. */
-    boolean bind(Object player, Object held, boolean inOffhand, int selectedSlot) {
-        if (owner == player && stack == held && offhand == inOffhand && slot == selectedSlot) return false;
-        owner = player;
-        stack = held;
-        offhand = inOffhand;
-        slot = selectedSlot;
-        quiet();
-        return true;
-    }
+    TabletIdle(long tick) { nextVisit = tick; }
 
-    void quiet() {
-        lastPaint = Long.MIN_VALUE;
-        row = UNPICKED;
-    }
-
-    static int columnAt(long age) {
-        if (age < 0) return -1;
-        for (int i = 0; i < BEAT_END.length; i++) {
-            if (age < BEAT_END[i]) return i;
+    Face frame(long tick) {
+        if (leaving != NEVER && tick - leaving < EXIT_TICKS) {
+            long age = tick - leaving;
+            return age < 7 ? Face.SQUINT : age < 10 ? Face.SHUT : Face.GLANCE;
         }
-        return -1;
+        if (held || tick < nextVisit) return Face.DARK;
+        long age = (tick - nextVisit) % (SQUINT_TICKS + 8 + QUIET_TICKS);
+        if (age < SQUINT_TICKS) return Face.SQUINT;
+        if (age < SQUINT_TICKS + 3) return Face.SHUT;
+        return age < SQUINT_TICKS + 8 ? Face.GLANCE : Face.DARK;
     }
 
-    int row() { return row; }
-
-    int paintColumn(long now) {
-        if (owner == null || stack == null) return -1;
-        if (lastPaint == Long.MIN_VALUE || now < lastPaint || now - lastPaint > MAX_PAINT_GAP_MS
-                || now >= glanceAt + BEAT_END[BEAT_END.length - 1]) {
-            glanceAt = now + quietTime.getAsLong();
-            row = UNPICKED;
+    void select(boolean selected, long tick) {
+        if (selected == held) return;
+        if (selected) {
+            // Putting it away and picking it straight up cannot restart the exit.
+            if (leaving == NEVER || tick - leaving >= EXIT_TICKS) {
+                leaving = switch (frame(tick)) {
+                    case SQUINT -> tick;
+                    case SHUT -> tick - 7;
+                    case GLANCE -> tick - 10;
+                    default -> NEVER;
+                };
+            }
+        } else {
+            nextVisit = tick + QUIET_TICKS;
         }
-        lastPaint = now;
-        long age = now - glanceAt;
-        if (age < 0) return -1;
-        if (row == UNPICKED) row = chooseRow.getAsInt();
-        if (row == -1 && age >= LEGACY_GLANCE_MS) {
-            glanceAt = now + quietTime.getAsLong();
-            row = UNPICKED;
-            return -1;
-        }
-        return columnAt(age);
+        held = selected;
     }
 }

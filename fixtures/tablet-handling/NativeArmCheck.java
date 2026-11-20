@@ -1,15 +1,54 @@
-import dev.anya.storage.appearance.TabletArmRenderer;
+package dev.anya.storage.appearance;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.player.PlayerRenderer;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /** Runs production bytecode against a recording renderer in place of the GPU and live player. */
 public final class NativeArmCheck {
     private static void require(boolean value, String description) {
         if (!value) throw new AssertionError(description);
+    }
+
+    private static void reversingTurns(LocalPlayer player, PlayerRenderer renderer) {
+        var graphics = new GuiGraphics();
+        Minecraft.getInstance().getEntityRenderDispatcher().renderer = renderer;
+        var motions = new TabletHandMotion[]{
+            new TabletHandMotion(4, -4, .1f, -.3f, 1.3f),
+            new TabletHandMotion(-4, 4, -.2f, -.1f, -1.3f),
+            new TabletHandMotion(3, 4, .2f, -.2f, 1.3f),
+            TabletHandMotion.STILL
+        };
+        for (boolean right : new boolean[]{false, true}) {
+            for (boolean slim : new boolean[]{false, true}) {
+                float side = right ? 1 : -1;
+                var endOfHand = new Vector3f(-side * (slim ? .5f : 1f), 10, 0)
+                        .rotateZ(side * .1f).add(-side * 5f, 2, 0).div(16);
+                for (float progress : new float[]{0, .4f, 1, .65f, 0}) {
+                    for (var motion : motions) {
+                        var pose = graphics.pose();
+                        pose.pushPose();
+                        motion.apply(pose, 480, 320, progress);
+                        var device = TabletHandlingPose.deviceMatrix(480, 320, right, .4f, .2f, progress);
+                        var rail = new Matrix4f(pose.last().pose()).mul(device)
+                                .transformPosition(new Vector3f(right ? 420f : 12f, 170f, -5f));
+                        var arm = TabletHandlingPose.armMatrix(480, 320, right, slim, .4f, .2f, progress);
+                        TabletArmRenderer.draw(graphics, player, right, 15728880, arm);
+                        var wrist = renderer.pose.transformPosition(new Vector3f(endOfHand));
+                        require(Math.hypot(wrist.x - rail.x, wrist.y - rail.y) < .01,
+                                "Turn moved the rendered wrist off the rail: " + wrist + " vs " + rail);
+                        require(Math.abs(wrist.z - rail.z + 260f) < .01,
+                                "Depth behind glass must remain constant during turns");
+                        pose.popPose();
+                    }
+                }
+            }
+        }
+        System.out.println("PASS: actual native hand matrix keeps the wrist on the case during rapid yaw and pitch reversals, swing, lift and return");
     }
 
     public static void main(String[] args) {
@@ -34,6 +73,7 @@ public final class NativeArmCheck {
                 require(g.flushes == flushes + 2 && g.pose().last().pose().equals(base), "Paint order and balanced pose");
             }
         }
+        reversingTurns(player, wide);
         int flushes = g.flushes;
         player.invisible = true;
         TabletArmRenderer.draw(g, player, true, 0, transform);

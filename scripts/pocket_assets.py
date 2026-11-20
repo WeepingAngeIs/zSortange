@@ -11,7 +11,19 @@ js('data/anyastorage/dimension_type/pockets.json',{
  'has_raids':False,'min_y':0,'height':256,'logical_height':128,'infiniburn':'#minecraft:infiniburn_end',
  'effects':'minecraft:the_end','monster_spawn_block_light_limit':0,'monster_spawn_light_level':0})
 js('data/anyastorage/dimension/pockets.json',{'type':'anyastorage:pockets','generator':{'type':'minecraft:flat','settings':{'biome':'minecraft:the_void','features':False,'lakes':False,'layers':[],'structure_overrides':[]}}})
-js('data/anyastorage/recipe/home_void_cube.json',{'type':'anyastorage:home_void_cube','category':'misc'})
+js('data/anyastorage/recipe/home_void_cube.json', {
+    'type': 'minecraft:crafting_shapeless', 'category': 'misc',
+    'ingredients': [{'item': 'minecraft:diamond'}, {'item': 'minecraft:diamond'}, {'item': 'minecraft:ancient_debris'}],
+    'result': {'id': 'anyastorage:home_void_cube', 'count': 1},
+})
+js('data/anyastorage/advancement/recipes/misc/home_void_cube.json', {
+    'parent': 'minecraft:recipes/root',
+    'criteria': {
+        'has_diamond': {'trigger': 'minecraft:inventory_changed', 'conditions': {'items': [{'items': 'minecraft:diamond'}]}},
+        'has_the_recipe': {'trigger': 'minecraft:recipe_unlocked', 'conditions': {'recipe': 'anyastorage:home_void_cube'}},
+    },
+    'requirements': [['has_diamond', 'has_the_recipe']], 'rewards': {'recipes': ['anyastorage:home_void_cube']},
+})
 js('assets/anyastorage/blockstates/home_void_cube.json',{'variants':{'':{'model':'anyastorage:block/home_void_cube'}}})
 js('assets/anyastorage/models/block/home_void_cube.json',{'parent':'minecraft:block/cube_all','textures':{'all':'anyastorage:block/home_void_cube'}})
 js('assets/anyastorage/models/item/home_void_cube.json',{'parent':'anyastorage:block/home_void_cube'})

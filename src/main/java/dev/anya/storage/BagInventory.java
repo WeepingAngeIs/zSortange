@@ -39,19 +39,20 @@ public final class BagInventory implements Container {
         if(!tag.contains("Tier")){Config.Tier t=Config.get().tier("starter");tag.putString("Tier",t.id);tag.putString("TierName",t.name);tag.putInt("Capacity",t.slots);tag.putInt("UpgradeSlots",t.upgrades);changed=true;}
         if(changed)data(stack,tag);
     }
-    public boolean valid() { return player.isAlive()&&!player.isSpectator()&&source.stack()==stack&&BackpackAccess.unique(player,stack)&&stack.getCount()==1&&Objects.equals(observed,stack.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY)); }
+    public boolean valid() { return player.isAlive()&&!player.isSpectator()&&source.stack()==stack&&BackpackAccess.carriedCopies(player,stack,playerSlot==BackpackAccess.GROUND_SLOT?0:1)&&stack.getCount()==1&&Objects.equals(observed,stack.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY)); }
+    public void hostChanged(){source.inventory().setChanged();player.getInventory().setChanged();}
     boolean matchesSavedSlot(int slot,ItemStack live,ItemContainerContents expected) {
         if(observed!=expected || slot<0 || slot>=items.size())return false;
         return slot<expected.getSlots() && Transactions.same(live,expected.getStackInSlot(slot));
     }
-    public String name() { return data(stack).getString("TierName")+" Backpack"; }
+    public String name() { return stack.getHoverName().getString(); }
     @Override public int getContainerSize(){return items.size();}
     @Override public boolean isEmpty(){return items.stream().allMatch(ItemStack::isEmpty);}
     @Override public ItemStack getItem(int slot){return items.get(slot);}
     @Override public ItemStack removeItem(int slot,int amount){ItemStack result=ContainerHelper.removeItem(items,slot,amount);if(!result.isEmpty())setChanged();return result;}
     @Override public ItemStack removeItemNoUpdate(int slot){ItemStack result=ContainerHelper.takeItem(items,slot);setChanged();return result;}
     @Override public void setItem(int slot,ItemStack item){items.set(slot,item);setChanged();}
-    @Override public void setChanged(){observed=ItemContainerContents.fromItems(items);stack.set(DataComponents.CONTAINER,observed);source.inventory().setChanged();player.getInventory().setChanged();}
+    @Override public void setChanged(){observed=ItemContainerContents.fromItems(items);stack.set(DataComponents.CONTAINER,observed);hostChanged();}
     @Override public boolean stillValid(Player p){return p==player&&valid();}
     @Override public void clearContent(){items.replaceAll(s->ItemStack.EMPTY);setChanged();}
     @Override public boolean canPlaceItem(int slot,ItemStack item){return slot>=0&&slot<items.size()&&item.getItem().canFitInsideContainerItems()&&!item.is(Content.BACKPACK.get())&&!item.has(DataComponents.BUNDLE_CONTENTS)&&!item.has(DataComponents.BLOCK_ENTITY_DATA)&&item.getOrDefault(DataComponents.CONTAINER,ItemContainerContents.EMPTY).equals(ItemContainerContents.EMPTY);}

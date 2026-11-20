@@ -9,6 +9,7 @@ import java.util.function.BooleanSupplier;
 
 /** Resolves actual owned stacks, never temporary copies or another player's inventory. */
 public final class BackpackAccess {
+    public static final int GROUND_SLOT = -2;
     public record Source(Container inventory,int slot,int playerSlot,BooleanSupplier attached) {
         public ItemStack stack(){return attached.getAsBoolean()&&slot>=0&&slot<inventory.getContainerSize()?inventory.getItem(slot):ItemStack.EMPTY;}
         public BagInventory open(ServerPlayer player){return new BagInventory(player,this);}
@@ -27,10 +28,13 @@ public final class BackpackAccess {
         return result;
     }
     public static boolean unique(ServerPlayer player,ItemStack stack){
+        return carriedCopies(player,stack,1);
+    }
+    static boolean carriedCopies(ServerPlayer player,ItemStack stack,int expected){
         var data=BagInventory.data(stack);if(!data.hasUUID("BagId"))return true;
         UUID id=data.getUUID("BagId");int copies=0;
         for(Source source:all(player)){var tag=BagInventory.data(source.stack());if(tag.hasUUID("BagId")&&id.equals(tag.getUUID("BagId")))copies++;}
-        return copies==1;
+        return copies==expected;
     }
     /** Equipped native back slot, main hand, explicitly selected inventory bag, inventory order, offhand. */
     public static List<Source> priority(ServerPlayer player){

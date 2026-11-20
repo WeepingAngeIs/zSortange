@@ -81,7 +81,7 @@ public final class HeldOpeningCheck {
         long lastPaint = start + elapsed;
         float shown = lift.progress(lastPaint);
         check(shown > 0 && shown < 1, "Sample must be an actual partial raise");
-        var portrait = id == 1 ? TabletDevice.visit(4, 5) : null;
+        var portrait = id == 1 ? TabletDevice.physicalFace(TabletIdle.Face.GLANCE) : null;
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, shown, WIDTH, HEIGHT, owner,
                 owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint, portrait));
         int actions = PacketDistributor.sent.size();
@@ -99,13 +99,9 @@ public final class HeldOpeningCheck {
                 next.casePose, "Continue the existing raise without another anticipation delay");
         for (var frame : new GuiGraphics[]{first, next}) {
             check(frame.row < 0, "The blink replaced the carried face before the tablet settled");
-            if (portrait != null) {
-                check(frame.expressionRow == 4 && frame.expressionColumn == 5 && frame.atlasDraws == 0,
-                        "The raise dropped the expression that was already visible");
-            } else {
-                check(frame.atlasDraws == 1 && frame.atlasSprite.toString().equals("anyastorage:item/cupid_tablet_face"),
-                        "The raise should keep using the native item's shared animation sprite");
-            }
+            String suffix = portrait == null ? "dark" : "glance";
+            check(frame.atlasDraws == 1 && frame.atlasSprite.toString().equals("anyastorage:item/cupid_tablet_face_" + suffix),
+                    "The raise lost the exact physical face sampled in the hand");
         }
         var settled = paint(screen, firstMenuPaint + TabletLift.RISE_MS);
         check(settled.row == 0 && settled.atlasDraws == 0 && settled.expressionColumn < 0,
@@ -153,7 +149,7 @@ public final class HeldOpeningCheck {
         var owner = new LocalPlayer();
         var hand = InteractionHand.OFF_HAND;
         var grip = new TabletDevice.Grip(false, .1f, .02f, 0xb000d0);
-        var face = TabletDevice.visit(4, 5);
+        var face = TabletDevice.physicalFace(TabletIdle.Face.GLANCE);
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, .23f, WIDTH, HEIGHT, owner, owner.getItemInHand(hand),
                 hand, owner.getInventory().selected, 40_000, face));
         var screen = open(40, owner);
@@ -193,46 +189,23 @@ public final class HeldOpeningCheck {
     }
 
     private static void allPortraits() {
-        var clock = new GuardianBlink(true);
-        int[] starts = {0,260,310,390,440,610,660,760,810};
-        for (int i = 0; i < starts.length; i++) {
-            clock.present(starts[i], true, true);
-            for (int row = 0; row < 7; row++) {
-                var tile = row < 4 ? TabletDevice.opening(row, clock) : TabletDevice.visit(row, i);
-                check(tile.image().getPath().endsWith("/tablet_expressions.png") && tile.atlasWidth() == 2016
-                        && tile.atlasHeight() == 896 && tile.u() == 224*i && tile.v() == 128*row,
-                        "Unexpected source region in the expression sheet");
-            }
-            var tumble = TabletDevice.visit(7, i);
-            check(tumble.image().getPath().endsWith("/tablet_tumble.png") && tumble.atlasWidth() == 2016
-                    && tumble.atlasHeight() == 128 && tumble.u() == 224*i && tumble.v() == 0,
-                    "Wrong tumble frame");
-        }
-        check(clock.present(1050, true, true) == GuardianBlink.Frame.DONE && !clock.coversInput()
-                && TabletDevice.opening(0, clock) == null, "The clock or portrait extended past 1050 ms");
-        int previous = -1;
-        for (int i = 0; i < 24; i++) {
-            int current = TabletDevice.chooseVisit(1);
-            check(current != previous && current >= 4 && current < 7, "Idle choices repeated or used an opening");
-            previous = current;
-        }
         var client = Minecraft.getInstance();
-        for (int roll = 4; roll < 8; roll++) {
-            int row = TabletDevice.chooseVisit(roll);
-            check(row == -1 && TabletDevice.visit(row, 0).image().getPath().endsWith("/tablet_gaze_left.png"),
-                    "The classic visit should grant the Twin Tails left glance with the Cloud sheet installed");
+        for (var face : TabletIdle.Face.values()) {
+            var nativeFace = TabletDevice.physicalFace(face);
+            check(nativeFace.image().getPath().equals("item/cupid_tablet_face_" + face.sprite)
+                    && TabletDevice.faceOf(nativeFace) == face, "The wrong baked close-up was selected");
         }
-        check(TabletDevice.chooseVisit(0) == 7 && TabletDevice.chooseVisit(0) < 7,
-                "Rare tumble should play once and never repeat immediately");
-        client.tumbleArt = false;
-        check(TabletDevice.chooseVisit(0) < 7, "Missing tumble sheet must use a regular visit");
-        client.tumbleArt = true;
-        client.expressionArt = false;
-        check(TabletDevice.chooseVisit(0) == -1, "Missing both body sheets must use the classic glance");
+        client.missingItemFace = true;
+        try {
+            var graphics = new GuiGraphics();
+            TabletDevice.draw(graphics, new TabletDevice.Bounds(0, 0, 1), TabletDevice.physicalFace(TabletIdle.Face.SHUT));
+            check(graphics.row == 2 && graphics.atlasDraws == 0, "Missing baked sprite must retain the closed eyes");
+        } finally {
+            client.missingItemFace = false;
+        }
         var owner = new LocalPlayer();
         var fallback = open(20, owner);
         check(paint(fallback, 60_000).row == 0 && paint(fallback, 60_310).row == 2, "Twin Tails without Cloud art");
-        client.expressionArt = true;
         var reopened = open(21, owner);
         var face = paint(reopened, 62_000);
         check(face.row == 0 && face.expressionColumn < 0, "Cloud art displaced the approved opening portrait");
@@ -287,7 +260,7 @@ public final class HeldOpeningCheck {
         var heldGrip = new TabletDevice.Grip(true, 0, 0, 0xb000d0);
         var hand = InteractionHand.MAIN_HAND;
         TabletDevice.rememberHeld(new TabletDevice.Held(heldGrip, .42f, WIDTH, HEIGHT, owner,
-                owner.getItemInHand(hand), hand, owner.getInventory().selected, 81_990, TabletDevice.visit(4, 5)));
+                owner.getItemInHand(hand), hand, owner.getInventory().selected, 81_990, TabletDevice.physicalFace(TabletIdle.Face.GLANCE)));
         var screen = open(missed, owner);
         var pending = paint(screen, 82_000);
         check(pending.events.contains("inventory") && pending.row < 0 && pending.expressionColumn < 0,
@@ -379,7 +352,7 @@ public final class HeldOpeningCheck {
         System.out.println("PASS: Escape carries the last partial lift, mid-blink portrait and settled case; swapped items discard it");
         System.out.println("PASS: server hit works with default JVM arguments; heart Remote, miss and opt-out reveal "
                 + "immediately, first ready slot dispatches exactly once, and resize/reopening cannot replay the decision");
-        System.out.println("PASS: Twin Tails double blink and left glance, Cloud body tiles and tumble, "
+        System.out.println("PASS: only close-up faces on the physical tablet, Twin Tails double blink, "
                 + "first actionable slot at 1050 ms, continuous lift, immediate direct inventories, private and legacy isolation");
     }
 }
