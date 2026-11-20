@@ -27,7 +27,7 @@ Visit with room editing enabled and Build permission. Hold a plain supported blo
 
 A plan holds eight spots, with room for one optional Labelled Storage Chest per plan. Walk around to judge the arrangement, then stand where all the marked faces are visible and within reach to apply. A missing item, changed permission, blocked sight line, occupied spot or protected area prevents placement. Plans expire after five minutes from the last mark or when the visit ends. The room's exit, original chests and chest approaches remain protected. Storage furniture and optional chests also need View, Deposit and Withdraw.
 
-During a visit, open `/anya pocket build plan` to see which of the four extra chest pads are vacant, occupied or unavailable. Use `/anya pocket build pads` for markers in the room. Marking a vacant pad draws an outline for free. Apply spends one plain Labelled Storage Chest and adds 54 physical slots. The server rechecks reach, permissions and the chest limit at placement. The framed preview draws the added chest from the room's verified layout when the room is loaded and the viewer has permission.
+During a visit, open chat and click **Room upgrades** in the welcome message. You can bring the link back by right-clicking the floor while holding a plain Labelled Storage Chest. The planner shows the four pads and the cost. To build, aim at a vacant pad and use **Mark pad** to add an outline for free. **Apply plan** spends one chest and adds 54 physical slots. Press Enter to confirm the suggested action. The server rechecks reach, permissions and the chest limit at placement. The framed preview draws the added chest from the room's verified layout when the room is loaded and the viewer has permission.
 
 ## Pack, find and put things away
 

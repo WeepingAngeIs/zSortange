@@ -19,15 +19,31 @@ import net.minecraft.world.phys.BlockHitResult;
 
 /** Private directions and a read-only status display for the four fixed chest pads. */
 final class ChestPadGuide {
-    private static final String PLACE = "/anya pocket build place";
-    private static final String MARK = "/anya pocket build plan add";
-    private static final String APPLY = "/anya pocket build plan apply";
+    private static final String PLAN = "/anya pocket build plan";
+    private static final String MARK = PLAN + " add";
+    private static final String APPLY = PLAN + " apply";
 
     static BlockPos nearestFloor(PocketLedger.Pocket room, BlockPos at) {
         return PocketRoomLayout.pads(room).stream()
                 .map(BlockPos::below)
                 .min(java.util.Comparator.comparingDouble(at::distSqr))
                 .orElseThrow();
+    }
+
+    static void offerUpgradesOnArrival(ServerPlayer player, PocketLedger.Pocket room) {
+        // The ordinary welcome and successful arrival are independent of this optional help.
+        if (canOfferUpgrades(player, room)) {
+            player.sendSystemMessage(Component.literal("[Anya Storage] Open chat and click ").append(upgradesLink()).append("."));
+        }
+    }
+
+    private static boolean canOfferUpgrades(ServerPlayer player, PocketLedger.Pocket room) {
+        try {
+            return RoomEditor.enabled()
+                    && RoomEditor.Access.capture(player, room).current(player, RoomEditor.CHEST_EDIT_RIGHTS);
+        } catch (IOException | RuntimeException unavailable) {
+            return false;
+        }
     }
 
     static void showPlan(ServerPlayer player) {
@@ -108,8 +124,17 @@ final class ChestPadGuide {
     }
 
     private static Component suggest(String label, String command) {
+        return commandLink(label, ClickEvent.Action.SUGGEST_COMMAND, command);
+    }
+
+    private static Component upgradesLink() {
+        // The root command only displays the planner and rechecks access. Spending is a separate Apply.
+        return commandLink("Room upgrades", ClickEvent.Action.RUN_COMMAND, PLAN);
+    }
+
+    private static Component commandLink(String label, ClickEvent.Action action, String command) {
         return Component.literal(label).withStyle(style -> style.withColor(ChatFormatting.AQUA)
-                .withUnderlined(true).withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command)));
+                .withUnderlined(true).withClickEvent(new ClickEvent(action, command)));
     }
 
     static void show(ServerPlayer player) {
@@ -121,7 +146,7 @@ final class ChestPadGuide {
                 || lease.kind() != PocketLeases.Kind.VISIT || lease.epoch() != room.epoch()
                 || RoomEditor.quarantined(room.id()) || player.gameMode.getGameModeForPlayer() == GameType.ADVENTURE
                 || !PocketService.authorize(player, room, PocketLeases.Kind.VISIT, false,
-                        RoomEditor.CHEST_EDIT_RIGHTS).isEmpty()) {
+                        RoomEditor.CHEST_EDIT_RIGHTS).isEmpty() || !canOfferUpgrades(player, room)) {
             AnyaStorage.tell(player, "Pad directions need an active room visit with editing enabled and Build, View, Deposit and Withdraw access.");
             return;
         }
@@ -144,9 +169,9 @@ final class ChestPadGuide {
         } catch (IllegalArgumentException ignored) {
             // Directions are also available when the builder is looking into open air.
         }
-        player.sendSystemMessage(Component.literal("[Anya Storage] " + message + " Open chat, then select ")
-                .append(suggest(PLACE, PLACE))
-                .append(" and press Enter to place it."));
+        player.sendSystemMessage(Component.literal("[Anya Storage] " + message + " Open chat and click ")
+                .append(upgradesLink())
+                .append(" to check the pads and plan one chest."));
     }
 
     private ChestPadGuide() {}

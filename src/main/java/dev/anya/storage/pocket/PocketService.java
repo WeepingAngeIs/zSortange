@@ -214,6 +214,7 @@ public final class PocketService {
         teleport(p,target,point,0,0);
         if(!inPocket(p.level()))throw new IOException("Dimension transition was rejected; recovery record retained");
         savePlayer(p);AnyaStorage.tell(p,"Experimental pocket: 32x32 bounded plot, four real protected chests. Right-click the lodestone or /anya pocket exit. Use /anya pocket build for the separately gated editing subset. The exit and original chests remain protected.");
+        ChestPadGuide.offerUpgradesOnArrival(p, pocket);
     }
     public static void tick(MinecraftServer server){
         clock++;lastPreparedBlocks=0;
