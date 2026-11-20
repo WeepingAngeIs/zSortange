@@ -91,10 +91,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         var policy = ExpansionRules.get();
         return switch (opening) {
             case REMOTE -> REMOTE_OPEN;
-            case TABLET -> REMOTE_OPEN | TABLET_RULE
+            case TABLET, CREATIVE -> REMOTE_OPEN | TABLET_RULE | (opening == Opening.CREATIVE ? CREATIVE_ACCESS : 0)
                     | (policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
             case CHEST -> policy.rollChestCameo(ThreadLocalRandom.current()) ? STORAGE_CAMEO : 0;
-            case CREATIVE -> CREATIVE_ACCESS | REMOTE_OPEN | TABLET_RULE | (policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
             case BACKPACK -> policy.backpackCameoEnabled ? STORAGE_CAMEO : 0;
             case PLAIN -> 0;
         };

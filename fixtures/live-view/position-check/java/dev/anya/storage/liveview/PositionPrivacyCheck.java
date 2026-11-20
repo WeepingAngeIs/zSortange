@@ -146,11 +146,12 @@ public final class PositionPrivacyCheck {
         hub.setMember(visitor.player.getUUID(), BasePermissions.VISIT);
         hub.setChanged();
         standAt(owner, entry);
-        ItemStack remote = new ItemStack(Content.REMOTE.get());
+        ItemStack remote = new ItemStack(Content.CUPID_TABLET.get());
         var data = BagInventory.data(remote);
         data.putString("HubDimension", level.dimension().location().toString());
         data.putLong("HubPos", hubPos.asLong());
         BagInventory.data(remote, data);
+        owner.player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,remote);
         PocketService.link(owner.player, entrance, remote);
         require(entrance.pocket != null && ledger.get(entrance.pocket).stage() == PocketLedger.Stage.RESERVED,
                 "Ordinary home link failed");

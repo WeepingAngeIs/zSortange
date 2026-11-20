@@ -116,7 +116,8 @@ decision = body(menu, "int openingFlags(")
 ordered(decision, "if (!mayView", "case TABLET", "REMOTE_OPEN | TABLET_RULE",
         "policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0",
         "case CHEST -> policy.rollChestCameo")
-assert "case CREATIVE -> CREATIVE_ACCESS | REMOTE_OPEN | TABLET_RULE" in decision
+assert "case TABLET, CREATIVE -> REMOTE_OPEN | TABLET_RULE" in decision
+assert "opening == Opening.CREATIVE ? CREATIVE_ACCESS : 0" in decision
 assert "case BACKPACK -> policy.backpackCameoEnabled" in decision and "case PLAIN -> 0" in decision
 storage = body(menu, "void storage()")
 assert "mayView?openingFlags:openingFlags&CREATIVE_ACCESS" in storage

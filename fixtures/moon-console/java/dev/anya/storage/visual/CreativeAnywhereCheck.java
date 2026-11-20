@@ -51,6 +51,13 @@ final class CreativeAnywhereCheck {
     private static int shards(ServerPlayer p){
         return p.getInventory().countItem(Items.AMETHYST_SHARD);
     }
+    private static boolean sessionPending(ServerPlayer p) {
+        try {
+            var method=CreativeTabletAccess.class.getDeclaredMethod("session",ServerPlayer.class);
+            method.setAccessible(true);
+            return method.invoke(null,p)!=null;
+        } catch(ReflectiveOperationException e){throw new AssertionError(e);}
+    }
     private static StorageEntity home(ServerPlayer p){return (StorageEntity)p.getServer().overworld().getBlockEntity(HUB);}
     private static boolean tick(ServerPlayer p){
         if(++ticks>1800)throw new IllegalStateException("Timed out at Creative Tablet "+step);
@@ -111,7 +118,9 @@ final class CreativeAnywhereCheck {
                 if(ticks<10)return false;
                 require(p.containerMenu==p.inventoryMenu && cold(p,HUB) && cold(p,CUBE),"Regular tablet must keep its original radius");
                 var forged=aggregate.copy();var tag=BagInventory.data(forged);tag.putLong("HubPos",HUB.east(1024).asLong());BagInventory.data(forged,tag);
-                p.setItemInHand(HAND,forged);use(p);next(Step.DENIED);
+                p.setItemInHand(HAND,forged);use(p);
+                require(!sessionPending(p) && CreativeTabletAccess.ticketCount()==0,"Modified coordinates must be rejected before requesting any chunk");
+                next(Step.DENIED);
             }
             case DENIED -> {
                 if(ticks<10)return false;

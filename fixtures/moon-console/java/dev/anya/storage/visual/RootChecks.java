@@ -181,7 +181,7 @@ public final class RootChecks {
             operation.join();operation=null;
         }
         if(mc.player==null || mc.level==null)return false;
-        require(++ticks<800,"Timeout at "+step+", notices="+notices);
+        if(step!=Step.DONE)require(++ticks<800,"Timeout at "+step+", notices="+notices);
         switch(step){
             case START -> {
                 server(mc,p->{

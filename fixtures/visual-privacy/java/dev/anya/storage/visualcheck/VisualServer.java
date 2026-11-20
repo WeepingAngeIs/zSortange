@@ -266,11 +266,12 @@ public final class VisualServer {
         require(!server.getPlayerList().isOp(profile), "Setup owner must be a non-operator");
         setupOwner.setPos(8.5, 81, 3.5);
         hub.owner = entrance.owner = setupOwner.getUUID();
-        var remote = new ItemStack(Content.REMOTE.get());
+        var remote = new ItemStack(Content.CUPID_TABLET.get());
         var data = BagInventory.data(remote);
         data.putString("HubDimension", server.overworld().dimension().location().toString());
         data.putLong("HubPos", HUB.asLong());
         BagInventory.data(remote, data);
+        setupOwner.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,remote);
         PocketService.link(setupOwner, entrance, remote);
         require(entrance.pocket != null && ledger.get(entrance.pocket).stage() == PocketLedger.Stage.RESERVED, "Home link did not reserve a room");
         PocketService.enter(setupOwner, entrance);
