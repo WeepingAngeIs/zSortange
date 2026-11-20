@@ -28,7 +28,7 @@ As an operator, run `/anya pocket enable`, then `/anya pocket status`. The setti
 
 To test entry, crouch-right-click the hub with your tablet, then crouch-right-click the Home Void Cube with the same item. Stand up and right-click the cube to visit. To enable editing separately, use `/anya storage settings set expansion.pocketEditing true`.
 
-Inside the room, right-click the air with its linked tablet. Click the **Edit Mode** wrench, place a plain supported block with right-click, then take it back with left-click. Reopen the tablet and click the wrench marked **ON** to finish. The **Room plan** button opens the layout planner. **Leave room** returns you to your saved entry point. A guest needs Visit and Build to edit. Their View, Deposit and Withdraw permissions govern the storage panel separately.
+Inside the room, right-click the air with its linked tablet. Click the **Edit Mode** wrench, place a plain supported block with right-click, then take it back with left-click. Reopen the tablet and click the wrench marked **ON** to finish. The **Room plan** button shows the planner commands and available chest pads. **Leave room** returns you to your saved entry point. A guest needs Visit and Build to edit. Their View, Deposit and Withdraw permissions govern the storage panel separately.
 
 ## Plan a corner of the pocket
 

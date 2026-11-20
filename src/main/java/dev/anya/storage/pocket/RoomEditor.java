@@ -490,7 +490,7 @@ public final class RoomEditor {
                 try { denied = vetoed(new BlockEvent.EntityPlaceEvent(captured.getFirst(),level.getBlockState(against),p)); }
                 finally {
                     // Ownership annotations on the trial are disposable. Preserve an independent replacement or real deposit.
-                    keepForeignChange = level.getBlockState(pos) != after || level.getBlockEntity(pos) != preview;
+                    keepForeignChange = !level.getBlockState(pos).is(after.getBlock()) || level.getBlockEntity(pos) != preview;
                     if (!keepForeignChange && (preview instanceof Container inventory && !inventory.isEmpty()
                             || preview instanceof FurnitureEntity furniture && !furniture.emptyForRemoval())) {
                         keepForeignChange = true;

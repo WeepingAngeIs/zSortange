@@ -33,6 +33,11 @@ jobs:
         run: |
           set -euo pipefail
           jar=$(realpath build/libs/anya-storage-plus-*-roomeditor.1.jar)
+          # Offline item registries read the vanilla language and registry resources.
+          # Place the original archive after the mapped libraries so it supplies data only.
+          vanilla="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$vanilla"
+          printf ':%s' "$vanilla" >> build/durable-audit/classpath.txt
           cp_file="$PWD/build/durable-audit/check.args"
           printf -- '-classpath\n"%s"\n' "$(cat build/durable-audit/classpath.txt)" > "$cp_file"
           args=(--jdk "$JAVA_HOME" --classpath-file "$cp_file" --support-jar "$jar")
