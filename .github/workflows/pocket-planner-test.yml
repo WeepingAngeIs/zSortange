@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.1.jar)
+          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.2.jar)
           cp_file="$PWD/build/durable-audit/check.args"
           printf -- '-classpath\n"%s"\n' "$(cat build/durable-audit/classpath.txt)" > "$cp_file"
           args=(--jdk "$JAVA_HOME" --classpath-file "$cp_file" --support-jar "$jar")
@@ -50,7 +50,7 @@ jobs:
           python3 -B fixtures/tablet-handling/run_native_arm.py "${args[@]}"
       - name: Check packaged model geometry, pixels and cube audio
         run: |
-          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.1.jar)
+          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.2.jar)
           /usr/bin/python3 scripts/check_hub_console.py "$jar" --preview build/moon-review/hub-console.gif
           python3 scripts/check_moon_cube_jar.py "$jar"
       - name: Film the packaged mod on a disposable Minecraft client
@@ -62,8 +62,9 @@ jobs:
           printf 'onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\nrenderDistance:5\nsimulationDistance:5\n' > build/moon-review/client/options.txt
           timeout 12m xvfb-run -a -s '-screen 0 1024x768x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > build/moon-review/launch.log 2>&1 || { tail -n 100 build/moon-review/launch.log; exit 1; }
           test -s build/moon-review/client/camera.txt
-          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.1.jar)
+          jar=$(realpath build/libs/anya-storage-plus-*-moonconsole.2.jar)
           grep -F "$(sha256sum "$jar" | cut -d' ' -f1)" build/moon-review/client/camera.txt
+          /usr/bin/python3 fixtures/moon-console/check_frames.py "$jar" build/moon-review/client/screenshots
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -139,14 +140,14 @@ jobs:
           PY
           sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/MOONCONSOLE.1-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/MOONCONSOLE.1-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/MOONCONSOLE.2-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/MOONCONSOLE.2-PLAYTEST.txt upload/PLAYTEST.txt
           cp docs/SERVER_SETTINGS.md upload/SERVER-SETTINGS.md
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-moonconsole.1
+          name: anya-storage-plus-moonconsole.2
           path: upload/
           if-no-files-found: error
           retention-days: 14

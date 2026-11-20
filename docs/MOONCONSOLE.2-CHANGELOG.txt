@@ -1,4 +1,4 @@
-Anya Storage Plus 0.3.0-beta.7-moonconsole.1
+Anya Storage Plus 0.3.0-beta.7-moonconsole.2
 Visual test beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
 
 The Cupid Tablet rests lower in either hand. Its grip, case and glass move

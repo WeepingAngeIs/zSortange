@@ -17,9 +17,10 @@ public final class TabletHandlingPose {
         float lift = eased(progress), rest = 1f - lift, side = right ? 1f : -1f;
         float heldScale = Math.min(width * .36f / WIDTH, height * .43f / HEIGHT);
         float arc = (float) Math.sin(Math.sqrt(Math.clamp(swing, 0f, 1f)) * Math.PI);
-        float heldX = width * (.5f + side * (.30f - arc * .018f));
+        // Leave enough room beyond the outside rail to see the wrist coming in from below.
+        float heldX = width * (.5f + side * (.258f - arc * .018f));
         // Keep the glass visible and let the lower edge of the case run out of the shot.
-        float heldY = height - heldScale * HEIGHT * .315f
+        float heldY = height - heldScale * HEIGHT * .35f
                 + height * (.13f * Math.clamp(equip, 0f, 1f) - .032f * arc);
         // Lift the wrist clear of the hotbar before bringing the glass square to the camera.
         float travelY = lift + .82f * lift * rest;
@@ -40,7 +41,7 @@ public final class TabletHandlingPose {
         float wristX = -side * (5f + offset * (float) Math.cos(.1) + 10f * (float) Math.sin(.1)) / 16f;
         float wristY = (2f + 10f * (float) Math.cos(.1) - offset * (float) Math.sin(.1)) / 16f;
         var tablet = deviceMatrix(width, height, right, swing, equip, progress);
-        var wrist = tablet.transformPosition(right ? 420f : 12f, 184f, -5f, new Vector3f());
+        var wrist = tablet.transformPosition(right ? 420f : 12f, 170f, -5f, new Vector3f());
         float armScale = 248f * tablet.getScale(new Vector3f()).x;
         // The wrist tracks the edge; the elbow approaches from below instead of rotating like a bolted handle.
         return new Matrix4f().translation(wrist)

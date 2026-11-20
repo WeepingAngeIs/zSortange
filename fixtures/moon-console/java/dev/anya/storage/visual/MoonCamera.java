@@ -53,7 +53,7 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid = "anyamoonreview", value = Dist.CLIENT)
 public final class MoonCamera {
     private enum Step { TITLE, JOIN, PLACED, CLOSED, OPEN, SHUT, TABLET, RIGHT, LEFT, TURN, PAUSE,
-        RESUME, USE, INTRO, GRID, RETURN, FINISH, DONE }
+        RESUME, WATCH_FACE, INTRO, GRID, RETURN, FINISH, DONE }
     private static final BlockPos CUBE = new BlockPos(0, 80, 0);
     private static final BlockPos HUB = CUBE.west(2);
     private static final Vec3 CENTER = Vec3.atCenterOf(CUBE);
@@ -118,6 +118,23 @@ public final class MoonCamera {
         Screenshot.grab(mc.gameDirectory, name+".png", mc.getMainRenderTarget(), message -> {});
     }
 
+    // Sample only the inner portion of the resting tablet's glass. The dark glass, metal,
+    // sky and skin lack the saturated blue ink of Cupid's authored display.
+    private static boolean portraitVisible(Minecraft mc) {
+        try (var pixels = Screenshot.takeScreenshot(mc.getMainRenderTarget())) {
+            int blue = 0, probes = 0;
+            for (int y = pixels.getHeight()*81/100; y < pixels.getHeight()*94/100; y += 4) {
+                for (int x = pixels.getWidth()*69/100; x < pixels.getWidth()*85/100; x += 4) {
+                    int color = pixels.getPixelRGBA(x, y);
+                    int r = color & 255, g = (color >>> 8) & 255, b = (color >>> 16) & 255;
+                    if (r < 146 && b > 83 && b-r > 54 && g-r > 22 && b-g > 18) blue++;
+                    probes++;
+                }
+            }
+            return blue > probes / 10;
+        }
+    }
+
     @SubscribeEvent public static void sound(PlayLevelSoundEvent.AtPosition event) {
         if (!event.getLevel().isClientSide() || !CENTER.equals(event.getPosition()) || event.getSound() == null) return;
         String id = event.getSound().value().getLocation().toString();
@@ -146,7 +163,7 @@ public final class MoonCamera {
             operation.join();
             operation = null;
         }
-        require(++ticks < 2400, "Timed out at " + step);
+        require(++ticks < 3200, "Timed out at " + step);
         switch (step) {
             case TITLE -> {
                 if (!(mc.screen instanceof TitleScreen) || mc.getOverlay()!=null) return;
@@ -200,10 +217,11 @@ public final class MoonCamera {
             case TABLET -> {
                 if (!mc.player.getMainHandItem().is(Content.CUPID_TABLET.get()) || ticks < 15) return;
                 mc.options.mainHand().set(net.minecraft.world.entity.HumanoidArm.RIGHT);
+                mc.gui.getChat().clearMessages(true);
                 enter(Step.RIGHT);
             }
             case RIGHT -> {
-                if (ticks < 20) return;
+                if (ticks < 55) return;
                 shot(mc,"held-right");
                 mc.options.mainHand().set(net.minecraft.world.entity.HumanoidArm.LEFT);
                 enter(Step.LEFT);
@@ -227,17 +245,19 @@ public final class MoonCamera {
             }
             case RESUME -> {
                 if (ticks < 8) return;
-                mc.player.setXRot(-24);
-                enter(Step.USE);
+                mc.player.lookAt(EntityAnchorArgument.Anchor.EYES, new Vec3(CENTER.x, 81.9, CENTER.z));
+                enter(Step.WATCH_FACE);
             }
-            case USE -> {
-                if (ticks < 4) return;
+            case WATCH_FACE -> {
+                if (ticks < 8 || ticks % 2 != 0 || !portraitVisible(mc)) return;
+                shot(mc,"held-cupid");
                 KeyMapping.click(InputConstants.Type.MOUSE.getOrCreate(GLFW.GLFW_MOUSE_BUTTON_RIGHT));
                 enter(Step.INTRO);
             }
             case INTRO -> {
                 if (!(mc.screen instanceof Client.Screen) || !(mc.player.containerMenu instanceof StoreMenu menu) || ticks < 30) return;
                 require(menu.showsTabletIntro(), "Tablet did not receive server presentation flag");
+                GLFW.glfwSetCursorPos(mc.getWindow().getWindow(),4,4);
                 enter(Step.GRID);
             }
             case GRID -> {

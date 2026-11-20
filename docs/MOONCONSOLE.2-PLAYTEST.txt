@@ -1,4 +1,4 @@
-Anya Storage Plus moonconsole.1 visual playtest
+Anya Storage Plus moonconsole.2 visual playtest
 
 In a disposable world, bind the Cupid Tablet by crouch-using it on your hub.
 With the tablet selected, turn, walk and use it in the air. Try both main-hand
