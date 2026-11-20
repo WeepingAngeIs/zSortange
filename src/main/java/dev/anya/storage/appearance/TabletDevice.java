@@ -43,6 +43,10 @@ public final class TabletDevice {
     }
     private static Held lastHeld;
 
+    public static boolean enabled() {
+        return Boolean.parseBoolean(System.getProperty("anyastorage.tabletIntro", "true"));
+    }
+
     private static ResourceLocation gui(String name) {
         return ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "textures/gui/" + name + ".png");
     }
@@ -84,9 +88,13 @@ public final class TabletDevice {
         return chooseVisit(ThreadLocalRandom.current().nextInt(8));
     }
 
-    static int chooseVisit(int tumbleRoll) {
+    static int chooseVisit(int roll) {
+        if (roll >= 4) {
+            lastVisitTumbled = false;
+            return -1; // A short Twin Tails glance, using the approved portrait.
+        }
         int regular = VISITS.next();
-        lastVisitTumbled = regular >= 0 && !lastVisitTumbled && tumbleRoll == 0
+        lastVisitTumbled = regular >= 0 && !lastVisitTumbled && roll == 0
                 && Minecraft.getInstance().getResourceManager().getResource(TUMBLE).isPresent();
         return lastVisitTumbled ? TUMBLE_ROW : regular;
     }

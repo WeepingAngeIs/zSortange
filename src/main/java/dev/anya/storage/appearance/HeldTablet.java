@@ -20,10 +20,9 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.RenderHandEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 
-/** Substitutes the opted-in local player's first-person Remote only, after vanilla selects the hand. */
+/** Substitutes the local player's first-person Remote after vanilla selects the hand. */
 @EventBusSubscriber(modid = AnyaStorage.ID, value = Dist.CLIENT)
 public final class HeldTablet {
-    private static final boolean ENABLED = Boolean.getBoolean("anyastorage.tabletIntro");
     private static final TabletIdle IDLE = new TabletIdle(TabletDevice::chooseVisit);
     private static final TabletLift LIFT = new TabletLift();
     private static boolean useLatched;
@@ -77,11 +76,14 @@ public final class HeldTablet {
     }
 
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
-        if (ENABLED) reset();
+        reset();
     }
 
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) {
-        if (!ENABLED) return;
+        if (!TabletDevice.enabled()) {
+            reset();
+            return;
+        }
         var mc = Minecraft.getInstance();
         var held = observe(mc);
         if (held == null) return;
@@ -92,7 +94,7 @@ public final class HeldTablet {
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void screenOpening(ScreenEvent.Opening event) {
-        if (!ENABLED) return;
+        if (!TabletDevice.enabled()) return;
         observe(Minecraft.getInstance()); // A slot or hand can change between the previous HUD draw and use.
         IDLE.quiet();
         LIFT.reset(); // The authorized screen continues from the last painted hand sample.
@@ -101,7 +103,7 @@ public final class HeldTablet {
     }
 
     @SubscribeEvent public static void interaction(InputEvent.InteractionKeyMappingTriggered event) {
-        if (!ENABLED || !(event.isUseItem() || event.isAttack())) return;
+        if (!TabletDevice.enabled() || !(event.isUseItem() || event.isAttack())) return;
         IDLE.quiet();
         var mc = Minecraft.getInstance();
         if (mc.screen != null || !event.isUseItem() || useLatched) return;
@@ -118,7 +120,7 @@ public final class HeldTablet {
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void hand(RenderHandEvent event) {
-        if (!ENABLED) return;
+        if (!TabletDevice.enabled()) return;
         var mc = Minecraft.getInstance();
         var held = observe(mc);
         // Vanilla can still be animating an older stack after a hotbar switch.

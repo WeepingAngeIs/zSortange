@@ -27,6 +27,9 @@ public class TabletDevice {
     public static int visits;
     public static int draws;
     public static float progress;
+    public static boolean enabled() {
+        return Boolean.parseBoolean(System.getProperty("anyastorage.tabletIntro", "true"));
+    }
     public static boolean rightSide(LocalPlayer player, InteractionHand hand) {
         return (player.getMainArm() == HumanoidArm.RIGHT) == (hand == InteractionHand.MAIN_HAND);
     }
@@ -81,8 +84,10 @@ def run(options):
                *stubs(scratch / "stubs"), HERE / "HeldUseCheck.java",
                HERE.parent / "tablet-lifecycle/TabletIdleCheck.java"], scratch)
         invoke(options.jdk, "java", ["-classpath", cp, "dev.anya.storage.appearance.TabletIdleCheck"], scratch)
-        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-Danyastorage.tabletIntro=true",
+        invoke(options.jdk, "java", ["-Djava.awt.headless=true",
                "-classpath", cp, "HeldUseCheck"], scratch)
+        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-Danyastorage.tabletIntro=false",
+               "-classpath", cp, "HeldUseCheck", "opt-out"], scratch)
 
 
 if __name__ == "__main__":

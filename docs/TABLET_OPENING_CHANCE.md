@@ -14,7 +14,7 @@ As an operator, open `/anya storage` and select **Elemental, cosmetics, image an
 
 Pack configuration uses the existing `config/anya-storage-plus.json` file. The integer field is `tabletOpeningChancePercent` inside its `expansion` object. Existing files without that field inherit 24. For an offline file edit, change this field inside the existing object, preserve the other settings and start the server with the edited file.
 
-Use matching `tabletintro.6` builds on server and clients for the server-selected opening behavior. The percentage works with default client launch arguments. An explicit `-Danyastorage.tabletIntro=false` still lets a client suppress the visual. The existing experimental opt-in for the held tablet and its quiet visits is separate.
+Use matching builds on server and clients for the server-selected opening behavior. With default launch arguments, the Remote appears as the first-person tablet, and the server percentage controls how often a storage opening shows a portrait. A client can disable both tablet visuals with `-Danyastorage.tabletIntro=false`.
 
 ## Unyielding / Configtopia integration
 

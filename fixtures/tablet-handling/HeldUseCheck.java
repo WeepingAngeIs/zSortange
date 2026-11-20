@@ -59,6 +59,15 @@ public final class HeldUseCheck {
         CLIENT.camera = CLIENT.player;
         CLIENT.player.main = new ItemStack(Content.REMOTE.get());
         CLIENT.player.off = new ItemStack(Content.REMOTE.get());
+        if (args.length != 0) {
+            HeldTablet.beginFrame(new RenderFrameEvent.Pre(null));
+            var render = new RenderHandEvent(MAIN, null, null, 15728880, 0, 0, 0, 0, CLIENT.player.main);
+            HeldTablet.hand(render);
+            HeldTablet.hud(new RenderGuiEvent.Post(new GuiGraphics(), null));
+            check(!render.isCanceled() && TabletDevice.draws == 0 && TabletDevice.saved == null,
+                    "The opt-out must leave the ordinary held Remote in place");
+            return;
+        }
         check(paint(0) == 0, "Initially resting");
         input(10, OFF, true);
         check(paint(65) == 0, "Wrong hand cannot anticipate");

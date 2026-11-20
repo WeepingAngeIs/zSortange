@@ -87,21 +87,21 @@ public final class HeldOpeningCheck {
         float continued = Math.min(1, shown + 22f / TabletLift.RISE_MS);
         same(TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), continued),
                 next.casePose, "Continue the existing raise without another anticipation delay");
-        check(first.expressionColumn == 0 && next.expressionColumn == 0
-                && first.expressionRow >= 0 && first.expressionRow < 4 && next.expressionRow == first.expressionRow,
-                "One Cloud portrait must start immediately and remain on the same row");
+        check(first.row == 0 && next.row == 0 && first.expressionColumn < 0 && next.expressionColumn < 0,
+                "The held Remote must open on the approved Twin Tails portrait");
         int[] starts = {0,260,310,390,440,610,660,760,810};
+        int[] blinkRows = {0,1,2,1,0,1,2,1,0};
         var client = Minecraft.getInstance();
         int lookups = client.artLookups;
         for (int i = 1; i < starts.length; i++) {
             var previous = paint(screen, firstMenuPaint + starts[i] - 1);
-            check(previous.expressionColumn == i - 1, "Prior blink beat ended early");
+            check(previous.row == blinkRows[i - 1], "Prior blink beat ended early");
             var beat = paint(screen, firstMenuPaint + starts[i]);
-            check(beat.expressionColumn == i && beat.expressionRow == first.expressionRow,
-                    "A Cloud opening changed row or skipped its next beat");
+            check(beat.row == blinkRows[i] && beat.expressionColumn < 0,
+                    "The Twin Tails double blink skipped its next beat");
         }
         var last = paint(screen, firstMenuPaint + 1049);
-        check(last.expressionColumn == 8 && !last.events.contains("inventory"), "Last face or reveal time");
+        check(last.row == 0 && !last.events.contains("inventory"), "Last face or reveal time");
         check(client.artLookups == lookups, "The render loop kept looking up the texture");
         var revealed = paint(screen, firstMenuPaint + 1050);
         check(revealed.events.indexOf("arm") == 0 && revealed.events.indexOf("case") > 0
@@ -117,8 +117,8 @@ public final class HeldOpeningCheck {
                 "Existing inventory slot and menu identity must be preserved");
 
         var unrelated = paint(open(id + 10, owner), firstMenuPaint + 1100);
-        check(unrelated.armPose == null && unrelated.expressionColumn == 0 && unrelated.expressionRow != first.expressionRow,
-                "A reopened screen replayed an old grip, row or beat");
+        check(unrelated.armPose == null && unrelated.expressionColumn == 0 && unrelated.row < 0,
+                "An opening without a matching grip must keep its Cloud expressions");
     }
 
     private static void allPortraits() {
@@ -141,13 +141,16 @@ public final class HeldOpeningCheck {
                 && TabletDevice.opening(0, clock) == null, "The clock or portrait extended past 1050 ms");
         int previous = -1;
         for (int i = 0; i < 24; i++) {
-            int current = TabletDevice.chooseVisit();
-            check(current != previous && current >= 4 && current < 8, "Idle choices repeated or used an opening");
+            int current = TabletDevice.chooseVisit(1);
+            check(current != previous && current >= 4 && current < 7, "Idle choices repeated or used an opening");
             previous = current;
         }
         var client = Minecraft.getInstance();
-        for (int roll = 1; roll < 8; roll++)
-            check(TabletDevice.chooseVisit(roll) < 7, "Common roll selected the rare tumble");
+        for (int roll = 4; roll < 8; roll++) {
+            int row = TabletDevice.chooseVisit(roll);
+            check(row == -1 && TabletDevice.visit(row, 0).image().getPath().endsWith("/tablet_gaze_left.png"),
+                    "The classic visit should grant the Twin Tails left glance with the Cloud sheet installed");
+        }
         check(TabletDevice.chooseVisit(0) == 7 && TabletDevice.chooseVisit(0) < 7,
                 "Rare tumble should play once and never repeat immediately");
         client.tumbleArt = false;
@@ -264,7 +267,7 @@ public final class HeldOpeningCheck {
         serverChance();
         System.out.println("PASS: server hit works with default JVM arguments; miss, missing rule and opt-out reveal "
                 + "immediately, first ready slot dispatches exactly once, and resize/reopening cannot replay the decision");
-        System.out.println("PASS: all 72 Cloud body tiles and rare tumble selection, real screen stable rows and all nine beat boundaries, "
-                + "unchanged first actionable slot at 1050 ms, continuous lift, distinct reopenings, resize and fallback");
+        System.out.println("PASS: Twin Tails double blink and left glance, Cloud body tiles and tumble, "
+                + "first actionable slot at 1050 ms, continuous lift, distinct reopenings, resize and fallback");
     }
 }

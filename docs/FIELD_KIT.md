@@ -39,6 +39,8 @@ Open storage and select **Field kit and storage information** in the action colu
 
 ## Cupid on the blue tablet
 
-The model includes her torso, arms and legs. Her opening poses and quiet held-tablet visits include a wave, changes of gaze and a rare boots-first tumble. The opening chance is server-wide and defaults to 24%. A miss opens storage as soon as its contents are ready. A hit keeps the existing 1.05-second opening. The rare tumble belongs to an idle visit and adds no delay to opening storage.
+Hold the Remote in first person to see the tilted silver tablet. Its glass rests dark. During a quiet visit, Cupid can glance to the left for half a second before the screen goes dark again. The longer idles still include her full-body poses, wave and rare boots-first tumble.
 
-Operators can adjust **Tablet opening appearance chance** under `/anya storage` → **Elemental, cosmetics, image and pocket policy**, review the changes and apply. The existing held-tablet visual has its own opt-in. The framed entrance preview and physical travel keep their separate controls.
+The portrait chance is server-wide and defaults to 24%. When the portrait plays and the Remote is raised into view, Twin Tails Cupid blinks twice, then the storage controls appear in the same frame. Openings without a held pose can show the Cloud portraits. A miss opens storage as soon as its contents are ready.
+
+Operators can adjust **Tablet opening appearance chance** under `/anya storage` → **Elemental, cosmetics, image and pocket policy**, review the changes and apply. The first-person model and opening presentation are enabled by default. A client can disable both with `-Danyastorage.tabletIntro=false`.

@@ -73,7 +73,7 @@ public final class Client {
         public Screen(StoreMenu menu,Inventory inventory,Component title){
             super(menu,inventory,title);
             openingPlayer = inventory.player;
-            tabletCoversView = Boolean.parseBoolean(System.getProperty("anyastorage.tabletIntro", "true"));
+            tabletCoversView = TabletDevice.enabled();
             openingClassified = !tabletCoversView;
             tabletIntro = new GuardianBlink(tabletCoversView);
         }
