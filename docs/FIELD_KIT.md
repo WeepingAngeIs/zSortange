@@ -1,6 +1,6 @@
 # Anya Storage Plus field kit
 
-Experimental candidate `0.3.0-beta.7-fieldkit.2` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. This revision fixes the flickering trim on the Keepsake Shelf and follows the shape of the shelf when you aim at it. Use matching builds for the disposable client and server. The mod ID is still `anyastorage`.
+Experimental candidate `0.3.0-beta.7-fieldkit.3` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Remote-only Cupid opening includes the Keepsake Shelf geometry from fieldkit.2. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
 ## Place a keepsake shelf
 
