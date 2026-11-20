@@ -855,7 +855,7 @@ public final class StoreMenu extends AbstractContainerMenu {
                     else if(f.getType()==int.class)f.setInt(draft.expansion,c.shift?Integer.parseInt(input):f.getInt(draft.expansion)+(c.button==1?-1:1));
                     else if(f.getType()==double.class)f.setDouble(draft.expansion,c.shift?Double.parseDouble(input):Math.round((f.getDouble(draft.expansion)+(c.button==1?-.01:.01))*10000)/10000.0);
                     else if(f.getType()==String.class){if(input.isBlank())throw new IllegalArgumentException("Enter an exact material registry ID first.");f.set(draft.expansion,input);}
-                    else if(f.getType()==List.class){@SuppressWarnings("unchecked") List<String> values=(List<String>)f.get(draft.expansion);String key=input;if(key.isBlank())throw new IllegalArgumentException("Enter an exact registry ID, or full UUID for upload permissions.");if(!values.remove(key))values.add(key);}
+                    else if(f.getType()==List.class){@SuppressWarnings("unchecked") List<String> values=(List<String>)f.get(draft.expansion);String entry=input;if(entry.isBlank())throw new IllegalArgumentException("Enter an exact registry ID, or full UUID for upload permissions.");if(!values.remove(entry))values.add(entry);}
                 }catch(ReflectiveOperationException|NumberFormatException e){throw new IllegalArgumentException("Enter a valid number, then shift-click the setting.");}
             },"Boolean: toggle. Number: +/-; shift-click uses the input.","String: type an exact ID and click. Lists: toggle one ID/UUID.","Changes remain a private draft until Review and Apply.","Hard image/particle safety limits cannot be disabled.");
         }
