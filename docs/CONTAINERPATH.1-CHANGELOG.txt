@@ -1,0 +1,9 @@
+Anya Storage Plus 0.3.0-beta.7-containerpath.1
+Experimental beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+- The in-game guide leads from the 54-slot Labelled Storage Chest to the
+  216-slot UwU Storage Cube. It shows the current endgame gate and the
+  selected recipe, followed by the Storage Core recipe.
+- The Home Void Cube guide identifies it as the separate room entrance.
+- Includes the saved pocket admin commands and Cupid Tablet changes
+  for continuous raise, hand motion and pause.

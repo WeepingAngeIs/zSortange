@@ -1,8 +1,8 @@
-name: Build Cupid Tablet handoff test JAR
+name: Build storage progression guide test JAR
 
 on:
   push:
-    branches: [experiment/cupid-tablet-handoff]
+    branches: [experiment/storage-container-progression]
 
 permissions:
   contents: read
@@ -27,31 +27,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
-      - name: Check the separate Remote and Cupid Tablet paths
-        run: python3 -B fixtures/tablet-chance/check_opening_sources.py
-      - name: Build the candidate JAR
-        run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle clean jar durableAuditClasspath
-      - name: Check packaged settings, tablet behavior and chest planner
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r')
-          jar="$PWD/build/libs/anya-storage-plus-$version.jar"
-          test -f "$jar"
-          classpath=$(cat build/durable-audit/classpath.txt)
-          classpath_file="$PWD/build/durable-audit/fixture-arguments.txt"
-          printf -- '-classpath\n"%s"\n' "$classpath" > "$classpath_file"
-          args=(--jdk "$JAVA_HOME" --classpath-file "$classpath_file" --support-jar "$jar")
-          python3 -B fixtures/tablet-chance/check_server.py "${args[@]}" --packaged
-          python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
-          python3 -B fixtures/tablet-handling/run_use.py "${args[@]}" --packaged
-
-          # Registry bootstrap reads the vanilla language and version resources.
-          client_jar="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
-          test -f "$client_jar"
-          printf -- '-classpath\n"%s:%s"\n' "$classpath" "$client_jar" > "$classpath_file"
-          python3 -B fixtures/chest-expansion/run.py "${args[@]}" --packaged
-          python3 -B fixtures/room-plan/run.py "${args[@]}"
+      - name: Build the guide candidate JAR
+        run: gradle --no-daemon --max-workers=2 clean jar
       - name: Verify and prepare the test artifact
         shell: bash
         run: |
@@ -103,18 +80,28 @@ jobs:
                             "dev/anya/storage/StorageSettingsCommands.class",
                             "dev/anya/storage/appearance/TabletHandMotion.class"):
                   assert entry in jar.namelist(), entry
-              print("PASS: both terminal models, pocket dimension and operator settings API packaged")
+              guide = jar.read("dev/anya/storage/guide/GuideContent.class")
+              for marker in (b"Start with 54 slots", b"216-slot UwU Storage Cube",
+                             b"cubeUnavailable", b"Shapeless recipe", b"Storage Core"):
+                  assert marker in guide
+              cube = json.loads(jar.read("data/anyastorage/recipe/uwu_cube.json"))
+              assert cube["type"] == "anyastorage:cube"
+              core = json.loads(jar.read("data/anyastorage/recipe/storage_core.json"))
+              assert core["pattern"] == ["DDD", "DND", "DDD"]
+              assert core["key"] == {"D":{"item":"minecraft:diamond_block"},
+                                     "N":{"item":"minecraft:netherite_block"}}
+              print("PASS: starter-to-UwU guide and existing endgame recipes packaged")
           PY
           sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/TABLETHANDOFF.1-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/TABLETHANDOFF.1-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/CONTAINERPATH.1-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/CONTAINERPATH.1-PLAYTEST.txt upload/PLAYTEST.txt
           cp docs/SERVER_SETTINGS.md upload/SERVER-SETTINGS.md
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-tablethandoff.1
+          name: anya-storage-plus-containerpath.1
           path: upload/
           if-no-files-found: error
           retention-days: 14

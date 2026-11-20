@@ -75,8 +75,24 @@ public final class GuideContent {
             "Place a hub near physical chests or barrels. Its initial radius is "+d.initialRadius+" blocks; the maximum is "+d.maxRadius+". The same three-dimensional radius governs remote access and connected storage.\n\nStorage is not copied into the hub. Search results point to real stacks in loaded, permitted containers. Discovery is incremental; a new chest may take a moment to appear.\n\nNo storage chunk is force-loaded by this base network.","hub");
         recipe(out,level,"Home storage","Bind the remote","item:anyastorage:remote",
             "Sneak-right-click the hub with a remote to bind it. Right-click the remote within that hub's radius to search storage. A different dimension or out-of-range use is denied.\n\nThe input searches names, registry IDs, @mod namespaces and #tags. Middle-click a listed stack to favorite its item type.\n\nThe remote is your everyday interface. /anya storage is for settings, not a replacement for the remote.","remote");
-        recipe(out,level,"Home storage","Labelled storage chest","item:anyastorage:chest",
-            "This chest holds 54 ordinary inventory slots. Its front sticker splits across the base and hinged lid. Available symbols include hearts, stars, leaves and gears.\n\nSneak-use a bound remote on a supported chest inside your hub's radius to set category, exact-item filters, destination priority and overflow.\n\nThe owner controls the profile. Claim and lock checks still apply; trust does not bypass Open Parties and Claims.","chest");
+        String cubeReason = cubeUnavailable(level, d);
+        String dragonCost = switch (d.cubeRecipe) {
+            case 1 -> "four Dragon's Breath";
+            case 2 -> "four Dragon Victory Tokens";
+            default -> "four Dragon's Breath or four Dragon Victory Tokens, depending on the chosen mode";
+        };
+        String cubeCost = "one Storage Core, four Nether Stars, and " + dragonCost;
+        String cubeStatus = cubeReason.isEmpty() ? "Cube crafting is enabled." : "Cube crafting is unavailable. " + cubeReason;
+        recipe(out,level,"Home storage","Labelled Storage Chest","item:anyastorage:chest",
+            "Start with 54 slots in a Labelled Storage Chest. The next tier is the 216-slot UwU Storage Cube. " + cubeStatus
+            + "\n\nCube crafting takes " + cubeCost + ". Turn to UwU Storage Cube for the crafting grid, then to Storage Core for its shaped recipe."
+            + "\n\nA hub automatically discovers both placed containers when they are loaded, within range and accessible to you."
+            + "\n\nThe chest's front sticker splits across the base and hinged lid. Its symbols include hearts, stars, leaves and gears."
+            + "\n\nSneak-use a bound Remote or Cupid Tablet on a supported chest inside your hub's radius to set category, exact-item filters, priority and overflow. The owner controls routing. Claim and lock checks still apply.","chest");
+        cubePage(out, d.cubeRecipe, cubeCost, cubeReason);
+        recipe(out,level,"Home storage","Storage Core","item:anyastorage:storage_core",
+            "Craft a Storage Core for the UwU Storage Cube. The standard shaped recipe uses eight Diamond Blocks around one Netherite Block."
+            + "\n\nThe grid shows the recipe loaded on this server. The Endgame recipe group must be enabled for the standard recipe.","storage_core");
         page(out,"Start here","Slots, scrolling and your back","leaf_oak",
             "The storage grid represents real physical slots, including empty ones. Its counter shows occupied and total capacity. The mouse wheel and scrollbar move through larger bags without changing item positions. Search shows matching occupied slots only. Controls live to the right, cosmetics to the left.\n\nOpen Anya Backpack is configurable in Controls. New installations suggest B; saved settings are preserved. A conflicting key is warned about and Anya suppresses its action until rebound.\n\nOpen priority: native Accessories back slot, main hand, selected inventory bag, main inventory order, offhand. Only one bag grants worn effects.","Native back-slot support is tested against Accessories 1.1.0-beta.53. Move the bag to main inventory to install/remove upgrades. Crafting bindings are unchanged.");
         page(out,"Home storage","Share a base safely","item:minecraft:iron_door",
@@ -103,7 +119,7 @@ public final class GuideContent {
             "With room editing enabled, visit your pocket with Build access. Hold a plain supported block or furnishing, aim at a surface, and use /anya pocket build plan add. You can walk through the outlines while trying out the layout.\n\nUse plan undo to remove the last mark or plan cancel to clear the draft. Stand within reach and sight of all the marked faces, then use /anya pocket build plan apply. The blocks come from your inventory.",
             "Plan up to eight nearby spots. Furnishings and storage chests also need View, Deposit and Withdraw. The exit and original chests stay protected.");
         page(out,"Pocket laboratory","Home Void Cube","item:anyastorage:home_void_cube",
-            "This is a NEW experimental entrance, not the existing 216-slot UwU Storage Cube. Pocket access is "+(dev.anya.storage.pocket.PocketService.enabled()?"enabled for this explicitly opted-in test server":"GATED OFF")+". Normal backpack and hub features do not need it.\n\nIn a disposable test world, an operator can run /anya pocket enable. Run /anya pocket status to check or /anya pocket disable to turn it off. Room editing has its own setting.\n\nThe recipe uses four obsidian, two ender pearls, two amethyst shards, and one "+o.pocketCoreMaterial+" in a full 3x3 crafting grid. No existing hub, backpack or stored items are consumed. A missing configured material makes crafting unavailable.","Recipe costs are read from current server policy; the optional core material is a real registry ID, not a guessed compatibility claim.");
+            "This experimental entrance leads to a separate pocket room. For 216 slots of ordinary placed storage, see UwU Storage Cube under Home storage. Pocket access is "+(dev.anya.storage.pocket.PocketService.enabled()?"enabled for this explicitly opted-in test server":"GATED OFF")+".\n\nIn a disposable test world, an operator can run /anya pocket enable. Run /anya pocket status to check or /anya pocket disable to turn it off. Room editing has its own setting.\n\nThe recipe uses four obsidian, two ender pearls, two amethyst shards, and one "+o.pocketCoreMaterial+" in a full 3x3 crafting grid. A missing configured material makes crafting unavailable.","The core material comes from this server's pocket settings.");
         page(out,"Pocket laboratory","Link, choose, visit","item:anyastorage:home_void_cube",
             "Place the entrance near your ordinary home hub. Sneak-use a Remote or Cupid Tablet on the hub to bind it, then sneak-use that item on the entrance. The same player must own both. The item now opens this pocket's storage from within the hub radius.\n\nBefore the first visit, look at the entrance and use /anya pocket theme galaxy, beach or wasteland. These are modest block palettes, not realistic scenery or live portals. The choice becomes fixed when preparation begins.\n\nRight-click the entrance to enter. The prototype reserves a 32x32 plot with four real protected chests. Editing is separately gated by pocketEditing; /anya pocket build explains the narrow supported subset. Automation stays locked.","The 32x32 plot covers four chunks. A boundary ring, active-player view distance and ticket propagation require additional work and chunks.");
         page(out,"Pocket laboratory","Separate Visit and storage rights","item:minecraft:iron_door",
@@ -131,6 +147,32 @@ public final class GuideContent {
     private static GuidePage.Cell cell(String id){
         ResourceLocation key=ResourceLocation.tryParse(id);Item item=key==null?Items.AIR:BuiltInRegistries.ITEM.get(key);
         return new GuidePage.Cell(clean(id,128),clean(item==Items.AIR?id:new ItemStack(item).getHoverName().getString(),128));
+    }
+    private static String cubeUnavailable(ServerLevel level, Config.Data config) {
+        boolean endgame = Boolean.TRUE.equals(config.recipes.get("endgame"));
+        if (config.cubeRecipe == 0) return endgame ? "The Cube recipe is set to OFF." : "The Cube recipe and Endgame recipe group are both off.";
+        if (!endgame) return "The Endgame recipe group is off.";
+        if (level.getRecipeManager().byKey(ExpansionPackets.id("uwu_cube")).filter(holder -> holder.value() instanceof CubeRecipe).isEmpty())
+            return "The built-in cube recipe is missing from the loaded recipes.";
+        return "";
+    }
+    private static void cubePage(List<GuidePage> out, int mode, String cost, String unavailable) {
+        String body = "This placed storage block holds 216 ordinary slots. Craft it as a separate container and move your items into it when ready."
+            + "\n\nUse " + cost + ". Fill all nine crafting cells in any arrangement. The Storage Core page shows its own shaped recipe."
+            + "\n\nOperators can open /anya storage and choose Recipe gates / endgame choice to set the Cube recipe mode. The Endgame recipe group must also be enabled."
+            + "\n\nThis cube joins a nearby hub's normal storage scan. See Home Void Cube in Pocket laboratory for the experimental room entrance.";
+        if (mode == 2) body += "\n\nLand the final blow on a tracked End dragon in Survival to earn a Dragon Victory Token.";
+        String note = "RECIPE UNAVAILABLE. " + unavailable;
+        String heading = "";
+        List<GuidePage.Cell> cells = List.of();
+        if (unavailable.isEmpty()) {
+            GuidePage.Cell star = cell("minecraft:nether_star");
+            GuidePage.Cell dragon = cell(mode == 2 ? "anyastorage:dragon_victory_token" : "minecraft:dragon_breath");
+            cells = List.of(dragon, star, dragon, star, cell("anyastorage:storage_core"), star, dragon, star, dragon);
+            heading = "Shapeless recipe: 1 UwU Storage Cube";
+            note = "Active recipe. Put one ingredient in each of the nine cells.";
+        }
+        out.add(new GuidePage("Home storage", "UwU Storage Cube", "item:anyastorage:uwu_cube", body, note, heading, cells));
     }
     private static void recipe(List<GuidePage> out,ServerLevel level,String chapter,String title,String art,String body,String id){
         var holder=level.getRecipeManager().byKey(ExpansionPackets.id(id));List<GuidePage.Cell> cells=new ArrayList<>();String heading="",note;

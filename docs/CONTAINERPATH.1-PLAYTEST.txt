@@ -1,0 +1,13 @@
+Anya Storage Plus containerpath.1 quick playtest
+
+[ ] Open Ancient Technology and select Home storage. The Labelled Storage
+    Chest page leads from 54 slots to the next UwU Storage Cube page at
+    216 slots. The Storage Core page follows. The Home Void Cube appears
+    under Pocket laboratory.
+[ ] As an operator in a disposable world, check the UwU page with the
+    endgame gate off. Turn the gate on and compare recipe modes 1 and 2.
+    Reopen the book after each setting change. The guide should match
+    the selected crafting route. Restore the prior settings.
+[ ] Run /anya pocket enable to test pocket access. For the Cupid Tablet,
+    watch an active face through a quick turn and raise, close storage
+    with Escape, then pause and resume. Repeat in both hands.
