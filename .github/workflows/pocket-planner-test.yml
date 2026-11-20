@@ -1,0 +1,87 @@
+name: Build pocket planner test JAR
+
+on:
+  push:
+    branches: [experiment/pocket-slot-upgrades]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pocket-planner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Check existing bound Remote routes
+        run: python3 -B fixtures/tablet-chance/check_opening_sources.py
+      - name: Build the candidate JAR
+        run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle clean jar durableAuditClasspath
+      - name: Check the packaged Remote behavior and chest planner
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r')
+          jar="$PWD/build/libs/anya-storage-plus-$version.jar"
+          test -f "$jar"
+          classpath=$(cat build/durable-audit/classpath.txt)
+          classpath_file="$PWD/build/durable-audit/fixture-arguments.txt"
+          printf -- '-classpath\n"%s"\n' "$classpath" > "$classpath_file"
+          args=(--jdk "$JAVA_HOME" --classpath-file "$classpath_file" --support-jar "$jar")
+          python3 -B fixtures/tablet-chance/check_server.py "${args[@]}" --packaged
+          python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
+
+          # Registry bootstrap reads the vanilla language and version resources.
+          client_jar="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$client_jar"
+          printf -- '-classpath\n"%s:%s"\n' "$classpath" "$client_jar" > "$classpath_file"
+          python3 -B fixtures/chest-expansion/run.py "${args[@]}" --packaged
+          python3 -B fixtures/room-plan/run.py "${args[@]}"
+      - name: Verify and prepare the test artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r')
+          jar="anya-storage-plus-$version.jar"
+          mkdir -p upload
+          cp "build/libs/$jar" upload/
+          python3 - "$jar" "$version" <<'PY'
+          from pathlib import Path
+          import sys
+          import tomllib
+          from zipfile import ZipFile
+
+          with ZipFile(Path("upload") / sys.argv[1]) as jar:
+              assert jar.testzip() is None
+              mod = tomllib.loads(jar.read("META-INF/neoforge.mods.toml").decode())["mods"][0]
+              assert mod["modId"] == "anyastorage" and mod["version"] == sys.argv[2]
+              for name in ("RoomPlans", "ChestPadGuide", "PocketRoomLayout", "ChestLayoutProjection"):
+                  assert f"dev/anya/storage/pocket/{name}.class" in jar.namelist()
+              for name in ("tablet_device", "tablet_guardian", "tablet_gaze_left"):
+                  entry = f"assets/anyastorage/textures/gui/{name}.png"
+                  assert jar.read(entry) == (Path("src/main/resources") / entry).read_bytes()
+          PY
+          cp docs/FIELD_KIT.md upload/FIELD-KIT.md
+          cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-pocket-planner-test
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14
