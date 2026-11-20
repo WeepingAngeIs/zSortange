@@ -1,5 +1,6 @@
 package dev.anya.storage.appearance;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import dev.anya.storage.Client;
 import dev.anya.storage.Packets;
 import dev.anya.storage.StoreMenu;
@@ -50,6 +51,12 @@ public final class HeldOpeningCheck {
         check(actual != null && expected.equals(actual, 0.001f), reason);
     }
 
+    private static Matrix4f withMotion(TabletDevice.Grip grip, float progress, Matrix4f local) {
+        var pose = new PoseStack();
+        grip.motion().apply(pose, WIDTH, HEIGHT, progress);
+        return new Matrix4f(pose.last().pose()).mul(local);
+    }
+
     private static void staleGrip(boolean swapSlot, int id) {
         var owner = new LocalPlayer();
         var hand = InteractionHand.MAIN_HAND;
@@ -66,29 +73,43 @@ public final class HeldOpeningCheck {
     private static void handoff(int elapsed, boolean right, int id) {
         LocalPlayer owner = new LocalPlayer();
         InteractionHand hand = right ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
-        var grip = new TabletDevice.Grip(right, 0.25f, 0.07f, 0xb000d0);
+        var grip = new TabletDevice.Grip(right, 0.25f, 0.07f, 0xb000d0,
+                new TabletHandMotion(2, -1, -.05f, -.08f, .4f));
         var lift = new TabletLift();
         long start = 10000L * id;
         lift.use(start);
         long lastPaint = start + elapsed;
         float shown = lift.progress(lastPaint);
         check(shown > 0 && shown < 1, "Sample must be an actual partial raise");
+        var portrait = id == 1 ? TabletDevice.visit(4, 5) : null;
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, shown, WIDTH, HEIGHT, owner,
-                owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint));
+                owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint, portrait));
         int actions = PacketDistributor.sent.size();
         var screen = open(id, owner);
         long firstMenuPaint = lastPaint + 23;
         var first = paint(screen, firstMenuPaint);
-        same(TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), shown),
-                first.casePose, "First menu paint must match the last actually painted tablet");
-        same(TabletHandlingPose.armMatrix(WIDTH, HEIGHT, right, false, grip.swing(), grip.equip(), shown),
-                first.armPose, "The same hand position must cross the menu boundary");
+        same(withMotion(grip, shown, TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), shown)),
+                first.casePose, "First menu paint must carry the captured case and motion");
+        same(withMotion(grip, shown, TabletHandlingPose.armMatrix(WIDTH, HEIGHT, right, false, grip.swing(), grip.equip(), shown)),
+                first.armPose, "The same hand position and motion must cross the menu boundary");
         var next = paint(screen, firstMenuPaint + 22);
         float continued = Math.min(1, shown + 22f / TabletLift.RISE_MS);
-        same(TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), continued),
+        same(withMotion(grip, continued,
+                TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), continued)),
                 next.casePose, "Continue the existing raise without another anticipation delay");
-        check(first.row == 0 && next.row == 0 && first.expressionColumn < 0 && next.expressionColumn < 0,
-                "The held Cupid Tablet must open on the approved Twin Tails portrait");
+        for (var frame : new GuiGraphics[]{first, next}) {
+            check(frame.row < 0, "The blink replaced the carried face before the tablet settled");
+            if (portrait != null) {
+                check(frame.expressionRow == 4 && frame.expressionColumn == 5 && frame.atlasDraws == 0,
+                        "The raise dropped the expression that was already visible");
+            } else {
+                check(frame.atlasDraws == 1 && frame.atlasSprite.toString().equals("anyastorage:item/cupid_tablet_face"),
+                        "The raise should keep using the native item's shared animation sprite");
+            }
+        }
+        var settled = paint(screen, firstMenuPaint + TabletLift.RISE_MS);
+        check(settled.row == 0 && settled.atlasDraws == 0 && settled.expressionColumn < 0,
+                "The authorized opening should switch to Twin Tails once the raise settles");
         int[] starts = {0,260,310,390,440,610,660,760,810};
         int[] blinkRows = {0,1,2,1,0,1,2,1,0};
         var client = Minecraft.getInstance();
@@ -213,6 +234,10 @@ public final class HeldOpeningCheck {
         missed.storage = false;
         missed.rows = 1;
         missed.version = 0;
+        var heldGrip = new TabletDevice.Grip(true, 0, 0, 0xb000d0);
+        var hand = InteractionHand.MAIN_HAND;
+        TabletDevice.rememberHeld(new TabletDevice.Held(heldGrip, .42f, WIDTH, HEIGHT, owner,
+                owner.getItemInHand(hand), hand, owner.getInventory().selected, 81_990, TabletDevice.visit(4, 5)));
         var screen = open(missed, owner);
         var pending = paint(screen, 82_000);
         check(pending.events.contains("inventory") && pending.row < 0 && pending.expressionColumn < 0,

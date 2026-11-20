@@ -11,6 +11,14 @@ HOST = {
             public net.minecraft.client.gui.screens.Screen screen;
             public final Options options = new Options();
             public int screenChanges;
+            public boolean missingItemFace;
+            public java.util.function.Function<net.minecraft.resources.ResourceLocation,
+                    net.minecraft.client.renderer.texture.TextureAtlasSprite> getTextureAtlas(net.minecraft.resources.ResourceLocation id) {
+                if (!id.equals(net.minecraft.client.renderer.texture.TextureAtlas.LOCATION_BLOCKS))
+                    throw new AssertionError("Tablet looked up a non-item atlas");
+                return name -> new net.minecraft.client.renderer.texture.TextureAtlasSprite(
+                        missingItemFace ? net.minecraft.client.renderer.texture.MissingTextureAtlasSprite.getLocation() : name);
+            }
             public void setScreen(net.minecraft.client.gui.screens.Screen next) {
                 screenChanges++;
                 if (screen != null) screen.removed();
@@ -18,6 +26,21 @@ HOST = {
             }
         }
     """,
+    "net.minecraft.client.renderer.texture.TextureAtlas": """public class TextureAtlas {
+        public static final net.minecraft.resources.ResourceLocation LOCATION_BLOCKS =
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace("textures/atlas/blocks.png");
+    }""",
+    "net.minecraft.client.renderer.texture.MissingTextureAtlasSprite": """public class MissingTextureAtlasSprite {
+        public static net.minecraft.resources.ResourceLocation getLocation(){
+            return net.minecraft.resources.ResourceLocation.withDefaultNamespace("missingno");
+        }
+    }""",
+    "net.minecraft.client.renderer.texture.SpriteContents": """public record SpriteContents(net.minecraft.resources.ResourceLocation name) {}""",
+    "net.minecraft.client.renderer.texture.TextureAtlasSprite": """public class TextureAtlasSprite {
+        private final SpriteContents contents;
+        public TextureAtlasSprite(net.minecraft.resources.ResourceLocation name){ contents = new SpriteContents(name); }
+        public SpriteContents contents(){ return contents; }
+    }""",
     "net.minecraft.client.player.LocalPlayer": """
         public class LocalPlayer extends net.minecraft.world.entity.player.Player {}
     """,
@@ -129,7 +152,8 @@ HOST = {
     "net.minecraft.client.gui.GuiGraphics": """
         public class GuiGraphics {
             public static class StoragePaint extends RuntimeException {}
-            public int fills, blits, shells, row = -1;
+            public int fills, blits, shells, atlasDraws, row = -1;
+            public net.minecraft.resources.ResourceLocation atlasSprite;
             public float storageX, storageY, storageScale;
             public float shellX, shellY, shellScale;
             private final com.mojang.blaze3d.vertex.PoseStack pose = new com.mojang.blaze3d.vertex.PoseStack();
@@ -143,6 +167,10 @@ HOST = {
                     storageX = matrix.m30(); storageY = matrix.m31(); storageScale = matrix.m00();
                     throw new StoragePaint();
                 }
+            }
+            public void blit(int x,int y,int z,int width,int height,net.minecraft.client.renderer.texture.TextureAtlasSprite sprite) {
+                atlasDraws++;
+                atlasSprite = sprite.contents().name();
             }
             public void blit(net.minecraft.resources.ResourceLocation image,int x,int y,float u,float v,
                     int width,int height,int tw,int th) {

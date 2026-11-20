@@ -1,9 +1,11 @@
+package dev.anya.storage.appearance;
+
+import dev.anya.storage.Client;
 import dev.anya.storage.Content;
-import dev.anya.storage.appearance.HeldTablet;
-import dev.anya.storage.appearance.TabletDevice;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
@@ -27,7 +29,7 @@ public final class HeldUseCheck {
         int before = TabletDevice.draws;
         Util.now = now;
         HeldTablet.beginFrame(new RenderFrameEvent.Pre(null));
-        var render = new RenderHandEvent(MAIN, null, null, 15728880, 0, 0, .12f, .17f, CLIENT.player.main);
+        var render = new RenderHandEvent(MAIN, null, null, 15728880, .5f, 0, .12f, .17f, CLIENT.player.main);
         HeldTablet.hand(render);
         check(render.isCanceled(), "The selected held tablet takes over this render");
         HeldTablet.hud(new RenderGuiEvent.Post(new GuiGraphics(), null));
@@ -35,7 +37,8 @@ public final class HeldUseCheck {
         check(TabletDevice.draws == before + 1 && held != null && held.grip() == TabletDevice.painted
                 && held.progress() == TabletDevice.progress && held.stack() == CLIENT.player.main
                 && held.player() == CLIENT.player && held.hand() == MAIN && held.slot() == CLIENT.player.inv.selected
-                && held.time() == now && held.grip().light() == 15728880,
+                && held.time() == now && held.grip().light() == 15728880
+                && held.portrait() == TabletDevice.face && TabletDevice.liveAtlas,
                 "The bridge records exactly the grip and lift actually painted this frame");
         return held.progress();
     }
@@ -77,6 +80,23 @@ public final class HeldUseCheck {
             return;
         }
         check(paint(0) == 0, "Initially resting");
+        var rest = TabletDevice.painted.motion();
+        check(rest.yaw() == 0 && rest.pitch() == 0 && rest.walkX() == 0 && rest.walkY() == 0 && rest.roll() == 0,
+                "A still player introduced hand motion");
+        CLIENT.player.viewYRot = 12;
+        CLIENT.player.viewXRot = -8;
+        CLIENT.player.walkDist = CLIENT.player.walkDistO = .25f;
+        CLIENT.player.bob = CLIENT.player.oBob = .4f;
+        paint(1);
+        var motion = TabletDevice.painted.motion();
+        check(motion.yaw() > 1 && motion.pitch() < -.7f && motion.walkX() < -.1f
+                && motion.walkY() < -.2f && motion.roll() < -.8f, "Hand pass ignored look and walk motion");
+        CLIENT.options.bobView().set(false);
+        paint(2);
+        var noBob = TabletDevice.painted.motion();
+        check(noBob.yaw() == motion.yaw() && noBob.pitch() == motion.pitch() && noBob.walkX() == 0
+                && noBob.walkY() == 0 && noBob.roll() == 0, "Disabling view bob should only remove walk motion");
+        CLIENT.options.bobView().set(true);
         input(10, OFF, true);
         check(paint(65) == 0, "Wrong hand cannot anticipate");
         input(70, MAIN, false);
@@ -119,14 +139,37 @@ public final class HeldUseCheck {
         check(TabletDevice.face.row() == 4 && TabletDevice.face.column() == 4 && TabletDevice.visits == 1,
                 "The same visit advances to the viewer-facing beat");
         input(visiting + 410, MAIN, true);
-        check(paint(visiting + 411) > 0 && TabletDevice.face == null,
-                "Using the Cupid Tablet during a visit immediately starts the lift and clears the face");
-        check(paint(visiting + 470) > 0 && TabletDevice.face == null, "A visit was queued over normal use");
+        check(paint(visiting + 411) > 0 && TabletDevice.face != null && TabletDevice.face.column() == 4,
+                "Using the Cupid Tablet must lift the face already visible on the device");
+        check(paint(visiting + 470) > 0 && TabletDevice.face != null && TabletDevice.face.column() == 4, "The hand raise restarted the visit");
+        var beforePause = TabletDevice.saved;
+        var pause = new PauseScreen();
+        HeldTablet.screenOpening(new ScreenEvent.Opening(null, pause));
+        CLIENT.screen = pause;
+        CLIENT.player.viewYRot = 28;
+        CLIENT.player.walkDist = 2;
+        long resumed = visiting + 5_470;
+        check(paint(resumed) == beforePause.progress()
+                && TabletDevice.saved.grip() == beforePause.grip()
+                && TabletDevice.face.equals(beforePause.portrait()), "Pause changed the held grip, lift or face");
+        CLIENT.screen = null;
+        HeldTablet.tick(null);
+        check(paint(resumed + 5) > beforePause.progress() && TabletDevice.face.equals(beforePause.portrait()),
+                "Unpausing must continue from the prior frame");
+
+        var storage = new Client.Screen();
+        HeldTablet.screenOpening(new ScreenEvent.Opening(null, storage));
+        CLIENT.screen = storage;
+        Util.now = resumed + 8_005;
+        CLIENT.screen = null;
+        HeldTablet.tick(null);
+        check(paint(resumed + 8_010) == 0 && TabletDevice.face.equals(beforePause.portrait()),
+                "Closing storage must resume the face and return the tablet to its natural grip");
         HeldTablet.screenOpening(new ScreenEvent.Opening(null, unrelated));
         CLIENT.screen = unrelated;
         CLIENT.screen = null;
-        check(paint(visiting + 900) == 0 && TabletDevice.face == null && TabletDevice.visits == 1,
-                "An interrupted visit replayed after a different screen");
-        System.out.println("PASS: actual held-use and HUD callbacks cancel a visible idle visit on use, begin the lift immediately, preserve input, and clear the visit across another screen or held-item change");
+        check(paint(resumed + 8_020) == 0 && TabletDevice.face == null && TabletDevice.visits == 1,
+                "An unrelated screen must release the prior visit");
+        System.out.println("PASS: held motion, view bob option, existing face through the lift, pause/resume, and storage return");
     }
 }

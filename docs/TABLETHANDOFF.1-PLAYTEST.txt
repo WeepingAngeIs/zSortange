@@ -1,0 +1,13 @@
+Cupid Tablet handoff playtest for 0.3.0-beta.7-tablethandoff.1
+
+[ ] In a disposable world, bind the tablet to an ordinary hub. Wait for
+    a hotbar blink or glance. Raise it as you turn, then press Escape
+    during the intro. Check the natural hand position after closing.
+[ ] With the tablet idle, press Escape to open the pause menu and then
+    resume. Watch for a position jump or the active face returning to
+    its first frame. Repeat in the other hand, walking and turning.
+[ ] At an intro chance of 100%, check the face through the raise and
+    click a storage slot as soon as the inventory settles. At 0%,
+    check immediate inventory access and restore the prior setting.
+[ ] Verify the heart Remote opens normally and optional chest/backpack
+    cameos retain their independent switches.

@@ -15,6 +15,14 @@ HOST = {
     "net.minecraft.util.Mth": """public class Mth {
         public static final float PI=(float)Math.PI;
         public static float sin(float x){return (float)Math.sin(x);}
+        public static float cos(float x){return (float)Math.cos(x);}
+        public static float lerp(float t,float a,float b){return a+(b-a)*t;}
+        public static float wrapDegrees(float x){
+            x %= 360f;
+            if (x >= 180f) x -= 360f;
+            if (x < -180f) x += 360f;
+            return x;
+        }
         public static float sqrt(float x){return (float)Math.sqrt(x);}
         public static float clamp(float v,float a,float b){return Math.max(a,Math.min(b,v));}
     }""",
@@ -39,18 +47,33 @@ HOST = {
     "net.minecraft.client.CameraType": """public enum CameraType { FIRST_PERSON, THIRD_PERSON_BACK;
         public boolean isFirstPerson(){return this==FIRST_PERSON;}
     }""",
+    "net.minecraft.client.OptionInstance": """public class OptionInstance<T> {
+        private T value;
+        public OptionInstance(T value){this.value=value;}
+        public T get(){return value;}
+        public void set(T value){this.value=value;}
+    }""",
     "net.minecraft.client.Options": """public class Options {
         public boolean hideGui; public final KeyMapping keyUse = new KeyMapping(), keyAttack = new KeyMapping();
         public CameraType camera = CameraType.FIRST_PERSON; public CameraType getCameraType(){return camera;}
+        private final OptionInstance<Boolean> bob = new OptionInstance<>(true);
+        public OptionInstance<Boolean> bobView(){return bob;}
     }""",
     "net.minecraft.world.entity.player.Inventory": "public class Inventory { public int selected; }",
     "net.minecraft.client.player.LocalPlayer": """public class LocalPlayer extends net.minecraft.world.entity.Entity {
         public net.minecraft.world.item.ItemStack main,off; public boolean using;
+        public float xBob,xBobO,yBob,yBobO,walkDist,walkDistO,bob,oBob;
+        public float viewXRot,viewYRot;
+        public float getViewXRot(float tick){return viewXRot;}
+        public float getViewYRot(float tick){return viewYRot;}
         public net.minecraft.world.entity.HumanoidArm arm=net.minecraft.world.entity.HumanoidArm.RIGHT;
         public final net.minecraft.world.entity.player.Inventory inv=new net.minecraft.world.entity.player.Inventory();
         public net.minecraft.world.entity.player.Inventory getInventory(){return inv;}
         public net.minecraft.world.item.ItemStack getMainHandItem(){return main;}
         public net.minecraft.world.item.ItemStack getOffhandItem(){return off;}
+        public net.minecraft.world.item.ItemStack getItemInHand(net.minecraft.world.InteractionHand hand){
+            return hand == net.minecraft.world.InteractionHand.MAIN_HAND ? main : off;
+        }
         public net.minecraft.world.entity.HumanoidArm getMainArm(){return arm;}
         public boolean sneak;
         public boolean isShiftKeyDown(){return sneak;}
@@ -58,6 +81,7 @@ HOST = {
         public boolean isScoping(){return false;} public boolean isUsingItem(){return using;}
     }""",
     "net.minecraft.client.gui.screens.Screen": "public class Screen {}",
+    "net.minecraft.client.gui.screens.PauseScreen": "public class PauseScreen extends Screen {}",
     "dev.anya.storage.Client": "public class Client { public static class Screen extends net.minecraft.client.gui.screens.Screen {} }",
     "net.minecraft.client.Minecraft": """public class Minecraft {
         private static final Minecraft INSTANCE=new Minecraft(); public static Minecraft getInstance(){return INSTANCE;}
@@ -69,14 +93,24 @@ HOST = {
         public int guiWidth(){return 640;} public int guiHeight(){return 360;}
     }""",
     "dev.anya.storage.appearance.TabletDevice": """public class TabletDevice {
-        public record Grip(boolean right, float swing, float equip, int light) {}
+        public record Grip(boolean right, float swing, float equip, int light, TabletHandMotion motion) {
+            public Grip(boolean right, float swing, float equip, int light) {
+                this(right, swing, equip, light, TabletHandMotion.STILL);
+            }
+        }
         public record Portrait(int row, int column) {}
         public record Held(Grip grip, float progress, int width, int height,
                 net.minecraft.client.player.LocalPlayer player, net.minecraft.world.item.ItemStack stack,
-                net.minecraft.world.InteractionHand hand, int slot, long time) {}
+                net.minecraft.world.InteractionHand hand, int slot, long time, Portrait portrait) {
+            boolean stillHeld(net.minecraft.client.player.LocalPlayer by) {
+                return by == player && by.getItemInHand(hand) == stack && by.getInventory().selected == slot
+                        && rightSide(by, hand) == grip.right();
+            }
+        }
         public static Held saved;
         public static Grip painted;
         public static Portrait face;
+        public static boolean liveAtlas;
         public static int visits, draws, peeks;
         public static float progress;
         public static boolean enabled() {
@@ -87,16 +121,18 @@ HOST = {
                     == (hand == net.minecraft.world.InteractionHand.MAIN_HAND);
         }
         public static void forgetHeld() { saved = null; }
+        public static Held peekHeld() { return saved; }
         public static void rememberHeld(Held held) { saved = held; }
         public static int chooseVisit() { visits++; return 4; }
         public static Portrait visit(int row, int column) { return column < 0 ? null : new Portrait(row, column); }
         public static void drawHandling(net.minecraft.client.gui.GuiGraphics graphics, int width, int height,
-                net.minecraft.client.player.LocalPlayer player, Grip grip, float value, Portrait portrait) {
+                net.minecraft.client.player.LocalPlayer player, Grip grip, float value, Portrait portrait, boolean atlas) {
             draws++;
             if (portrait != null) peeks++;
             painted = grip;
             progress = value;
             face = portrait;
+            liveAtlas = atlas;
         }
     }""",
 }
@@ -125,7 +161,7 @@ def run(options):
             compiled.mkdir()
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-d", compiled,
                    "-classpath", os.pathsep.join([app,libraries]), *[SRC / (name + ".java") for name in
-                   ("HeldTablet","TabletIdle","TabletLift","TabletHandlingPose","TabletArmRenderer",
+                   ("HeldTablet","TabletIdle","TabletLift","TabletHandMotion","TabletHandlingPose","TabletArmRenderer",
                     "TabletDevice","GuardianBlink")]], scratch)
             app = os.pathsep.join([compiled.as_posix(), app])
         cp = os.pathsep.join([host.as_posix(), app, libraries])

@@ -1,6 +1,6 @@
 # Anya Storage Plus field kit
 
-Experimental candidate `0.3.0-beta.7-pocketadmin.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
+Experimental candidate `0.3.0-beta.7-tablethandoff.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
 ## Place a keepsake shelf
 

@@ -29,16 +29,18 @@ public final class TabletBootScreen {
         float elapsed = Math.clamp((now - started) / (float) TabletLift.RISE_MS, 0f, 1f);
         float dim = origin == null ? 1f : TabletHandlingPose.eased(elapsed);
         graphics.fill(0, 0, width, height, -900, (Math.round(153 * dim) << 24) | 0x000c1017);
-        drawDevice(graphics, width, height, player, TabletDevice.opening(-1, blink),
-                origin == null ? 1f : Math.min(1f, origin.progress() + elapsed));
+        float progress = origin == null ? 1f : Math.min(1f, origin.progress() + elapsed);
+        boolean carrying = progress < 1;
+        TabletDevice.Portrait portrait = carrying ? origin.portrait() : TabletDevice.opening(-1, blink);
+        drawDevice(graphics, width, height, player, portrait, progress, carrying);
     }
 
     public void drawSettled(GuiGraphics graphics, int width, int height, Player player) {
         if (started == Long.MIN_VALUE) prepare(width, height, player, net.minecraft.Util.getMillis());
-        drawDevice(graphics, width, height, player, null, 1f);
+        drawDevice(graphics, width, height, player, null, 1f, false);
     }
     private void drawDevice(GuiGraphics graphics, int width, int height, Player player,
-                            TabletDevice.Portrait portrait, float progress) {
+                            TabletDevice.Portrait portrait, float progress, boolean carrying) {
         if (origin == null || !(player instanceof LocalPlayer local)) {
             TabletDevice.draw(graphics, TabletDevice.openBounds(width, height), portrait);
             return;
@@ -46,6 +48,7 @@ public final class TabletBootScreen {
         var mc = Minecraft.getInstance();
         if (!origin.stillHeld(local) || mc.getCameraEntity() != local || !mc.options.getCameraType().isFirstPerson()
                 || local.isSpectator() || !local.isAlive() || local.isScoping() || mc.options.hideGui) armDetached = true;
-        TabletDevice.drawHandling(graphics, width, height, armDetached ? null : local, origin.grip(), progress, portrait);
+        TabletDevice.drawHandling(graphics, width, height, armDetached ? null : local,
+                origin.grip(), progress, portrait, carrying);
     }
 }

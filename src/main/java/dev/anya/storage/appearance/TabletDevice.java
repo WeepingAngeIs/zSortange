@@ -5,6 +5,8 @@ import dev.anya.storage.ui.StorageGrid;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
@@ -16,6 +18,7 @@ public final class TabletDevice {
     public static final int WIDTH = TabletHandlingPose.WIDTH, HEIGHT = TabletHandlingPose.HEIGHT;
     private static final int SCREEN_X = 16, SCREEN_Y = 20, SCREEN_W = 400, SCREEN_H = 268;
     private static final ResourceLocation SHELL = gui("tablet_device");
+    private static final ResourceLocation ITEM_FACE = ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "item/cupid_tablet_face");
     private static final ResourceLocation EXPRESSIONS = gui("tablet_expressions");
     private static final int CELL_W = 224, CELL_H = 128, COLUMNS = 9, OPENING_ROWS = 4, IDLE_ROWS = 3;
     private static final int TUMBLE_ROW = OPENING_ROWS + IDLE_ROWS;
@@ -32,9 +35,17 @@ public final class TabletDevice {
 
     public record Bounds(float x, float y, float scale) {}
     record Portrait(ResourceLocation image, int u, int v, int atlasWidth, int atlasHeight) {}
-    record Grip(boolean right, float swing, float equip, int light) {}
+    record Grip(boolean right, float swing, float equip, int light, TabletHandMotion motion) {
+        Grip(boolean right, float swing, float equip, int light) {
+            this(right, swing, equip, light, TabletHandMotion.STILL);
+        }
+    }
     record Held(Grip grip, float progress, int width, int height, LocalPlayer player, ItemStack stack,
-                InteractionHand hand, int slot, long time) {
+                InteractionHand hand, int slot, long time, Portrait portrait) {
+        Held(Grip grip, float progress, int width, int height, LocalPlayer player, ItemStack stack,
+             InteractionHand hand, int slot, long time) {
+            this(grip, progress, width, height, player, stack, hand, slot, time, null);
+        }
         boolean stillHeld(LocalPlayer by) {
             return by == player && by.getItemInHand(hand) == stack && by.getInventory().selected == slot
                     && rightSide(by, hand) == grip.right();
@@ -118,6 +129,7 @@ public final class TabletDevice {
     }
     static void rememberHeld(Held sample) { lastHeld = sample; }
     public static void forgetHeld() { lastHeld = null; }
+    static Held peekHeld() { return lastHeld; }
     static Held takeHeld() {
         Held held = lastHeld;
         forgetHeld();
@@ -146,15 +158,16 @@ public final class TabletDevice {
         }
     }
     static void drawHandling(GuiGraphics g, int width, int height, LocalPlayer armOwner, Grip grip,
-                             float progress, Portrait portrait) {
-        if (armOwner != null && !armOwner.isInvisible()) {
-            boolean slim = armOwner.getSkin().model() == net.minecraft.client.resources.PlayerSkin.Model.SLIM;
-            var arm = TabletHandlingPose.armMatrix(width, height, grip.right, slim, grip.swing, grip.equip, progress);
-            TabletArmRenderer.draw(g, armOwner, grip.right, grip.light, arm);
-        }
+                             float progress, Portrait portrait, boolean liveAtlas) {
         var pose = g.pose();
         pose.pushPose();
         try {
+            grip.motion().apply(pose, width, height, progress);
+            if (armOwner != null && !armOwner.isInvisible()) {
+                boolean slim = armOwner.getSkin().model() == net.minecraft.client.resources.PlayerSkin.Model.SLIM;
+                var arm = TabletHandlingPose.armMatrix(width, height, grip.right, slim, grip.swing, grip.equip, progress);
+                TabletArmRenderer.draw(g, armOwner, grip.right, grip.light, arm);
+            }
             pose.mulPose(TabletHandlingPose.deviceMatrix(width, height, grip.right, grip.swing, grip.equip, progress));
             var surface = new Bounds(0, 0, 1);
             if (progress < 1) {
@@ -165,24 +178,38 @@ public final class TabletDevice {
                 drawDark(g, surface);
                 pose.translate(0, 0, 3);
             }
-            draw(g, surface, portrait);
+            draw(g, surface, portrait, liveAtlas);
         } finally {
             pose.popPose();
         }
     }
     static void draw(GuiGraphics g, Bounds b, Portrait portrait) {
+        draw(g, b, portrait, false);
+    }
+    private static void draw(GuiGraphics g, Bounds b, Portrait portrait, boolean liveAtlas) {
         var pose = g.pose();
         pose.pushPose();
-        pose.translate(b.x, b.y, 0);
-        pose.scale(b.scale, b.scale, 1);
-        g.blit(SHELL, 0, 0, 0, 0, WIDTH, HEIGHT, WIDTH, HEIGHT);
-        if (portrait != null) {
-            float zoom = SCREEN_W / (float) CELL_W;
-            pose.translate(SCREEN_X, SCREEN_Y + (SCREEN_H - CELL_H * zoom) / 2f, 0);
-            pose.scale(zoom, zoom, 1);
-            blitPortrait(g, portrait);
+        try {
+            pose.translate(b.x, b.y, 0);
+            pose.scale(b.scale, b.scale, 1);
+            // Use the exact current item-atlas frame rather than starting another animation on equip.
+            if (liveAtlas && portrait == null && drawItemFace(g)) return;
+            g.blit(SHELL, 0, 0, 0, 0, WIDTH, HEIGHT, WIDTH, HEIGHT);
+            if (portrait != null) {
+                float zoom = SCREEN_W / (float) CELL_W;
+                pose.translate(SCREEN_X, SCREEN_Y + (SCREEN_H - CELL_H * zoom) / 2f, 0);
+                pose.scale(zoom, zoom, 1);
+                blitPortrait(g, portrait);
+            }
+        } finally {
+            pose.popPose();
         }
-        pose.popPose();
+    }
+    private static boolean drawItemFace(GuiGraphics graphics) {
+        var sprite = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(ITEM_FACE);
+        if (sprite.contents().name().equals(MissingTextureAtlasSprite.getLocation())) return false;
+        graphics.blit(0, 0, 0, WIDTH, HEIGHT, sprite);
+        return true;
     }
     private static void blitPortrait(GuiGraphics graphics, Portrait portrait) {
         graphics.blit(portrait.image(), 0, 0, portrait.u(), portrait.v(), CELL_W, CELL_H,

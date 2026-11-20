@@ -22,7 +22,7 @@ def run(options):
             compiled = scratch / "candidate"
             compiled.mkdir()
             src = HERE.parents[1] / "src/main/java/dev/anya/storage/appearance"
-            production = ("HeldTablet", "TabletIdle", "TabletLift", "TabletHandlingPose", "TabletArmRenderer",
+            production = ("HeldTablet", "TabletIdle", "TabletLift", "TabletHandMotion", "TabletHandlingPose", "TabletArmRenderer",
                           "TabletDevice", "GuardianBlink")
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", os.pathsep.join((app, libs)),
                    "-d", compiled, *(src / (name + ".java") for name in production)], scratch)
@@ -33,9 +33,9 @@ def run(options):
                HERE.parent / "tablet-lifecycle/TabletIdleCheck.java"], scratch)
         invoke(options.jdk, "java", ["-classpath", cp, "dev.anya.storage.appearance.TabletIdleCheck"], scratch)
         invoke(options.jdk, "java", ["-Djava.awt.headless=true",
-               "-classpath", cp, "HeldUseCheck"], scratch)
+               "-classpath", cp, "dev.anya.storage.appearance.HeldUseCheck"], scratch)
         invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-Danyastorage.tabletIntro=false",
-               "-classpath", cp, "HeldUseCheck", "opt-out"], scratch)
+               "-classpath", cp, "dev.anya.storage.appearance.HeldUseCheck", "opt-out"], scratch)
 
 
 if __name__ == "__main__":

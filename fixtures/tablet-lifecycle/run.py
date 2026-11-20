@@ -40,6 +40,7 @@ def main(options):
                 "-classpath", os.pathsep.join((support, libraries)), JAVA / "Client.java",
                 JAVA / "StoreMenu.java", JAVA / "Config.java", JAVA / "ExpansionRules.java",
                 JAVA / "ServerSettings.java", JAVA / "pocket/PocketService.java",
+                JAVA / "appearance/TabletHandMotion.java", JAVA / "appearance/TabletHandlingPose.java",
                 JAVA / "appearance/GuardianBlink.java", JAVA / "appearance/TabletDevice.java",
                 JAVA / "appearance/TabletBootScreen.java",
             ], scratch)

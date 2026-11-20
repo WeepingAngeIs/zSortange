@@ -5,7 +5,9 @@ import dev.anya.storage.Client;
 import dev.anya.storage.Content;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
@@ -27,6 +29,8 @@ public final class HeldTablet {
     private static final TabletLift LIFT = new TabletLift();
     private static boolean useLatched;
     private static HandPose pending;
+    private static long frozenAt = Long.MIN_VALUE;
+    private static long coveredTime;
 
     private record Held(LocalPlayer player, ItemStack stack, InteractionHand hand, int selectedSlot) {
         boolean matches(Held other) {
@@ -34,7 +38,33 @@ public final class HeldTablet {
                     && selectedSlot == other.selectedSlot;
         }
     }
-    private record HandPose(Held held, float swing, float equip, int light) {}
+    private record HandPose(Held held, TabletDevice.Grip grip) {}
+
+    private static long animationTime(long now, boolean covered) {
+        if (covered) {
+            if (frozenAt == Long.MIN_VALUE) frozenAt = now;
+            return frozenAt - coveredTime;
+        }
+        if (frozenAt != Long.MIN_VALUE) {
+            coveredTime += now - frozenAt;
+            frozenAt = Long.MIN_VALUE;
+        }
+        return now - coveredTime;
+    }
+
+    private static TabletHandMotion motion(Minecraft mc, LocalPlayer player, float partial) {
+        // These are the vanilla samples used by the hand pass, expressed relative to the view.
+        float yaw = Math.clamp(Mth.wrapDegrees(player.getViewYRot(partial)
+                - Mth.lerp(partial, player.yBobO, player.yBob)) * .1f, -4f, 4f);
+        float pitch = Math.clamp((player.getViewXRot(partial)
+                - Mth.lerp(partial, player.xBobO, player.xBob)) * .1f, -4f, 4f);
+        if (!mc.options.bobView().get()) return new TabletHandMotion(yaw, pitch, 0, 0, 0);
+        float phase = -(player.walkDist + (player.walkDist - player.walkDistO) * partial) * Mth.PI;
+        float amplitude = Mth.lerp(partial, player.oBob, player.bob);
+        float sway = Mth.sin(phase) * amplitude;
+        return new TabletHandMotion(yaw, pitch, sway * .5f,
+                -Math.abs(Mth.cos(phase) * amplitude), sway * 3f);
+    }
 
     private static Held observe(Minecraft mc) {
         LocalPlayer player = mc.player;
@@ -59,6 +89,8 @@ public final class HeldTablet {
             pending = null;
             LIFT.reset();
             useLatched = false;
+            frozenAt = Long.MIN_VALUE;
+            coveredTime = 0;
             TabletDevice.forgetHeld();
         }
         return new Held(player, stack, hand, slot);
@@ -68,11 +100,9 @@ public final class HeldTablet {
         pending = null;
         LIFT.reset();
         useLatched = false;
+        frozenAt = Long.MIN_VALUE;
+        coveredTime = 0;
         if (IDLE.bind(null, null, false, -1)) TabletDevice.forgetHeld();
-    }
-
-    private static boolean busy(Minecraft mc, Held held) {
-        return held.player().isUsingItem() || mc.options.keyUse.isDown() || mc.options.keyAttack.isDown();
     }
 
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
@@ -88,29 +118,33 @@ public final class HeldTablet {
         var held = observe(mc);
         if (held == null) return;
         if (!mc.options.keyUse.isDown()) useLatched = false;
-        if (mc.screen != null || busy(mc, held)) IDLE.quiet();
-        if (mc.screen != null && !(mc.screen instanceof Client.Screen)) TabletDevice.forgetHeld();
+        animationTime(Util.getMillis(), mc.screen instanceof Client.Screen || mc.screen instanceof PauseScreen);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void screenOpening(ScreenEvent.Opening event) {
         if (!TabletDevice.enabled()) return;
-        observe(Minecraft.getInstance()); // A slot or hand can change between the previous HUD draw and use.
-        IDLE.quiet();
-        LIFT.reset(); // The authorized screen continues from the last painted hand sample.
+        observe(Minecraft.getInstance()); // The selected stack can change before the server menu arrives.
         pending = null;
-        if (!(event.getNewScreen() instanceof Client.Screen)) TabletDevice.forgetHeld();
+        var next = event.getNewScreen();
+        animationTime(Util.getMillis(), next instanceof Client.Screen || next instanceof PauseScreen);
+        if (next instanceof Client.Screen) {
+            LIFT.reset(); // The screen owns the captured rise. Resume to the natural hand position on close.
+        } else if (next != null && !(next instanceof PauseScreen)) {
+            IDLE.quiet();
+            LIFT.reset();
+            TabletDevice.forgetHeld();
+        }
     }
 
     @SubscribeEvent public static void interaction(InputEvent.InteractionKeyMappingTriggered event) {
         if (!TabletDevice.enabled() || !(event.isUseItem() || event.isAttack())) return;
-        IDLE.quiet();
         var mc = Minecraft.getInstance();
         if (mc.screen != null || !event.isUseItem() || useLatched) return;
         var held = observe(mc);
         if (held != null && event.getHand() == held.hand() && !held.player().isShiftKeyDown()) {
             useLatched = true;
-            LIFT.use(Util.getMillis());
+            LIFT.use(animationTime(Util.getMillis(), false));
         }
     }
 
@@ -125,11 +159,17 @@ public final class HeldTablet {
         var held = observe(mc);
         // Vanilla can still be animating an older stack after a hotbar switch.
         if (held == null || event.getHand() != held.hand() || event.getItemStack() != held.stack()) return;
-        if (mc.screen != null) {
+        boolean paused = mc.screen instanceof PauseScreen;
+        if (mc.screen != null && !paused) {
             if (mc.screen instanceof Client.Screen) event.setCanceled(true);
             return;
         }
-        pending = new HandPose(held, event.getSwingProgress(), event.getEquipProgress(), event.getPackedLight());
+        var previous = TabletDevice.peekHeld();
+        TabletDevice.Grip grip = paused && previous != null && previous.stillHeld(held.player())
+                ? previous.grip()
+                : new TabletDevice.Grip(TabletDevice.rightSide(held.player(), held.hand()), event.getSwingProgress(),
+                        event.getEquipProgress(), event.getPackedLight(), motion(mc, held.player(), event.getPartialTick()));
+        pending = new HandPose(held, grip);
         event.setCanceled(true);
     }
 
@@ -139,22 +179,20 @@ public final class HeldTablet {
         if (pose == null) return;
         var mc = Minecraft.getInstance();
         var held = observe(mc);
-        if (!pose.held().matches(held) || mc.screen != null) return;
+        boolean paused = mc.screen instanceof PauseScreen;
+        if (!pose.held().matches(held) || (mc.screen != null && !paused)) return;
         var graphics = event.getGuiGraphics();
         int width = graphics.guiWidth();
         int height = graphics.guiHeight();
         if (width <= 0 || height <= 0) return;
-        boolean right = TabletDevice.rightSide(held.player(), held.hand());
-        var grip = new TabletDevice.Grip(right, pose.swing(), pose.equip(), pose.light());
         long now = Util.getMillis();
-        float progress = LIFT.progress(now);
-        boolean busy = busy(mc, held) || progress > 0;
-        if (busy) IDLE.quiet();
-        int column = busy ? -1 : IDLE.paintColumn(now);
-        TabletDevice.drawHandling(graphics, width, height, held.player(), grip, progress,
-                TabletDevice.visit(IDLE.row(), column));
-        TabletDevice.rememberHeld(new TabletDevice.Held(grip, progress, width, height, held.player(), held.stack(),
-                held.hand(), held.selectedSlot(), now));
+        long visualTime = animationTime(now, paused);
+        float progress = LIFT.progress(visualTime);
+        int column = IDLE.paintColumn(visualTime);
+        TabletDevice.Portrait portrait = TabletDevice.visit(IDLE.row(), column);
+        TabletDevice.drawHandling(graphics, width, height, held.player(), pose.grip(), progress, portrait, true);
+        TabletDevice.rememberHeld(new TabletDevice.Held(pose.grip(), progress, width, height, held.player(), held.stack(),
+                held.hand(), held.selectedSlot(), now, portrait));
     }
 
     private HeldTablet() {}

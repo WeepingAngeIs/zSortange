@@ -63,6 +63,10 @@ def materialize(root):
         shells++;
         events.add("case");
         casePose = new org.joml.Matrix4f(pose.last().pose());
+    """).replace("atlasDraws++;", """
+        atlasDraws++;
+        events.add("atlas");
+        casePose = new org.joml.Matrix4f(pose.last().pose());
     """).replace("throw new StoragePaint();", 'events.add("inventory"); throw new StoragePaint();').replace("blits++;", """
         blits++;
         if (image.getPath().endsWith("tablet_expressions.png")) {
@@ -81,7 +85,7 @@ def materialize(root):
         public static void draw(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.player.LocalPlayer p,
                 boolean right, int light, org.joml.Matrix4f pose) {
             g.events.add("arm");
-            g.armPose = new org.joml.Matrix4f(pose);
+            g.armPose = new org.joml.Matrix4f(g.pose().last().pose()).mul(pose);
         }
     }"""
     result = []

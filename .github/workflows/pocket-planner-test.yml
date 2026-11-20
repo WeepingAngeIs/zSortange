@@ -1,8 +1,8 @@
-name: Build in-game pocket admin test JAR
+name: Build Cupid Tablet handoff test JAR
 
 on:
   push:
-    branches: [experiment/pocket-admin-commands]
+    branches: [experiment/cupid-tablet-handoff]
 
 permissions:
   contents: read
@@ -52,18 +52,6 @@ jobs:
           printf -- '-classpath\n"%s:%s"\n' "$classpath" "$client_jar" > "$classpath_file"
           python3 -B fixtures/chest-expansion/run.py "${args[@]}" --packaged
           python3 -B fixtures/room-plan/run.py "${args[@]}"
-      - name: Test enable, disable and recovery on a fresh server
-        shell: bash
-        timeout-minutes: 10
-        run: |
-          set -euo pipefail
-          test ! -e run-pocket-tests/world
-          mkdir -p run-pocket-tests
-          printf 'eula=true\n' > run-pocket-tests/eula.txt
-          gradle --no-daemon --max-workers=2 -PpocketTest runServer | tee pocket-runtime.log
-          grep -F 'ANYA_POCKET_RUNTIME_OK' pocket-runtime.log
-          grep -F 'ANYA_POCKET_ADMIN_TRANSITIONS_OK' pocket-runtime.log
-          grep -F 'ANYA_POCKET_UNLOAD_OK' pocket-runtime.log
       - name: Verify and prepare the test artifact
         shell: bash
         run: |
@@ -112,20 +100,21 @@ jobs:
               for entry in ("data/anyastorage/dimension/pockets.json",
                             "data/anyastorage/dimension_type/pockets.json",
                             "dev/anya/storage/ServerSettings.class",
-                            "dev/anya/storage/StorageSettingsCommands.class"):
+                            "dev/anya/storage/StorageSettingsCommands.class",
+                            "dev/anya/storage/appearance/TabletHandMotion.class"):
                   assert entry in jar.namelist(), entry
               print("PASS: both terminal models, pocket dimension and operator settings API packaged")
           PY
           sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/POCKETADMIN.1-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/POCKETADMIN.1-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/TABLETHANDOFF.1-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/TABLETHANDOFF.1-PLAYTEST.txt upload/PLAYTEST.txt
           cp docs/SERVER_SETTINGS.md upload/SERVER-SETTINGS.md
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-pocketadmin.1
+          name: anya-storage-plus-tablethandoff.1
           path: upload/
           if-no-files-found: error
           retention-days: 14

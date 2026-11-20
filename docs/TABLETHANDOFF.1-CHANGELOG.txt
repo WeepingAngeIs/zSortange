@@ -1,0 +1,11 @@
+Anya Storage Plus 0.3.0-beta.7-tablethandoff.1
+Experimental beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+- The held Cupid Tablet can draw the current animated item texture used
+  in the hotbar. An authorized raise carries the visible face through
+  the motion before the usual optional intro.
+- The wrist and tablet now share the first-person view lag and walking
+  motion. That motion eases out as the inventory settles.
+- Pausing keeps the same held position and pauses the detailed idle
+  timeline. Closing storage restores the natural held position.
+- Includes the saved /anya pocket enable, disable and status commands.

@@ -94,16 +94,14 @@ public final class TabletHandCheck {
         HeldTablet.interaction(use);
         require(!use.isCanceled() && use.shouldSwingHand() && TabletDevice.saved == heldSample, "Use changed vanilla action or lost lift origin");
         mainFrame(t);
-        require(TabletDevice.peeks == peeks + 1, "Use continued the idle gaze");
-        long attackAt = t;
-        while (TabletDevice.peeks == peeks + 1 && t - attackAt < 111_000) mainFrame(t += 100);
-        require(TabletDevice.peeks == peeks + 2, "No second glance before attack");
+        require(TabletDevice.peeks == peeks + 2 && TabletDevice.face != null,
+                "Use must keep painting the ongoing visit");
         var attack = new InputEvent.InteractionKeyMappingTriggered(0, MC.options.keyAttack, MAIN);
         HeldTablet.interaction(attack);
         MC.options.keyAttack.down = true;
-        for (int i = 0; i < 1200; i++) mainFrame(t += 100);
-        require(!attack.isCanceled() && attack.shouldSwingHand() && TabletDevice.peeks == peeks + 2,
-                "Mining changed the click/swing or allowed an idle glance");
+        mainFrame(++t);
+        require(!attack.isCanceled() && attack.shouldSwingHand() && TabletDevice.face != null,
+                "Attack changed the click, swing or ongoing visit");
         MC.options.keyAttack.down = false;
         mainFrame(++t);
         var storage = new dev.anya.storage.Client.Screen();

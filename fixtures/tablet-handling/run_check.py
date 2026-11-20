@@ -29,7 +29,7 @@ def main(options):
         sources = [HERE / "HandlingCheck.java"]
         if not options.packaged:
             sources += [JAVA / (name + ".java") for name in
-                        ("TabletLift", "TabletHandlingPose", "GuardianBlink", "TabletArmRenderer", "TabletDevice", "TabletBootScreen")]
+                        ("TabletLift", "TabletHandMotion", "TabletHandlingPose", "GuardianBlink", "TabletArmRenderer", "TabletDevice", "TabletBootScreen")]
             sources += [JAVA.parent / name for name in ("Client.java", "StoreMenu.java", "Config.java",
                         "ExpansionRules.java", "ServerSettings.java", "pocket/PocketService.java")]
         invoke(options.jdk, "javac", ["--release", "21", "-encoding", "UTF-8", "-proc:none",
