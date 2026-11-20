@@ -44,6 +44,11 @@ jobs:
           python3 -B fixtures/tablet-chance/check_server.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_use.py "${args[@]}" --packaged
+          # NeoForm strips vanilla assets from the remapped compile JAR. Registry bootstrap
+          # also reads the vanilla language and version resources from the original client.
+          client_jar="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$client_jar"
+          printf -- '-classpath\n"%s:%s"\n' "$(cat build/durable-audit/classpath.txt)" "$client_jar" > "$classpath_file"
           python3 -B fixtures/furniture/check.py "${args[@]}"
       - name: Prepare the installable test artifact
         shell: bash
