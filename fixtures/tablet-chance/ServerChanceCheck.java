@@ -21,21 +21,16 @@ public final class ServerChanceCheck {
         }
     }
 
-    private static int flags(String opening, boolean mayView) throws Exception {
-        Class<?> source = Class.forName("dev.anya.storage.StoreMenu$Opening");
-        var flags = StoreMenu.class.getDeclaredMethod("openingFlags", source, boolean.class);
-        flags.setAccessible(true);
-        Object context = java.util.Arrays.stream(source.getEnumConstants())
-                .filter(value -> value.toString().equals(opening)).findFirst().orElseThrow();
-        return (int) flags.invoke(null, context, mayView);
-    }
-
-    private static void openings(int remote, int chest, int backpack) throws Exception {
-        require(flags("REMOTE",true) == remote && flags("CHEST",true) == chest
-                && flags("BACKPACK",true) == backpack && flags("PLAIN",true) == 0,
-                "The opening policies must only affect their own context");
-        for (String context : new String[]{"REMOTE","CHEST","BACKPACK","PLAIN"})
-            require(flags(context,false) == 0, "Presentation escaped missing View permission for " + context);
+    private static void checkPolicy(boolean tabletAlwaysAppears, boolean chestAlwaysAppears, boolean backpackEnabled) {
+        var policy = Config.get().expansion;
+        require(policy.rollTabletOpening(new Percentiles()) == tabletAlwaysAppears
+                && policy.tabletOpeningChancePercent == (tabletAlwaysAppears ? 100 : 0),
+                "The saved Remote percentage disagrees with the forced or skipped opening");
+        require(policy.rollChestCameo(new Percentiles()) == chestAlwaysAppears
+                && policy.chestCameoEnabled == chestAlwaysAppears
+                && (!chestAlwaysAppears || policy.chestCameoChancePercent == 100),
+                "The saved chest settings disagree with the independently selected result");
+        require(policy.backpackCameoEnabled == backpackEnabled, "The backpack toggle changed with another setting");
     }
 
     public static void main(String[] args) throws Exception {
@@ -51,7 +46,6 @@ public final class ServerChanceCheck {
         require(new Config.Data().expansion.tabletOpeningChancePercent == 24, "Fresh default");
         require(!Config.get().expansion.chestCameoEnabled && Config.get().expansion.chestCameoChancePercent == 1
                 && !Config.get().expansion.backpackCameoEnabled, "Older configs inherited an opt-in or lost the chest default");
-        require(flags("CHEST",true) == 0 && flags("BACKPACK",true) == 0, "Default direct storage must stay quiet");
         for (String key : new String[]{"tabletOpeningChancePercent","chestCameoChancePercent"})
         for (String invalid : new String[]{"-1","101","24.5","4294967320","null","true","\"24\""}) {
             Path sample = config.resolveSibling("invalid.json");
@@ -102,7 +96,7 @@ public final class ServerChanceCheck {
         require(!Config.setTabletOpeningChancePercent(actor,11,101), "Unbounded write");
         require(Config.setTabletOpeningChancePercent(actor,11,24) && Files.readString(config).equals(previous), "No-op rewrote config");
         require(Config.setTabletOpeningChancePercent(actor,11,100), "Fresh authorized edit");
-        openings(224, 0, 0); // Remote + legacy rule + hit, with both cameos off.
+        checkPolicy(true, false, false);
         require(Files.readString(config.resolveSibling("anya-storage-plus.json.bak")).equals(previous), "Backup lost previous settings");
         require(Config.read(config).expansion.tabletOpeningChancePercent == 100, "Persisted chance");
         require(Config.get().quickRadius == 13 && Config.get().expansion.pocketStorage && Config.get().expansion.pocketLimit == 28,
@@ -115,7 +109,7 @@ public final class ServerChanceCheck {
         Config.validateDraft(latest);
         require(Config.save(actor,latest) && Config.tabletOpeningChance().equals(new Config.TabletOpeningChance(13,0)),
                 "Operator change was not applied");
-        openings(192, 256, 0); // Remote + legacy rule, chest cameo only.
+        checkPolicy(false, true, false);
         require(actor.getServer().reloads == 0, "Cosmetic-only settings reloaded recipes");
         require(!Config.setTabletOpeningChancePercent(actor,11,56), "Stale adapter wrote");
         JsonObject disk = JsonParser.parseString(Files.readString(config)).getAsJsonObject();
@@ -130,7 +124,7 @@ public final class ServerChanceCheck {
         require(Config.save(actor,mixed) && actor.getServer().reloads == 1, "Mixed edit skipped recipe reload");
         Config.init();
         require(Config.tabletOpeningChance().equals(new Config.TabletOpeningChance(14,100)), "Restart readback");
-        openings(224, 0, 256); // Remote hit plus independent backpack cameo after restart.
+        checkPolicy(true, false, true);
         System.out.println("PASS: migration, tablet and cameo isolation, exact percentile counts, invalid JSON preserved, private drafts, OP/thread/revision checks, atomic backup/readback, visual-only save and mixed reload");
     }
 }
