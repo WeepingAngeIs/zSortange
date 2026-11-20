@@ -172,9 +172,9 @@ public final class HeldUseCheck {
                 "An equipped tablet must finish hiding even if a matching stack was synced");
         // A genuinely new tablet in an unused slot has its own shy exit.
         CLIENT.player.inv.selected = 5;
-        CLIENT.player.main = new ItemStack(Content.CUPID_TABLET.get());
+        CLIENT.player.main = new ItemStack(Content.CREATIVE_TABLET.get());
         paint(visiting);
-        check(TabletDevice.faceOf(TabletDevice.face) == TabletIdle.Face.SQUINT, "Fresh held squint");
+        check(TabletDevice.faceOf(TabletDevice.face) == TabletIdle.Face.SQUINT && TabletDevice.face.row() == -2, "Fresh Creative Tablet squint and rose shell");
         input(visiting + 5, MAIN, true);
         check(paint(visiting + 25) > 0 && TabletDevice.faceOf(TabletDevice.face) == TabletIdle.Face.SQUINT,
                 "Use keeps the physical face already on the glass");
@@ -209,7 +209,7 @@ public final class HeldUseCheck {
         var closingGrip = new TabletDevice.Grip(true, .7f, .3f, captured.grip().light(), TabletHandMotion.STILL);
         TabletDevice.lowerFrom(new TabletDevice.Held(closingGrip, 1f, captured.width(), captured.height(), captured.player(),
                 captured.stack(), captured.hand(), captured.slot(), Util.now, closedFace));
-        CLIENT.player.main = new ItemStack(Content.CUPID_TABLET.get()); // A late full inventory sync on closing.
+        CLIENT.player.main = new ItemStack(Content.CREATIVE_TABLET.get()); // A late full inventory sync on closing.
         long closeAt = resumed + 8_020;
         check(paint(closeAt) == 1f && TabletDevice.painted == closingGrip && TabletDevice.face == closedFace,
                 "The first world frame after Escape must be the exact last painted case, grip and face");

@@ -46,6 +46,25 @@ def check(jar):
         assert frame.tobytes() == expected.tobytes(), "Different expression pixels for " + name
         pixels.add(frame.tobytes())
     assert len(pixels) == 5
+    creative = root + "models/item/creative_tablet"
+    creative_shell = "anyastorage:item/creative_tablet_shell"
+    def variant(suffix):
+        return json.loads(jar.read(creative + suffix + ".json"))
+    assert variant("_shell") == {"parent": shell_id, "textures": {"face": "anyastorage:item/creative_tablet_face_dark"}}
+    assert variant("") == {"parent": creative_shell, "overrides": [
+        {"predicate": {"anyastorage:cupid_face": n / 4}, "model": "anyastorage:item/creative_tablet_" + name}
+        for n, name in enumerate(names, 1)]}
+    for name in names:
+        assert variant("_" + name) == {"parent": creative_shell, "textures": {"face": "anyastorage:item/creative_tablet_face_" + name}}
+    def check_rim(ordinary, pink, aperture):
+        assert ordinary.size == pink.size and ordinary.getchannel("A").tobytes() == pink.getchannel("A").tobytes()
+        assert ordinary.crop(aperture).tobytes() == pink.crop(aperture).tobytes(), "Pink changed Cupid or her glass"
+        assert ordinary.tobytes() != pink.tobytes(), "Missing Creative Tablet outline"
+    check_rim(image(root + "textures/gui/tablet_device.png"), image(root + "textures/gui/creative_tablet_device.png"),
+              (16, 20, 416, 288))
+    for name in ("dark", *names):
+        check_rim(image(texture + "_" + name + ".png"), image(root + "textures/item/creative_tablet_face_" + name + ".png"),
+                  (10, 12, 246, 166))
     print("PASS: physical tablet model overrides and five pixel-identical approved glass states")
 
 

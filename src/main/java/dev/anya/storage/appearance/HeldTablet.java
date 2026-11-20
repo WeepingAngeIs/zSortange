@@ -2,7 +2,7 @@ package dev.anya.storage.appearance;
 
 import dev.anya.storage.AnyaStorage;
 import dev.anya.storage.Client;
-import dev.anya.storage.Content;
+import dev.anya.storage.StorageItem;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.PauseScreen;
@@ -79,10 +79,10 @@ public final class HeldTablet {
         // Only one tablet receives the detailed first-person pose. A second one uses its baked model.
         InteractionHand hand = InteractionHand.MAIN_HAND;
         ItemStack stack = player.getMainHandItem();
-        if (!stack.is(Content.CUPID_TABLET.get())) {
+        if (!StorageItem.isTablet(stack)) {
             hand = InteractionHand.OFF_HAND;
             stack = player.getOffhandItem();
-            if (!stack.is(Content.CUPID_TABLET.get())) {
+            if (!StorageItem.isTablet(stack)) {
                 reset();
                 return null;
             }
@@ -225,7 +225,8 @@ public final class HeldTablet {
         long now = Util.getMillis();
         long visualTime = animationTime(now, paused);
         float progress = LIFT.progress(visualTime);
-        TabletDevice.Portrait portrait = TabletDevice.physicalFace(TabletFaces.face(held.stack()));
+        boolean creative = StorageItem.isCreativeTablet(held.stack());
+        TabletDevice.Portrait portrait = TabletDevice.physicalFace(TabletFaces.face(held.stack()), creative);
         TabletDevice.Grip grip = pose.grip();
         if (lowering != null) {
             float remaining = frameReturn;
@@ -240,7 +241,7 @@ public final class HeldTablet {
                 portrait = lowering.portrait();
             }
         }
-        TabletDevice.drawHandling(graphics, width, height, held.player(), grip, progress, portrait, true);
+        TabletDevice.drawHandling(graphics, width, height, held.player(), grip, progress, portrait, true, creative);
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, progress, width, height, held.player(), held.stack(),
                 held.hand(), held.selectedSlot(), now, portrait));
     }

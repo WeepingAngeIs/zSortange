@@ -32,7 +32,7 @@ public final class PocketContent {
             lines.add(Component.literal("Experimental home entrance, not an inventory cube."));
             lines.add(Component.literal("Look directly at any face to see the starter-room illustration."));
             lines.add(Component.literal("With View access, a loaded pocket can show its chest layout."));
-            lines.add(Component.literal("Sneak-use a bound Remote or Cupid Tablet to link. Right-click to visit."));
+            lines.add(Component.literal("Sneak-use a bound tablet to link. Right-click to visit."));
             lines.add(Component.literal("Requires experimental server opt-in. See Ancient Technology for live status."));
         }
     });

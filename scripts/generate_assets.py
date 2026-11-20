@@ -45,12 +45,9 @@ for index,name in enumerate(items):
     if name=='backpack':
         rect(pixels,16,4,1,8,2,EDGE);rect(pixels,16,2,3,12,12,EDGE);rect(pixels,16,3,4,10,10,PINK);rect(pixels,16,4,10,8,3,DARK);rect(pixels,16,7,5,2,4,WHITE)
     elif name=='remote':
-        for y in range(16):
-            for x in range(16):
-                if (x-7.5)**2+(y-7.5)**2<48:pixels[y*16+x]=WHITE
-        for y,row in enumerate(shapes['heart']):
-            for x,c in enumerate(row):
-                if c=='1':pixels[(y+4)*16+x+4]=PINK
+        # Retain a model for stacks in old, unopened containers, until a player takes the tablet.
+        js(f'assets/{MOD}/models/item/remote.json',{'parent':f'{MOD}:item/cupid_tablet_shell'})
+        continue
     else:
         rect(pixels,16,2,2,12,12,EDGE);rect(pixels,16,3,3,10,10,DARK);rect(pixels,16,4,4,8,2,CYAN);rect(pixels,16,5,8,6,3,PINK)
         for bit in range(4):
@@ -59,6 +56,8 @@ for index,name in enumerate(items):
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{MOD}:item/{name}'}})
 lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
 lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
+lang[f'item.{MOD}.creative_tablet']='Creative Tablet'
+lang[f'item.{MOD}.remote']='Cupid Tablet (Former Remote)'
 lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
 lang.update({'subtitles.anyastorage.cube_open':'UwU storage cube opens','subtitles.anyastorage.cube_close':'UwU storage cube closes'})
 lang.update({'subtitles.anyastorage.frame_on':'Pocket window powers on','subtitles.anyastorage.frame_off':'Pocket window powers down'})
@@ -69,7 +68,9 @@ def shaped(name,group,pattern,key,count=1):
 shaped('backpack','backpacks',['LSL','LCL','LGL'],{'L':'minecraft:leather','S':'minecraft:string','C':'minecraft:chest','G':'minecraft:gold_ingot'})
 shaped('hub','hubs',['IEI','ACA','IRI'],{'I':'minecraft:iron_block','E':'minecraft:ender_pearl','A':'minecraft:amethyst_shard','C':'minecraft:comparator','R':'minecraft:redstone_block'})
 shaped('chest','containers',['IPI','PCP','IPI'],{'I':'minecraft:iron_ingot','P':'#minecraft:planks','C':'minecraft:chest'})
-shaped('remote','terminals',[' B ',' A ',' E '],{'B':'minecraft:stone_button','A':'minecraft:amethyst_shard','E':'minecraft:ender_pearl'})
+# These files were previously generated into the source resources and may outlive a Gradle clean.
+(ROOT/f'data/{MOD}/recipe/remote.json').unlink(missing_ok=True)
+(ROOT/f'assets/{MOD}/textures/item/remote.png').unlink(missing_ok=True)
 shaped('cupid_tablet','terminals',['IGI','ARA','IEI'],{
     'I':'minecraft:iron_ingot','G':'minecraft:glass_pane','A':'minecraft:amethyst_shard',
     'R':'minecraft:redstone','E':'minecraft:ender_pearl'})

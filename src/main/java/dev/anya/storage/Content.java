@@ -46,9 +46,12 @@ public final class Content {
     public static final DeferredBlock<PlacedBackpackBlock> PLACED_BACKPACK = BLOCKS.register("placed_backpack", PlacedBackpackBlock::create);
     public static final Supplier<BlockEntityType<PlacedBackpackEntity>> PLACED_BAG_ENTITY = ENTITIES.register("placed_backpack",
             () -> BlockEntityType.Builder.of(PlacedBackpackEntity::new, PLACED_BACKPACK.get()).build(null));
-    public static final DeferredItem<StorageItem> REMOTE=ITEMS.register("remote",()->new StorageItem("remote",new Item.Properties().stacksTo(1)));
+    // Old chests and player saves still deserialize this ID. It converts on first carry or use.
+    public static final DeferredItem<StorageItem> REMOTE=ITEMS.register("remote",()->new StorageItem("legacy_remote",new Item.Properties().stacksTo(1)));
     public static final DeferredItem<StorageItem> CUPID_TABLET = ITEMS.register("cupid_tablet",
-            () -> new StorageItem("remote", new Item.Properties().stacksTo(1)));
+            () -> new StorageItem("tablet", new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<StorageItem> CREATIVE_TABLET = ITEMS.register("creative_tablet",
+            () -> new StorageItem("creative_tablet", new Item.Properties().stacksTo(1)));
     public static final DeferredItem<dev.anya.storage.guide.GuideItem> GUIDE=ITEMS.register("ancient_technology",()->new dev.anya.storage.guide.GuideItem(new Item.Properties().stacksTo(1)));
     public static final DeferredItem<Item> CORE=ITEMS.registerSimpleItem("storage_core");
     public static final DeferredItem<Item> DRAGON_TOKEN=ITEMS.registerSimpleItem("dragon_victory_token");
@@ -72,7 +75,7 @@ public final class Content {
         CONDITIONS.register("recipe_group",()->RecipeCondition.CODEC);
         TABS.register("storage",()->CreativeModeTab.builder().title(Component.literal("Anya Storage"))
             .icon(()->new ItemStack(BACKPACK.get())).displayItems((parameters,out)->{
-                ITEMS.getEntries().forEach(item->out.accept(item.get()));
+                ITEMS.getEntries().stream().filter(item -> item.get()!=REMOTE.get()).forEach(item->out.accept(item.get()));
             }).build());
     }
     private Content() {}

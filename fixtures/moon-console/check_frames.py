@@ -60,6 +60,32 @@ def main(jar_path, folder):
     assert max(opens) > approved_ink("held-right") + 3000, "Authorized tablet opening lost Cupid"
     for name in ("tablet-inventory", "held-turn", "held-left", "held-pause", *(f"return-{i}" for i in range(5))):
         image(name)
+    creative_icon = tuple(p + (40 if i % 2 == 0 else 0) for i, p in enumerate(icon))
+    creative_dark = (ink("creative-held-dark", creative_icon), ink("creative-held-dark", hand))
+    for name in ("creative-held-squint", "creative-held-shut", "creative-held-glance"):
+        assert ink(name, creative_icon) > creative_dark[0] + 45 and ink(name, hand) > creative_dark[1] + 500, name
+    assert len({image("creative-held-" + face).crop(creative_icon).tobytes()
+                for face in ("squint", "shut", "glance", "dark")}) == 4
+    assert ink("creative-hotbar-squint", creative_icon) > creative_dark[0] + 45
+    assert ink("creative-returned", hand) < creative_dark[1] + 400
+    assert max(approved_ink("creative-lift-" + str(i)) for i in range(5)) > approved_ink("held-right") + 3000
+    # Compare rose-silver shades actually painted on the Creative hardware, across every pose.
+    with ZipFile(jar_path) as jar:
+        with Image.open(BytesIO(jar.read("assets/anyastorage/textures/gui/creative_tablet_device.png"))) as shell:
+            rose = {(r, g, b) for _, (r, g, b, a) in shell.convert("RGBA").getcolors(shell.width * shell.height)
+                    if a == 255 and r - g > 25 and b - g > 12 and r > b + 6}
+    def rose_pixels(name):
+        return sum(n for n, rgb in image(name).getcolors(960 * 640) if rgb in rose)
+    for name, plain in [("creative-held-dark", "held-dark"), ("creative-inventory", "tablet-inventory"),
+                        ("creative-returned", "held-returned"),
+                        *((f"creative-lift-{i}", f"lift-{i}") for i in range(5)),
+                        *((f"creative-return-{i}", f"return-{i}") for i in range(5))]:
+        assert rose_pixels(name) > rose_pixels(plain) + 250, "Lost the pink-silver shell in " + name
+    # Native GUI item lighting changes its palette. The two item rims share geometry.
+    def pink_icon(name, slot):
+        colors = image(name).crop((302 + 40 * slot, 600, 338 + 40 * slot, 638)).getcolors(36 * 38)
+        return sum(n for n, (r, g, b) in colors if r - g > 19 and b - g > 8 and r > b + 4)
+    assert pink_icon("creative-held-dark", 2) > pink_icon("held-dark", 1) + 5, "Missing Creative hotbar outline"
     # With the pointer left over the same slot, the setting removes the real vanilla/custom
     # tooltip from the storage grid. Exclude the toggle itself, hotbar, and exterior scene.
     crop = (135, 136, 650, 295)

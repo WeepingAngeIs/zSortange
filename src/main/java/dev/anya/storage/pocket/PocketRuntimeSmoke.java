@@ -69,7 +69,9 @@ public final class PocketRuntimeSmoke {
         StorageEntity hub=(StorageEntity)h.getLevel().getBlockEntity(hp);hub.owner=owner.getUUID();
         var entrance=(PocketContent.EntranceEntity)h.getLevel().getBlockEntity(ep);entrance.owner=owner.getUUID();
         owner.setPos(ep.getX()+.5,ep.getY(),ep.getZ()+2.5);visitor.setPos(ep.getX()+1.5,ep.getY(),ep.getZ()+2.5);
-        ItemStack remote=new ItemStack(Content.REMOTE.get());var data=BagInventory.data(remote);data.putString("HubDimension",h.getLevel().dimension().location().toString());data.putLong("HubPos",hp.asLong());BagInventory.data(remote,data);owner.getInventory().setItem(0,remote);
+        ItemStack legacy=new ItemStack(Content.REMOTE.get());var data=BagInventory.data(legacy);data.putString("HubDimension",h.getLevel().dimension().location().toString());data.putLong("HubPos",hp.asLong());BagInventory.data(legacy,data);owner.getInventory().setItem(0,legacy);
+        ItemStack remote=StorageItem.tabletInHand(owner,net.minecraft.world.InteractionHand.MAIN_HAND);
+        check(h,remote.is(Content.CUPID_TABLET.get())&&BagInventory.data(remote).equals(data),"Saved Remote migrated in place with the original hub binding");
         ItemStack named=new ItemStack(Items.DIAMOND,17);named.set(DataComponents.CUSTOM_NAME,Component.literal("Conserved pocket diamonds"));owner.getInventory().setItem(5,named.copy());
         PocketService.testPlayer(owner);PocketService.testPlayer(visitor);PocketService.link(owner,entrance,remote);check(h,entrance.pocket!=null,"Persistent entrance linked");
         UUID id=entrance.pocket;var r=PocketService.ledger(server).get(id);hub.setMember(visitor.getUUID(),BasePermissions.VIEW);

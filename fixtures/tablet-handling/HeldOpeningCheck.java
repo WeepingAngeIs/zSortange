@@ -81,7 +81,7 @@ public final class HeldOpeningCheck {
         long lastPaint = start + elapsed;
         float shown = lift.progress(lastPaint);
         check(shown > 0 && shown < 1, "Sample must be an actual partial raise");
-        var portrait = id == 1 ? TabletDevice.physicalFace(TabletIdle.Face.GLANCE) : null;
+        var portrait = id == 1 ? TabletDevice.physicalFace(TabletIdle.Face.GLANCE, false) : null;
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, shown, WIDTH, HEIGHT, owner,
                 owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint, portrait));
         int actions = PacketDistributor.sent.size();
@@ -149,7 +149,7 @@ public final class HeldOpeningCheck {
         var owner = new LocalPlayer();
         var hand = InteractionHand.OFF_HAND;
         var grip = new TabletDevice.Grip(false, .1f, .02f, 0xb000d0);
-        var face = TabletDevice.physicalFace(TabletIdle.Face.GLANCE);
+        var face = TabletDevice.physicalFace(TabletIdle.Face.GLANCE, false);
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, .23f, WIDTH, HEIGHT, owner, owner.getItemInHand(hand),
                 hand, owner.getInventory().selected, 40_000, face));
         var screen = open(40, owner);
@@ -191,18 +191,30 @@ public final class HeldOpeningCheck {
     private static void allPortraits() {
         var client = Minecraft.getInstance();
         for (var face : TabletIdle.Face.values()) {
-            var nativeFace = TabletDevice.physicalFace(face);
+            var nativeFace = TabletDevice.physicalFace(face, false);
             check(nativeFace.image().getPath().equals("item/cupid_tablet_face_" + face.sprite)
                     && TabletDevice.faceOf(nativeFace) == face, "The wrong baked close-up was selected");
         }
         client.missingItemFace = true;
         try {
             var graphics = new GuiGraphics();
-            TabletDevice.draw(graphics, new TabletDevice.Bounds(0, 0, 1), TabletDevice.physicalFace(TabletIdle.Face.SHUT));
+            TabletDevice.draw(graphics, new TabletDevice.Bounds(0, 0, 1), TabletDevice.physicalFace(TabletIdle.Face.SHUT, false), false, false);
             check(graphics.row == 2 && graphics.atlasDraws == 0, "Missing baked sprite must retain the closed eyes");
         } finally {
             client.missingItemFace = false;
         }
+        var creative = new StoreMenu(53);
+        creative.creativeTablet = true;
+        var player = new LocalPlayer();
+        var creativeScreen = open(creative, player);
+        var opening = paint(creativeScreen, 55_000);
+        check(opening.pinkShell && opening.row == 0, "Creative opening lost its pink shell without a held pose");
+        check(paint(creativeScreen, 56_050).pinkShell, "Settled Creative grid must keep the pink shell");
+        var miss = new StoreMenu(54);
+        miss.creativeTablet = true;
+        miss.openingHit = false;
+        var quiet = paint(open(miss, player), 57_000);
+        check(quiet.pinkShell && quiet.row < 0 && quiet.events.contains("inventory"), "Creative chance miss must keep its shell and immediately expose slots");
         var owner = new LocalPlayer();
         var fallback = open(20, owner);
         check(paint(fallback, 60_000).row == 0 && paint(fallback, 60_310).row == 2, "Twin Tails without Cloud art");
@@ -260,7 +272,7 @@ public final class HeldOpeningCheck {
         var heldGrip = new TabletDevice.Grip(true, 0, 0, 0xb000d0);
         var hand = InteractionHand.MAIN_HAND;
         TabletDevice.rememberHeld(new TabletDevice.Held(heldGrip, .42f, WIDTH, HEIGHT, owner,
-                owner.getItemInHand(hand), hand, owner.getInventory().selected, 81_990, TabletDevice.physicalFace(TabletIdle.Face.GLANCE)));
+                owner.getItemInHand(hand), hand, owner.getInventory().selected, 81_990, TabletDevice.physicalFace(TabletIdle.Face.GLANCE, false)));
         var screen = open(missed, owner);
         var pending = paint(screen, 82_000);
         check(pending.events.contains("inventory") && pending.row < 0 && pending.expressionColumn < 0,

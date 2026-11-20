@@ -1,6 +1,6 @@
 package dev.anya.storage.ui;
 
-import dev.anya.storage.Content;
+import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomModelData;
@@ -47,7 +47,7 @@ public enum ControlGlyph {
     }
 
     public static Face read(ItemStack display) {
-        if (!display.is(Content.REMOTE.get())) return null;
+        if (!display.is(Items.PAPER)) return null;
         CustomModelData model = display.get(DataComponents.CUSTOM_MODEL_DATA);
         if (model == null) return null;
         int index = model.value() - FIRST_MODEL;

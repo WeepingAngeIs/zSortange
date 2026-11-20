@@ -1,5 +1,6 @@
 package dev.anya.storage.appearance;
 
+import dev.anya.storage.StorageItem;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -15,32 +16,38 @@ public final class TabletBootScreen {
     private long started = Long.MIN_VALUE;
     private int initialWidth, initialHeight;
 
-    private void prepare(int width, int height, Player player, long now) {
+    private void prepare(int width, int height, Player player, long now, boolean creative) {
         if (started == Long.MIN_VALUE) {
             started = now;
             initialWidth = width;
             initialHeight = height;
             if (origin != null) {
-                origin = player instanceof LocalPlayer local && origin.width() == width && origin.height() == height
+                origin = player instanceof LocalPlayer local && StorageItem.isCreativeTablet(origin.stack()) == creative && origin.width() == width && origin.height() == height
                         && now >= origin.time() && now - origin.time() <= 400 ? origin.afterMenuSync(local) : null;
             }
         }
         if (width != initialWidth || height != initialHeight) origin = null;
     }
     public void draw(GuiGraphics graphics, int width, int height, GuardianBlink blink, Player player, long now) {
-        prepare(width, height, player, now);
+        draw(graphics, width, height, blink, player, now, false);
+    }
+    public void draw(GuiGraphics graphics, int width, int height, GuardianBlink blink, Player player, long now, boolean creative) {
+        prepare(width, height, player, now, creative);
         float elapsed = Math.clamp((now - started) / (float) TabletLift.RISE_MS, 0f, 1f);
         float dim = origin == null ? 1f : TabletHandlingPose.eased(elapsed);
         graphics.fill(0, 0, width, height, -900, (Math.round(153 * dim) << 24) | 0x000c1017);
         float progress = origin == null ? 1f : Math.min(1f, origin.progress() + elapsed);
         boolean carrying = progress < 1;
         TabletDevice.Portrait portrait = carrying ? origin.portrait() : TabletDevice.opening(blink);
-        drawDevice(graphics, width, height, player, portrait, progress, carrying);
+        drawDevice(graphics, width, height, player, portrait, progress, carrying, creative);
     }
 
     public void drawSettled(GuiGraphics graphics, int width, int height, Player player) {
-        prepare(width, height, player, net.minecraft.Util.getMillis());
-        drawDevice(graphics, width, height, player, null, 1f, false);
+        drawSettled(graphics, width, height, player, false);
+    }
+    public void drawSettled(GuiGraphics graphics, int width, int height, Player player, boolean creative) {
+        prepare(width, height, player, net.minecraft.Util.getMillis(), creative);
+        drawDevice(graphics, width, height, player, null, 1f, false, creative);
     }
     /** Only an explicit close of this player's tablet hands its last painted hardware back to the HUD. */
     public void returnToHand(Player player, int width, int height) {
@@ -51,16 +58,16 @@ public final class TabletBootScreen {
         origin = null;
     }
     private void drawDevice(GuiGraphics graphics, int width, int height, Player player,
-                            TabletDevice.Portrait portrait, float progress, boolean carrying) {
+                            TabletDevice.Portrait portrait, float progress, boolean carrying, boolean creative) {
         if (origin == null || !(player instanceof LocalPlayer local)) {
-            TabletDevice.draw(graphics, TabletDevice.openBounds(width, height), portrait);
+            TabletDevice.draw(graphics, TabletDevice.openBounds(width, height), portrait, false, creative);
             return;
         }
         var mc = Minecraft.getInstance();
         if (!origin.stillHeld(local) || mc.getCameraEntity() != local || !mc.options.getCameraType().isFirstPerson()
                 || local.isSpectator() || !local.isAlive() || local.isScoping() || mc.options.hideGui) armDetached = true;
         TabletDevice.drawHandling(graphics, width, height, armDetached ? null : local,
-                origin.grip(), progress, portrait, carrying);
+                origin.grip(), progress, portrait, carrying, creative);
         paintedProgress = progress;
         // Once slots cover the glass, uncover the original held face when the menu is dismissed.
         paintedFace = portrait != null ? portrait : origin.portrait();

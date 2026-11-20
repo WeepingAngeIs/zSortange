@@ -35,12 +35,13 @@ public final class Safety {
             message="OPAC API detected; each transfer checks the acting player's access";
         }catch(ReflectiveOperationException e){failed=true;message="OPAC API mismatch: remote storage blocked";AnyaStorage.LOG.error(message,e);}
     }
-    public static String reason(ServerPlayer player,BlockEntity entity,StorageEntity hub){return reason(player,entity,hub,true);}
-    private static String reason(ServerPlayer p,BlockEntity be,StorageEntity hub,boolean checkPartner){
+    public static String reason(ServerPlayer player,BlockEntity entity,StorageEntity hub){return reason(player,player.serverLevel(),entity,hub,true);}
+    static String inHubLevel(ServerPlayer p,ServerLevel level,BlockEntity be,StorageEntity hub){return reason(p,level,be,hub,true);}
+    private static String reason(ServerPlayer p,ServerLevel level,BlockEntity be,StorageEntity hub,boolean checkPartner){
         if(p.isSpectator()||!p.isAlive())return "Player cannot interact";
-        if(be==null||be.isRemoved()||be.getLevel()!=p.level())return "Container missing or wrong dimension";
-        ServerLevel level=p.serverLevel();BlockPos pos=be.getBlockPos();
-        if(!level.hasChunkAt(pos))return "Chunk unloaded";
+        if(be==null||be.isRemoved()||be.getLevel()!=level)return "Container missing or wrong dimension";
+        BlockPos pos=be.getBlockPos();
+        if(!level.hasChunkAt(pos)||level.getBlockEntity(pos)!=be)return "Chunk unloaded or container replaced";
         if(!level.getWorldBorder().isWithinBounds(pos))return "Outside world border";
         if(p.getServer().isUnderSpawnProtection(level,pos,p))return "Spawn protection";
         if(be instanceof StorageEntity storage&&!storage.allowed(p)&&!(hub!=null&&hub.allowed(p)&&Objects.equals(storage.owner,hub.owner)))return "Storage owner has not trusted you";
@@ -51,7 +52,7 @@ public final class Safety {
             if(!level.hasChunkAt(partner))return "Other half of double chest is unloaded";
             BlockEntity other=level.getBlockEntity(partner);
             if(!(other instanceof ChestBlockEntity))return "Other half of double chest is missing";
-            String denial=reason(p,other,hub,false);if(!denial.isEmpty())return "Other half: "+denial;
+            String denial=reason(p,level,other,hub,false);if(!denial.isEmpty())return "Other half: "+denial;
         }
         return locationReason(p,level,pos);
     }

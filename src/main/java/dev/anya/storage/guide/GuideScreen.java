@@ -67,7 +67,7 @@ public final class GuideScreen extends Screen {
             case "item:minecraft:cherry_planks"->ControlGlyph.BUILD;
             case "item:minecraft:lodestone","item:anyastorage:home_void_cube"->ControlGlyph.VISIT;
             case "item:anyastorage:hub"->ControlGlyph.BASE;
-            case "item:anyastorage:remote"->ControlGlyph.TERMINALS;
+            case "item:anyastorage:cupid_tablet","item:anyastorage:creative_tablet"->ControlGlyph.TERMINALS;
             case "item:anyastorage:chest"->ControlGlyph.CONTAINER;
             default->switch(entry.chapter()){
                 case "Elements"->ControlGlyph.ELEMENTAL;case "Progression"->ControlGlyph.PROGRESSION;

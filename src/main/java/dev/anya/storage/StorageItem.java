@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.*;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
@@ -15,8 +16,32 @@ import java.util.List;
 public final class StorageItem extends Item {
     public final String kind;
     public StorageItem(String kind,Properties properties){super(properties);this.kind=kind;}
-    public static boolean isTerminal(ItemStack stack) {
-        return stack.is(Content.REMOTE.get()) || stack.is(Content.CUPID_TABLET.get());
+    public static boolean isTablet(ItemStack stack) {
+        return stack.is(Content.CUPID_TABLET.get()) || isCreativeTablet(stack);
+    }
+    public static boolean isCreativeTablet(ItemStack stack) { return stack.is(Content.CREATIVE_TABLET.get()); }
+    public static boolean isTerminal(ItemStack stack) { return isTablet(stack) || stack.is(Content.REMOTE.get()); }
+    public static boolean permittedTablet(ServerPlayer player,ItemStack stack) {
+        return isTerminal(stack) && (!isCreativeTablet(stack) || player.gameMode.getGameModeForPlayer()==net.minecraft.world.level.GameType.CREATIVE);
+    }
+    public static ItemStack tabletInHand(ServerPlayer player,InteractionHand hand) {
+        ItemStack current=player.getItemInHand(hand);
+        if (!current.is(Content.REMOTE.get())) return current;
+        ItemStack tablet=current.transmuteCopy(Content.CUPID_TABLET.get());
+        player.setItemInHand(hand,tablet);
+        player.getInventory().setChanged();
+        return tablet;
+    }
+    @Override public void inventoryTick(ItemStack stack,Level level,Entity entity,int slot,boolean selected) {
+        if (!stack.is(Content.REMOTE.get()) || !(entity instanceof ServerPlayer player)) return;
+        var inventory=player.getInventory();
+        if (slot<0 || slot>=inventory.getContainerSize() || inventory.getItem(slot)!=stack) {
+            // Some tick callers pass a compartment-relative index, notably zero for the offhand.
+            for(slot=0;slot<inventory.getContainerSize();slot++)if(inventory.getItem(slot)==stack)break;
+            if(slot==inventory.getContainerSize())return;
+        }
+        inventory.setItem(slot,stack.transmuteCopy(Content.CUPID_TABLET.get()));
+        inventory.setChanged();
     }
     @Override public boolean canFitInsideContainerItems(){return !kind.equals("backpack");}
     @Override public InteractionResult onItemUseFirst(ItemStack stack, UseOnContext context){
@@ -30,9 +55,18 @@ public final class StorageItem extends Item {
         if(!level.isClientSide&&player instanceof ServerPlayer p){
             if(kind.equals("backpack")){int slot=hand==InteractionHand.MAIN_HAND?p.getInventory().selected:40;StoreMenu.bag(p,new BagInventory(p,slot),player.isShiftKeyDown());}
             else {
+                stack=tabletInHand(p,hand);
+                if (!permittedTablet(p,stack)) {
+                    p.displayClientMessage(Component.literal("The Creative Tablet requires Creative mode."),true);
+                    return InteractionResultHolder.fail(stack);
+                }
+                if (isCreativeTablet(stack)) {
+                    CreativeTabletAccess.open(p,hand);
+                    return InteractionResultHolder.consume(stack);
+                }
                 StorageEntity hub=bound(p,stack);
                 if(hub!=null){
-                    if(!PocketService.remote(p,stack,hub)) StoreMenu.remote(p,hub,stack.is(Content.CUPID_TABLET.get()));
+                    if(!PocketService.remote(p,stack,hub)) StoreMenu.remote(p,hub,true);
                 }else if(BagInventory.data(stack).contains("HubPos")){
                     AnyaStorage.tell(p,"Bound hub unavailable. Check its dimension, range and your access.");
                 }else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this item. Use it within that hub's radius.");
@@ -45,24 +79,39 @@ public final class StorageItem extends Item {
         if(!isTerminal(context.getItemInHand())||player==null||!player.isShiftKeyDown())return InteractionResult.PASS;
         if(context.getLevel().isClientSide)return InteractionResult.SUCCESS;
         if(!(player instanceof ServerPlayer p))return InteractionResult.PASS;
+        ItemStack tablet=tabletInHand(p,context.getHand());
+        if (!permittedTablet(p,tablet)) {
+            p.displayClientMessage(Component.literal("The Creative Tablet requires Creative mode."),true);
+            return InteractionResult.FAIL;
+        }
         var be=context.getLevel().getBlockEntity(context.getClickedPos());
-        if(be instanceof dev.anya.storage.pocket.PocketContent.EntranceEntity entrance){PocketService.link(p,entrance,context.getItemInHand());return InteractionResult.CONSUME;}
+        if(be instanceof dev.anya.storage.pocket.PocketContent.EntranceEntity entrance){PocketService.link(p,entrance,tablet);return InteractionResult.CONSUME;}
         if(be instanceof StorageEntity hub&&hub.kind().equals("hub")){
-            String reason=Safety.reason(p,hub,null);if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return InteractionResult.FAIL;}
-            CompoundTag tag=BagInventory.data(context.getItemInHand());
+            boolean creative=isCreativeTablet(tablet);
+            String reason=creative ? Network.hubReason(p,hub) : Safety.reason(p,hub,null);
+            if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return InteractionResult.FAIL;}
+            if(creative && !p.canInteractWithBlock(hub.getBlockPos(),1))return InteractionResult.FAIL;
+            CompoundTag tag=BagInventory.data(tablet);
             String dimension=p.level().dimension().location().toString();
             long pos=hub.getBlockPos().asLong();
-            if(!tag.hasUUID("PocketId") && tag.contains("HubPos") && tag.getLong("HubPos")==pos && dimension.equals(tag.getString("HubDimension")))return InteractionResult.CONSUME;
-            tag.putString("HubDimension",dimension);tag.putLong("HubPos",pos);tag.remove("PocketId");BagInventory.data(context.getItemInHand(),tag);
-            AnyaStorage.tell(p,"Bound to "+hub.baseName+". Hub radius is "+hub.radius()+" blocks.");return InteractionResult.CONSUME;
+            boolean same=!tag.hasUUID("PocketId") && tag.contains("HubPos") && tag.getLong("HubPos")==pos && dimension.equals(tag.getString("HubDimension"));
+            if (!same) {
+                tag.putString("HubDimension",dimension);tag.putLong("HubPos",pos);tag.remove("PocketId");BagInventory.data(tablet,tag);
+            }
+            if (creative) CreativeTabletAccess.bind(p,tablet,hub);
+            if (same) return InteractionResult.CONSUME;
+            AnyaStorage.tell(p,creative ? "Creative Tablet bound to "+hub.baseName+"."
+                    : "Bound to "+hub.baseName+". Hub radius is "+hub.radius()+" blocks.");
+            return InteractionResult.CONSUME;
         }
-        StorageEntity hub=bound(p,context.getItemInHand());
+        StorageEntity hub=bound(p,tablet);
         if(hub!=null&&hub.ownedBy(p)&&Network.supported(be)&&Network.within(hub.getBlockPos(),context.getClickedPos(),hub.radius())&&Safety.reason(p,be,hub).isEmpty()){
             StoreMenu.route(p,hub,context.getClickedPos());return InteractionResult.CONSUME;
         }
         AnyaStorage.tell(p,"Bind to your hub first, then sneak-use on a supported chest inside its range to edit routing.");return InteractionResult.CONSUME;
     }
     public static StorageEntity bound(ServerPlayer p,ItemStack stack){
+        if (!permittedTablet(p,stack)) return null;
         CompoundTag tag=BagInventory.data(stack);
         if(!tag.contains("HubPos")||!tag.getString("HubDimension").equals(p.level().dimension().location().toString()))return null;
         BlockPos pos=BlockPos.of(tag.getLong("HubPos"));if(!p.serverLevel().hasChunkAt(pos))return null;
@@ -82,7 +131,9 @@ public final class StorageItem extends Item {
             if(stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME))lines.add(getName(stack));
             lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use in air: upgrades"));lines.add(Component.literal("Sneak-use on the ground to place. Apply upgrades by hand; sneak-use empty-handed to pick up."));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Accessories back slot supported when installed. Wardrobe remains available."));}
         else {
-            lines.add(Component.literal("Sneak-use on a hub to bind. Use in air to open storage."));
+            if(stack.is(Content.REMOTE.get()))lines.add(Component.literal("Becomes a Cupid Tablet when carried. Your existing binding carries over."));
+            lines.add(Component.literal(isCreativeTablet(stack) ? "Creative mode only. Bind at a hub, then open your linked storage from any distance."
+                    : "Sneak-use on a hub to bind. Use in air within its radius to open storage."));
             lines.add(Component.literal("Sneak-use on a Home Void Cube to link pocket storage."));
             lines.add(Component.literal("Right-click a linked cube to visit with permission."));
             lines.add(Component.literal("Owners can sneak-use on a chest to edit its routing."));

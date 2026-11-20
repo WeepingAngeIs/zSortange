@@ -83,11 +83,15 @@ public final class PocketEvents {
             else if(e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND&&e.getItemStack().is(Content.CRATE.get().asItem()))ChestPadGuide.show(p);
         }else if(be instanceof PocketContent.EntranceEntity entrance){
             e.setCanceled(true);e.setCancellationResult(InteractionResult.SUCCESS);
-            if(p.isShiftKeyDown()&&StorageItem.isTerminal(e.getItemStack()))PocketService.link(p,entrance,e.getItemStack());else PocketService.enter(p,entrance);
+            if(p.isShiftKeyDown()&&StorageItem.isTerminal(e.getItemStack())){
+                var tablet=StorageItem.tabletInHand(p,e.getHand());
+                if(StorageItem.permittedTablet(p,tablet)) PocketService.link(p,entrance,tablet);
+                else p.displayClientMessage(net.minecraft.network.chat.Component.literal("The Creative Tablet requires Creative mode."),true);
+            }else PocketService.enter(p,entrance);
         }
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void useItem(PlayerInteractEvent.RightClickItem e){
-        if(PocketService.inPocket(e.getLevel())&&!e.getItemStack().is(Content.BACKPACK.get())&&!e.getItemStack().is(Content.GUIDE.get())){e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);}
+        if(PocketService.inPocket(e.getLevel())&&!StorageItem.isCreativeTablet(e.getItemStack())&&!e.getItemStack().is(Content.BACKPACK.get())&&!e.getItemStack().is(Content.GUIDE.get())){e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);}
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void entityUse(PlayerInteractEvent.EntityInteract e){if(PocketService.inPocket(e.getLevel()))e.setCanceled(true);}
     private static PocketContent.EntranceEntity lookingAt(ServerPlayer p){

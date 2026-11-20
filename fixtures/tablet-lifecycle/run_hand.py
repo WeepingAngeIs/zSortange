@@ -27,7 +27,10 @@ HOST = {
         public static float clamp(float v,float a,float b){return Math.max(a,Math.min(b,v));}
     }""",
     "net.minecraft.world.item.Item": "public class Item {}",
-    "dev.anya.storage.StorageItem": "public class StorageItem extends net.minecraft.world.item.Item {}",
+    "dev.anya.storage.StorageItem": """public class StorageItem extends net.minecraft.world.item.Item {
+        public static boolean isCreativeTablet(net.minecraft.world.item.ItemStack stack){return stack.is(Content.CREATIVE_TABLET.get());}
+        public static boolean isTablet(net.minecraft.world.item.ItemStack stack){return stack.is(Content.CUPID_TABLET.get()) || isCreativeTablet(stack);}
+    }""",
     "net.minecraft.world.item.ItemStack": """public class ItemStack {
         public static final ItemStack EMPTY=new ItemStack(null); public final Item item; public ItemStack(Item item){this.item=item;}
         public boolean is(Item candidate){return item==candidate;}
@@ -38,6 +41,8 @@ HOST = {
     }""",
     "dev.anya.storage.Content": """public class Content {
         public static final net.neoforged.neoforge.registries.DeferredItem<StorageItem> REMOTE =
+            new net.neoforged.neoforge.registries.DeferredItem<>(new StorageItem());
+        public static final net.neoforged.neoforge.registries.DeferredItem<StorageItem> CREATIVE_TABLET =
             new net.neoforged.neoforge.registries.DeferredItem<>(new StorageItem());
         public static final net.neoforged.neoforge.registries.DeferredItem<StorageItem> CUPID_TABLET =
             new net.neoforged.neoforge.registries.DeferredItem<>(new StorageItem());
@@ -146,12 +151,12 @@ HOST = {
         public static Held takeClosing() { var frame = closing; closing = null; return frame; }
         public static Held peekHeld() { return saved; }
         public static void rememberHeld(Held held) { saved = held; }
-        public static Portrait physicalFace(TabletIdle.Face face) { return new Portrait(-1, face.ordinal()); }
+        public static Portrait physicalFace(TabletIdle.Face face, boolean creative) { return new Portrait(creative ? -2 : -1, face.ordinal()); }
         public static TabletIdle.Face faceOf(Portrait face) {
             return face == null ? TabletIdle.Face.DARK : TabletIdle.Face.values()[face.column()];
         }
         public static void drawHandling(net.minecraft.client.gui.GuiGraphics graphics, int width, int height,
-                net.minecraft.client.player.LocalPlayer player, Grip grip, float value, Portrait portrait, boolean atlas) {
+                net.minecraft.client.player.LocalPlayer player, Grip grip, float value, Portrait portrait, boolean atlas, boolean creative) {
             draws++;
             if (portrait != null) peeks++;
             painted = grip;

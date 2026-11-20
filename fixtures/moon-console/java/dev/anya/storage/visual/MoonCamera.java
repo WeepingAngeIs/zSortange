@@ -32,6 +32,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Difficulty;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
@@ -42,6 +43,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.WorldOptions;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
@@ -56,8 +58,8 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid = "anyamoonreview", value = Dist.CLIENT)
 public final class MoonCamera {
     private enum Step { TITLE, JOIN, PLACED, GROUND_MODEL, GLOBE_MODEL, CLOSED, OPEN, SHUT, TABLET, EQUIP, AWAY, RESELECT, RIGHT, LEFT, TURN, PAUSE,
-        RESUME, USE_TABLET, INTRO, GRID, TOOLTIP_ON, TOOLTIP_OFF, RETURN, FINISH, DONE }
-    private static final int TABLET_SLOT = 1;
+        RESUME, USE_TABLET, INTRO, GRID, TOOLTIP_ON, TOOLTIP_OFF, RETURN, CREATIVE_ITEM, CREATIVE_EQUIP, CREATIVE_USE, CREATIVE_INTRO, CREATIVE_GRID, CREATIVE_RETURN, RESTORE, FINISH, DONE }
+    private static final int TABLET_SLOT = 1, CREATIVE_SLOT = 2;
     private static final ResourceLocation FACE = ResourceLocation.fromNamespaceAndPath("anyastorage", "cupid_face");
     private static final BlockPos CUBE = new BlockPos(0, 80, 0);
     private static final BlockPos HUB = CUBE.west(2);
@@ -154,7 +156,9 @@ public final class MoonCamera {
 
     @SubscribeEvent public static void frame(RenderFrameEvent.Post event) {
         var mc = Minecraft.getInstance();
-        if (step == Step.EQUIP && mc.player != null && mc.player.getInventory().selected == TABLET_SLOT) {
+        boolean creativeEquip = step == Step.CREATIVE_EQUIP;
+        if ((step == Step.EQUIP || creativeEquip) && mc.player != null
+                && mc.player.getInventory().selected == (creativeEquip ? CREATIVE_SLOT : TABLET_SLOT)) {
             var stack = mc.player.getMainHandItem();
             var property = ItemProperties.getProperty(stack, FACE);
             require(property != null, "Missing Cupid item override");
@@ -166,17 +170,19 @@ public final class MoonCamera {
                 case 0 -> "held-dark";
                 default -> throw new IllegalStateException("Unexpected tablet state " + value);
             };
+            if (creativeEquip) name = "creative-" + name;
             // Wait until vanilla's equip animation actually hands off to the physical model.
             if (!shots.contains(name) && (value != 1 || portraitVisible(mc))) shot(mc, name);
         }
-        boolean opening = step == Step.INTRO && mc.screen instanceof Client.Screen;
-        boolean closing = step == Step.RETURN && mc.screen == null;
+        boolean opening = (step == Step.INTRO || step == Step.CREATIVE_INTRO) && mc.screen instanceof Client.Screen;
+        boolean closing = (step == Step.RETURN || step == Step.CREATIVE_RETURN) && mc.screen == null;
         if ((!opening && !closing) || sequence >= SAMPLE_TIMES.length) return;
         long now = Util.getMillis();
         if (firstFrame < 0) firstFrame = now;
         long elapsed = now - firstFrame;
         if (elapsed < SAMPLE_TIMES[sequence]) return;
         String name = (opening ? "lift-" : "return-") + sequence++;
+        if (step == Step.CREATIVE_INTRO || step == Step.CREATIVE_RETURN) name = "creative-" + name;
         shot(mc, name);
         frameTimes.add(name + " at " + elapsed + " ms");
     }
@@ -360,6 +366,66 @@ public final class MoonCamera {
             case RETURN -> {
                 if (ticks < 15 || sequence < SAMPLE_TIMES.length) return;
                 shot(mc,"held-returned");
+                server(mc, p -> {
+                    p.getInventory().setItem(CREATIVE_SLOT, new ItemStack(Content.CREATIVE_TABLET.get()));
+                    p.inventoryMenu.broadcastChanges();
+                });
+                enter(Step.CREATIVE_ITEM);
+            }
+            case CREATIVE_ITEM -> {
+                var tablet = mc.player.getInventory().getItem(CREATIVE_SLOT);
+                if (!tablet.is(Content.CREATIVE_TABLET.get()) || ticks < 8) return;
+                var property = ItemProperties.getProperty(tablet, FACE);
+                require(property != null && property.call(tablet, mc.level, mc.player, 0) == .25f,
+                        "Expected a Creative Tablet squint in its own unselected slot");
+                shot(mc, "creative-hotbar-squint");
+                mc.player.getInventory().selected = CREATIVE_SLOT;
+                enter(Step.CREATIVE_EQUIP);
+            }
+            case CREATIVE_EQUIP -> {
+                if (ticks < 20 || !shots.contains("creative-held-dark")) return;
+                require(shots.containsAll(List.of("creative-held-squint", "creative-held-shut", "creative-held-glance")),
+                        "Incomplete Creative Tablet equip visit");
+                server(mc, p -> {
+                    require(p.getMainHandItem().is(Content.CREATIVE_TABLET.get()), "Creative Tablet selection sync");
+                    p.setShiftKeyDown(true);
+                    try {
+                        var hit = new BlockHitResult(Vec3.atCenterOf(HUB).relative(Direction.NORTH, .5), Direction.NORTH, HUB, false);
+                        p.gameMode.useItemOn(p, p.serverLevel(), p.getMainHandItem(), InteractionHand.MAIN_HAND, hit);
+                    } finally {
+                        p.setShiftKeyDown(false);
+                    }
+                    require(BagInventory.data(p.getMainHandItem()).contains("HubPos"), "Ordinary crouch-bind did not link the Creative Tablet");
+                });
+                enter(Step.CREATIVE_USE);
+            }
+            case CREATIVE_USE -> {
+                if (ticks < 8) return;
+                mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                enter(Step.CREATIVE_INTRO);
+            }
+            case CREATIVE_INTRO -> {
+                if (!(mc.screen instanceof Client.Screen) || !(mc.player.containerMenu instanceof StoreMenu menu)
+                        || sequence < SAMPLE_TIMES.length || ticks < 30) return;
+                require(menu.creativeTabletOpening() && menu.showsTabletIntro(), "Expected a Creative Tablet opening and blink");
+                require(!menu.tooltipsEnabled(), "Personal tooltip preference lost on Creative Tablet");
+                enter(Step.CREATIVE_GRID);
+            }
+            case CREATIVE_GRID -> {
+                if (ticks < 10) return;
+                shot(mc, "creative-inventory");
+                mc.screen.keyPressed(GLFW.GLFW_KEY_ESCAPE, 0, 0);
+                require(mc.screen == null, "Creative Tablet Escape");
+                enter(Step.CREATIVE_RETURN);
+            }
+            case CREATIVE_RETURN -> {
+                if (ticks < 15 || sequence < SAMPLE_TIMES.length) return;
+                shot(mc, "creative-returned");
+                mc.player.getInventory().selected = TABLET_SLOT;
+                enter(Step.RESTORE);
+            }
+            case RESTORE -> {
+                if (ticks < 8 || !mc.player.getMainHandItem().is(Content.CUPID_TABLET.get())) return;
                 enter(Step.FINISH);
             }
             case FINISH -> {

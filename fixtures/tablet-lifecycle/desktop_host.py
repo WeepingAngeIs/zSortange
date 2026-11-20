@@ -5,6 +5,9 @@ inside the fixture's temporary JVM class path. No package is installed or delive
 """
 
 HOST = {
+    "dev.anya.storage.StorageItem": """public class StorageItem {
+        public static boolean isCreativeTablet(net.minecraft.world.item.ItemStack stack){return false;}
+    }""",
     "net.minecraft.client.Minecraft": """
         public class Minecraft {
             public net.minecraft.client.player.LocalPlayer player;
@@ -110,6 +113,8 @@ HOST = {
             public boolean openingRule = true, openingHit = true, remote = true;
             public boolean cameo, privateStorage;
             public boolean backpack = true;
+            public boolean creativeTablet;
+            public boolean creativeTabletOpening() { return creativeTablet; }
             public boolean tooltipsEnabled() { return true; }
             public boolean hasTabletOpeningRule() { return openingRule; }
             public boolean showsTabletIntro() { return openingHit; }
@@ -153,7 +158,7 @@ HOST = {
     "net.minecraft.client.gui.GuiGraphics": """
         public class GuiGraphics {
             public static class StoragePaint extends RuntimeException {}
-            public int fills, blits, shells, atlasDraws, row = -1;
+            public int fills, blits, shells, atlasDraws, row = -1; public boolean pinkShell;
             public net.minecraft.resources.ResourceLocation atlasSprite;
             public float storageX, storageY, storageScale;
             public float shellX, shellY, shellScale;
@@ -177,6 +182,7 @@ HOST = {
                     int width,int height,int tw,int th) {
                 blits++;
                 if (image.getPath().endsWith("tablet_device.png")) {
+                    pinkShell = image.getPath().endsWith("creative_tablet_device.png");
                     shells++;
                     var matrix = pose.last().pose();
                     shellX = matrix.m30(); shellY = matrix.m31(); shellScale = matrix.m00();

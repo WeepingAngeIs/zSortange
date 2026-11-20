@@ -1,0 +1,29 @@
+{
+  "parent": "anyastorage:item/creative_tablet_shell",
+  "overrides": [
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.25
+      },
+      "model": "anyastorage:item/creative_tablet_squint"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.5
+      },
+      "model": "anyastorage:item/creative_tablet_shut"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.75
+      },
+      "model": "anyastorage:item/creative_tablet_glance"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 1.0
+      },
+      "model": "anyastorage:item/creative_tablet_open"
+    }
+  ]
+}

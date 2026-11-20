@@ -237,7 +237,7 @@ public final class RootChecks {
                     "Survival entrance crafted while pockets off. Actual linked visit and return. Two 216-slot tablet opens, one link confirmation, zero routine Anya messages. Backpack names and retained cargo checked across tier recipes. Nine distinct items in hotbar.\n");
                 next(Step.DONE);
             }
-            case DONE -> {return Files.isRegularFile(mc.gameDirectory.toPath().resolve("screenshots/discs-hotbar.png"));}
+            case DONE -> {return Files.isRegularFile(mc.gameDirectory.toPath().resolve("screenshots/discs-hotbar.png")) && CreativeAnywhereCheck.run(mc);}
         }
         return false;
     }

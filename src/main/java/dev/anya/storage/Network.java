@@ -51,22 +51,60 @@ public final class Network {
             int cx=minX+index.cursor%width,cz=minZ+index.cursor/width;
             index.candidates.removeIf(p->(p.getX()>>4)==cx&&(p.getZ()>>4)==cz);
             LevelChunk chunk=level.getChunkSource().getChunkNow(cx,cz);
-            if(chunk!=null){int examined=0;for(BlockEntity be:chunk.getBlockEntities().values()){
-                if(++examined>config.maxScanEntries){index.truncated=true;break;}
-                if(within(pos,be.getBlockPos(),radius)&&supported(be)&&index.candidates.size()<config.maxContainers)index.candidates.add(be.getBlockPos().immutable());
-                else if(index.candidates.size()>=config.maxContainers)index.truncated=true;
-            }}
+            if(chunk!=null)indexChunk(hub,index,cx,cz,chunk,config);
             if(++index.cursor>=total){index.cursor=0;index.lastSweep=level.getGameTime();index.nextSweep=index.lastSweep+40;break;}
         }
+    }
+    static boolean chunkInRange(StorageEntity hub,net.minecraft.world.level.ChunkPos chunk) {
+        BlockPos pos=hub.getBlockPos();
+        long minX=(long)chunk.x*16,minZ=(long)chunk.z*16;
+        long dx=Math.max(0,Math.max(minX-pos.getX(),pos.getX()-minX-15));
+        long dz=Math.max(0,Math.max(minZ-pos.getZ(),pos.getZ()-minZ-15));
+        if(dx>hub.radius()||dz>hub.radius())return false;
+        return dx*dx+dz*dz<=hub.radius()*hub.radius();
+    }
+    static void observeLoadedBase(StorageEntity hub) {
+        if(!(hub.getLevel() instanceof ServerLevel level))return;
+        BlockPos pos=hub.getBlockPos();int radius=hub.radius();
+        if(hub.knownStorageChunks.removeIf(key->!chunkInRange(hub,new net.minecraft.world.level.ChunkPos(key))))hub.setChanged();
+        var index=INDEX.computeIfAbsent(hub,k->new Index());
+        if(index.radius!=radius){index.candidates.clear();index.radius=radius;index.cursor=0;}
+        for(int cx=(pos.getX()-radius)>>4;cx<=(pos.getX()+radius)>>4;cx++)
+            for(int cz=(pos.getZ()-radius)>>4;cz<=(pos.getZ()+radius)>>4;cz++) {
+                LevelChunk chunk=level.getChunkSource().getChunkNow(cx,cz);
+                if(chunk!=null)indexChunk(hub,index,cx,cz,chunk,Config.get());
+            }
+        index.lastSweep=level.getGameTime();index.nextSweep=index.lastSweep+40;
+    }
+    private static void indexChunk(StorageEntity hub,Index index,int cx,int cz,LevelChunk chunk,Config.Data config) {
+        index.candidates.removeIf(pos->(pos.getX()>>4)==cx && (pos.getZ()>>4)==cz);
+        int examined=0;boolean found=false;
+        for(BlockEntity be:chunk.getBlockEntities().values()){
+            if(++examined>config.maxScanEntries){index.truncated=true;break;}
+            if(!within(hub.getBlockPos(),be.getBlockPos(),hub.radius())||!supported(be))continue;
+            found=true;
+            if(index.candidates.size()<config.maxContainers)index.candidates.add(be.getBlockPos().immutable());
+            else index.truncated=true;
+        }
+        long key=net.minecraft.world.level.ChunkPos.asLong(cx,cz);
+        if(found ? hub.knownStorageChunks.add(key) : examined<=config.maxScanEntries && hub.knownStorageChunks.remove(key))hub.setChanged();
+    }
+    static String hubReason(ServerPlayer p,StorageEntity hub,CreativeTabletAccess.Session session) {
+        if(session==null)return hubReason(p,hub);
+        if(!Config.get().network||!session.matchesHub(p,hub))return "Creative Tablet access ended";
+        String reason=Safety.inHubLevel(p,session.home,hub,null);
+        return !reason.isEmpty()||session.matchesHub(p,hub)?reason:"Creative Tablet access ended";
     }
     public static boolean supported(BlockEntity be){
         if(be instanceof StorageEntity storage)return storage.pocketId==null&&!storage.kind().equals("hub");
         Config.Data c=Config.get();
         return be!=null && ((c.vanillaChests&&(be.getClass()==ChestBlockEntity.class||be.getClass()==TrappedChestBlockEntity.class)) || (c.vanillaBarrels&&be.getClass()==BarrelBlockEntity.class) || (c.vanillaShulkers&&be.getClass()==ShulkerBoxBlockEntity.class));
     }
-    public static List<Target> targets(ServerPlayer p,StorageEntity hub){
+    public static List<Target> targets(ServerPlayer p,StorageEntity hub){return targets(p,hub,null);}
+    static List<Target> targets(ServerPlayer p,StorageEntity hub,CreativeTabletAccess.Session session){
+        ServerLevel targetLevel=session==null?p.serverLevel():session.home;
         List<BlockPos> positions=new ArrayList<>();
-        if(hub!=null){if(!hubReason(p,hub).isEmpty())return List.of();Index index=INDEX.computeIfAbsent(hub,h->new Index());positions.addAll(index.candidates);}
+        if(hub!=null){if(!hubReason(p,hub,session).isEmpty())return List.of();Index index=INDEX.computeIfAbsent(hub,h->new Index());positions.addAll(index.candidates);}
         else {
             BlockPos center=p.blockPosition();int radius=Config.get().quickRadius;
             for(int cx=(center.getX()-radius)>>4;cx<=(center.getX()+radius)>>4;cx++)for(int cz=(center.getZ()-radius)>>4;cz<=(center.getZ()+radius)>>4;cz++){
@@ -77,32 +115,34 @@ public final class Network {
         BlockPos center=hub==null?p.blockPosition():hub.getBlockPos();positions.sort(Comparator.comparingDouble((BlockPos pos)->pos.distSqr(center)).thenComparingLong(BlockPos::asLong));
         List<Target> result=new ArrayList<>();int slots=36;
         for(BlockPos pos:positions){
-            if(result.size()>=Config.get().maxContainers)break;if(!p.serverLevel().hasChunkAt(pos)||!within(center,pos,hub==null?Config.get().quickRadius:hub.radius()))continue;
-            BlockEntity be=p.serverLevel().getBlockEntity(pos);
-            if(!supported(be)||!Safety.reason(p,be,hub).isEmpty())continue;
+            if(result.size()>=Config.get().maxContainers)break;if(!targetLevel.hasChunkAt(pos)||!within(center,pos,hub==null?Config.get().quickRadius:hub.radius()))continue;
+            BlockEntity be=targetLevel.getBlockEntity(pos);
+            if(!supported(be)||!Safety.inHubLevel(p,targetLevel,be,hub).isEmpty())continue;
             Container container=(Container)be;if(Transactions.quarantined(container))continue;
             if(slots+container.getContainerSize()>Config.get().maxOperationSlots)break;
             slots+=container.getContainerSize();result.add(new Target(pos,container));
         }
-        return result;
+        return session==null||session.matchesHub(p,hub)?result:List.of();
     }
     public static String permissionReason(ServerPlayer p,StorageEntity hub,int rights){
         if(hub==null||hub.permits(p,rights))return "";
         return "Base permission denied. Needed: "+BasePermissions.describe(rights);
     }
     public static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets){return guard(p,hub,targets,0);}
-    public static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets,int rights){
+    public static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets,int rights){return guard(p,hub,targets,rights,null);}
+    static BooleanSupplier guard(ServerPlayer p,StorageEntity hub,List<Target> targets,int rights,CreativeTabletAccess.Session session){
+        ServerLevel targetLevel=session==null?p.serverLevel():session.home;
         long revision=Config.get().revision,profile=hub==null?0:hub.profileRevision;
         return ()->{
             if(!p.isAlive()||p.isSpectator()||Config.get().revision!=revision||!permissionReason(p,hub,rights).isEmpty())return false;
-            if(hub!=null&&(!hubReason(p,hub).isEmpty()||hub.profileRevision!=profile))return false;
+            if(hub!=null&&(!hubReason(p,hub,session).isEmpty()||hub.profileRevision!=profile))return false;
             for(Target target:targets){
-                if(!p.serverLevel().hasChunkAt(target.pos))return false;
-                BlockEntity be=p.serverLevel().getBlockEntity(target.pos);
-                if(be!=target.inventory||!supported(be)||!Safety.reason(p,be,hub).isEmpty())return false;
+                if(!targetLevel.hasChunkAt(target.pos))return false;
+                BlockEntity be=targetLevel.getBlockEntity(target.pos);
+                if(be!=target.inventory||!supported(be)||!Safety.inHubLevel(p,targetLevel,be,hub).isEmpty())return false;
                 if(!within(hub==null?p.blockPosition():hub.getBlockPos(),target.pos,hub==null?Config.get().quickRadius:hub.radius()))return false;
             }
-            return true;
+            return session==null||session.matchesHub(p,hub);
         };
     }
     public static List<Container> destinations(Transactions.Plan plan,List<Target> targets,StorageEntity hub,ItemStack stack,Mode mode){
@@ -152,24 +192,26 @@ public final class Network {
             if(moved>0&&hub!=null)hub.logTransfer(player,BaseActivity.Action.WITHDRAW,moved);
         } catch(IllegalArgumentException e){AnyaStorage.tell(player,e.getMessage());}
     }
-    public static Transactions.Plan organize(ServerPlayer player,StorageEntity hub,List<Target> targets){
+    public static Transactions.Plan organize(ServerPlayer player,StorageEntity hub,List<Target> targets){return organize(player,hub,targets,null);}
+    static Transactions.Plan organize(ServerPlayer player,StorageEntity hub,List<Target> targets,CreativeTabletAccess.Session session){
         String denied=permissionReason(player,hub,BasePermissions.LEGACY);if(!denied.isEmpty())throw new IllegalArgumentException(denied);
-        List<Container> containers=targets.stream().map(Target::inventory).toList();Transactions.Plan plan=new Transactions.Plan(containers,guard(player,hub,targets,BasePermissions.LEGACY));List<ItemStack> stacks=new ArrayList<>();
+        List<Container> containers=targets.stream().map(Target::inventory).toList();Transactions.Plan plan=new Transactions.Plan(containers,guard(player,hub,targets,BasePermissions.LEGACY,session));List<ItemStack> stacks=new ArrayList<>();
         for(Container container:containers){for(ItemStack item:plan.work(container))if(!item.isEmpty())stacks.add(item.copy());Arrays.fill(plan.work(container),ItemStack.EMPTY);}
         stacks.sort(Categories.order());
         for(ItemStack stack:stacks){for(Container destination:destinations(plan,targets,hub,stack,Mode.MANUAL)){plan.insert(destination,stack);if(stack.isEmpty())break;}if(!stack.isEmpty())throw new IllegalArgumentException("Routing rules leave items without a destination. Allow an overflow chest before organizing.");}
         return plan;
     }
-    public static String explain(ServerPlayer p,StorageEntity requestedHub,int slot,boolean dump){
+    public static String explain(ServerPlayer p,StorageEntity requestedHub,int slot,boolean dump){return explain(p,requestedHub,slot,dump,null);}
+    static String explain(ServerPlayer p,StorageEntity requestedHub,int slot,boolean dump,CreativeTabletAccess.Session session){
         if(slot<0||slot>=36)return "Only main inventory slots participate.";
         ItemStack item=p.getInventory().getItem(slot);if(item.isEmpty())return "That inventory slot is empty.";
         if(!Config.get().quickStack)return "QuickStack and Dump are disabled by the server.";
         if(Profiles.of(p).protectedSlot(slot))return "Slot "+(slot+1)+" is protected from automatic deposits.";
-        StorageEntity hub=requestedHub==null?nearest(p):requestedHub;String denied=permissionReason(p,hub,BasePermissions.VIEW|BasePermissions.DEPOSIT);if(!denied.isEmpty())return denied;List<Target> targets=targets(p,hub);
+        StorageEntity hub=requestedHub==null?nearest(p):requestedHub;String denied=permissionReason(p,hub,BasePermissions.VIEW|BasePermissions.DEPOSIT);if(!denied.isEmpty())return denied;List<Target> targets=targets(p,hub,session);
         if(targets.isEmpty()){
             return "No eligible loaded containers in range or within the scan budget. Chest support="+Config.get().vanillaChests+", barrels="+Config.get().vanillaBarrels+", shulkers="+Config.get().vanillaShulkers+". "+Safety.status();
         }
-        MainInventory main=new MainInventory(p);List<Container> all=new ArrayList<>();all.add(main);targets.forEach(t->all.add(t.inventory));Transactions.Plan plan=new Transactions.Plan(all,guard(p,hub,targets));
+        MainInventory main=new MainInventory(p);List<Container> all=new ArrayList<>();all.add(main);targets.forEach(t->all.add(t.inventory));Transactions.Plan plan=new Transactions.Plan(all,guard(p,hub,targets,0,session));
         List<Container> eligible=destinations(plan,targets,hub,item,dump?Mode.DUMP:Mode.QUICK);
         if(eligible.isEmpty()){
             long filtered=targets.stream().filter(t->hub!=null&&!hub.route(t.pos).allows(item)).count();

@@ -1,6 +1,6 @@
 package dev.anya.storage.appearance;
 
-import dev.anya.storage.Content;
+import dev.anya.storage.StorageItem;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.item.ItemStack;
 import java.util.IdentityHashMap;
@@ -45,7 +45,7 @@ final class TabletFaces {
         boolean changed = false;
         for (int i = 0; i < SLOTS; i++) {
             var stack = i == SLOTS - 1 ? player.getOffhandItem() : inventory.getItem(i);
-            incoming[i] = stack.is(Content.CUPID_TABLET.get()) ? stack : null;
+            incoming[i] = StorageItem.isTablet(stack) ? stack : null;
             changed |= slots[i] != incoming[i];
         }
         if (changed) {

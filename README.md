@@ -1,6 +1,6 @@
 # Anya Storage Plus
 
-For the experimental field-kit build, see [player controls for storage, keepsake shelves, delivery hatches, room planning and the tablet](docs/FIELD_KIT.md).
+For the experimental field-kit build, see [player controls for storage, Keepsake Globes, Delivery Hatches, room planning, and regular and Creative tablets](docs/FIELD_KIT.md).
 
 **0.3.0-beta.6, gated room-editing safety milestone.** Continues beta.5 in the same mod and branch. See [the exact narrow editing scope and acceptance boundaries](docs/ROOM_EDITING_BETA6.md). No profile or player world is modified by building this source.
 

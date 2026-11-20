@@ -280,7 +280,7 @@ final class FieldKit {
         return receipt.coverage();
     }
     static String networkScope(ServerPlayer p,StorageEntity hub) {
-        return p.level().dimension().location()+"/"+(hub==null?"nearby":"network/"+hub.getBlockPos().asLong());
+        return (hub==null?p.level():hub.getLevel()).dimension().location()+"/"+(hub==null?"nearby":"network/"+hub.getBlockPos().asLong());
     }
     static long now(ServerPlayer p) { return p.getServer().overworld().getGameTime(); }
     static int undo(ServerPlayer p,String scope,List<Container> storage,Container main,Transactions.Plan plan) {

@@ -17,12 +17,17 @@ public final class TabletDevice {
     public static final int WIDTH = TabletHandlingPose.WIDTH, HEIGHT = TabletHandlingPose.HEIGHT;
     private static final int SCREEN_X = 16, SCREEN_Y = 20, SCREEN_W = 400, SCREEN_H = 268;
     private static final ResourceLocation SHELL = gui("tablet_device");
+    private static final ResourceLocation CREATIVE_SHELL = gui("creative_tablet_device");
     private static final int CELL_W = 224, CELL_H = 128;
     // These also name the sprite overrides in the physical item model. The detailed hand
     // samples the exact baked sprite rather than running a second atlas animation.
-    private static final Portrait[] PHYSICAL = java.util.Arrays.stream(TabletIdle.Face.values())
-            .map(face -> new Portrait(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID,
-                    "item/cupid_tablet_face_" + face.sprite), 0, 0, 0, 0, face)).toArray(Portrait[]::new);
+    private static final Portrait[] PHYSICAL = itemFaces("cupid_tablet");
+    private static final Portrait[] CREATIVE = itemFaces("creative_tablet");
+    private static Portrait[] itemFaces(String item) {
+        return java.util.Arrays.stream(TabletIdle.Face.values()).map(face -> new Portrait(
+                ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, "item/" + item + "_face_" + face.sprite),
+                0, 0, 0, 0, face)).toArray(Portrait[]::new);
+    }
     private static final ResourceLocation ORIGINAL = gui("tablet_guardian");
     private static final Portrait OPEN = new Portrait(ORIGINAL, 8, 8, 240, 432);
     private static final Portrait HALF = new Portrait(ORIGINAL, 8, 152, 240, 432);
@@ -77,7 +82,9 @@ public final class TabletDevice {
             default -> null;
         };
     }
-    static Portrait physicalFace(TabletIdle.Face face) { return PHYSICAL[face.ordinal()]; }
+    static Portrait physicalFace(TabletIdle.Face face, boolean creative) {
+        return (creative ? CREATIVE : PHYSICAL)[face.ordinal()];
+    }
     static TabletIdle.Face faceOf(Portrait portrait) {
         if (portrait == OPEN) return TabletIdle.Face.OPEN;
         if (portrait == HALF) return TabletIdle.Face.SQUINT;
@@ -113,7 +120,7 @@ public final class TabletDevice {
                 b.x + (SCREEN_X + (SCREEN_W - StorageGrid.Layout.WIDTH) / 2f) * b.scale,
                 b.y + (SCREEN_Y + (SCREEN_H - grid.height()) / 2f) * b.scale);
     }
-    public static void drawDark(GuiGraphics graphics, Bounds bounds) { draw(graphics, bounds, null); }
+    public static void drawDark(GuiGraphics graphics, Bounds bounds) { draw(graphics, bounds, null, false, false); }
     public static void drawCameo(GuiGraphics graphics, int x, int y) {
         var pose = graphics.pose();
         pose.pushPose();
@@ -126,7 +133,7 @@ public final class TabletDevice {
         }
     }
     static void drawHandling(GuiGraphics g, int width, int height, LocalPlayer armOwner, Grip grip,
-                             float progress, Portrait portrait, boolean liveAtlas) {
+                             float progress, Portrait portrait, boolean liveAtlas, boolean creative) {
         var pose = g.pose();
         pose.pushPose();
         try {
@@ -141,20 +148,17 @@ public final class TabletDevice {
             if (progress < 1) {
                 // The silver side lip becomes visible as the face tilts away.
                 pose.translate(0, 0, -6);
-                drawDark(g, surface);
+                draw(g, surface, null, false, creative);
                 pose.translate(0, 0, 3);
-                drawDark(g, surface);
+                draw(g, surface, null, false, creative);
                 pose.translate(0, 0, 3);
             }
-            draw(g, surface, portrait, liveAtlas);
+            draw(g, surface, portrait, liveAtlas, creative);
         } finally {
             pose.popPose();
         }
     }
-    static void draw(GuiGraphics g, Bounds b, Portrait portrait) {
-        draw(g, b, portrait, false);
-    }
-    private static void draw(GuiGraphics g, Bounds b, Portrait portrait, boolean liveAtlas) {
+    static void draw(GuiGraphics g, Bounds b, Portrait portrait, boolean liveAtlas, boolean creative) {
         var pose = g.pose();
         pose.pushPose();
         try {
@@ -162,7 +166,7 @@ public final class TabletDevice {
             pose.scale(b.scale, b.scale, 1);
             if ((portrait != null && portrait.itemFace() != null) || (liveAtlas && portrait == null)) {
                 var face = faceOf(portrait);
-                if (drawItemFace(g, physicalFace(face).image())) return;
+                if (drawItemFace(g, physicalFace(face, creative).image())) return;
                 // Resource packs can omit a sprite. Keep the corresponding approved GUI face.
                 portrait = switch (face) {
                     case SQUINT -> HALF;
@@ -172,7 +176,7 @@ public final class TabletDevice {
                     default -> null;
                 };
             }
-            g.blit(SHELL, 0, 0, 0, 0, WIDTH, HEIGHT, WIDTH, HEIGHT);
+            g.blit(creative ? CREATIVE_SHELL : SHELL, 0, 0, 0, 0, WIDTH, HEIGHT, WIDTH, HEIGHT);
             if (portrait != null) {
                 float zoom = SCREEN_W / (float) CELL_W;
                 pose.translate(SCREEN_X, SCREEN_Y + (SCREEN_H - CELL_H * zoom) / 2f, 0);

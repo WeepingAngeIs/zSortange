@@ -14,22 +14,22 @@ Use Minecraft 1.21.1, Java 21 and NeoForge 21.1.249 or a later compatible 21.1.x
 
 Start with a backed-up test world. Keep Tom's Simple Storage, Sophisticated Storage/Backpacks, their dependencies and QuickStack installed while validating this beta. There is no migration of their contents. Carry On and Shulker Box Tooltip are not replaced by this project. Do not delete Sophisticated Core until all remaining dependencies have been checked.
 
-The first start creates `config/anya-storage-plus.json`. Operators edit it in-game using `/anya storage` or `/as` when that alias is available. Ordinary players get their protected-slot preferences. Config changes are private drafts until Review and Apply. Apply writes a backup. In `tabletintro.6`, changing only the tablet opening chance takes effect immediately. Other settings retain their existing recipe reload. The handheld remote is the normal storage interface. [Tablet opening chance and pack integration](TABLET_OPENING_CHANCE.md)
+The first start creates `config/anya-storage-plus.json`. Operators edit it in-game using `/anya storage` or `/as` when that alias is available. Ordinary players get their protected-slot preferences. Config changes are private drafts until Review and Apply. Apply writes a backup. In `tabletintro.6`, changing only the tablet opening chance takes effect immediately. Other settings retain their existing recipe reload. The Cupid Tablet opens the storage network from within the home radius. [Tablet opening chance and pack integration](TABLET_OPENING_CHANCE.md)
 
 ## First test base
 
-Obtain an Anya Storage Hub, Labelled Storage Chest, Storage Remote and Starter Backpack from the Anya Storage creative tab or use these operator commands:
+Obtain an Anya Storage Hub, Labelled Storage Chest, Cupid Tablet and Starter Backpack from the Anya Storage creative tab or use these operator commands:
 
 ```mcfunction
 /give @s anyastorage:hub
 /give @s anyastorage:chest
-/give @s anyastorage:remote
+/give @s anyastorage:cupid_tablet
 /give @s anyastorage:backpack
 ```
 
 Place the hub and chest close together. The initial radius is 16 blocks, measured in three dimensions. Ownership is assigned to the placing player. Put test items in the custom chest by opening it and clicking items in the inventory portion of the screen. Ordinary vanilla chests and barrels are also eligible by default. Shulker boxes are off by default and can be enabled in settings. Arbitrary other mods' containers, player-specific inventories and unopened loot containers are not supported in this beta.
 
-Sneak-right-click the hub with the remote to bind it. Right-click the remote while inside that hub's radius to search its loaded, permitted containers. Discovery is incremental and budgeted; a newly placed or very large base may not appear immediately. The mod never force-loads storage chunks.
+Sneak-right-click the hub with the Cupid Tablet to bind it. Right-click the tablet while inside that hub's radius to search its loaded, permitted containers. Discovery is incremental and budgeted; a newly placed or very large base may not appear immediately. The regular tablet searches loaded containers. A Creative player can bind a Creative Tablet at the hub to reach that destination from elsewhere, including another dimension. The server bounds its temporary chunk requests and checks permissions when the tablet is used.
 
 Storage screens show real stacks from physical containers, not a second virtual copy. Left-click a listed stack to withdraw it, right-click to withdraw one, and middle-click to favorite that item type. Click an inventory slot below to deposit its stack, or right-click to deposit one. The input bar searches names, registry IDs, `@mod` namespaces and `#tags`. Display icons cannot be dragged out as items.
 

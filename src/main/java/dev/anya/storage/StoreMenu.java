@@ -30,12 +30,14 @@ public final class StoreMenu extends AbstractContainerMenu {
     private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES, ACCESS, ACTIVITY, FIELD_KIT, KEEP_RULES;
         boolean isStorage() { return this == NETWORK || this == BAG || this == CHEST; }
     }
-    private enum Opening { PLAIN, REMOTE, TABLET, CHEST, BACKPACK }
+    private enum Opening { PLAIN, REMOTE, TABLET, CHEST, BACKPACK, CREATIVE }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
     private final ContainerData sync=new SimpleContainerData(19);
-    private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256;
+    private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256, CREATIVE_ACCESS=512, TABLET_ACCESS=1024;
+    private CreativeTabletAccess.Session creative;
+    private ItemStack networkTablet;
     static final int POCKET_ACTION_SLOT = 51;
     private final int openingFlags;
     private final Map<Integer,Consumer<Click>> buttons=new HashMap<>();
@@ -78,18 +80,21 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos,int flags){
         this(id,inventory,flags);this.owner=owner;this.page=page;this.bag=bag;this.hub=hub;this.chest=chest;this.routePos=routePos;
+        if((flags&CREATIVE_ACCESS)!=0)creative=CreativeTabletAccess.session(owner);
+        if(page==Page.NETWORK && creative==null)networkTablet=heldNetworkTablet(owner,hub);
         if(owner.hasPermissions(2))draft=Config.copy(Config.get());
         int session=ThreadLocalRandom.current().nextInt();sync.set(0,session&65535);sync.set(1,session>>>16);bump();
         if(chest!=null)chest.openViewer();render();
     }
     private static int openingFlags(Opening opening, boolean mayView) {
-        if (!mayView || opening == Opening.PLAIN) return 0;
+        if (!mayView || opening == Opening.PLAIN) return opening==Opening.CREATIVE?CREATIVE_ACCESS:0;
         var policy = ExpansionRules.get();
         return switch (opening) {
             case REMOTE -> REMOTE_OPEN;
             case TABLET -> REMOTE_OPEN | TABLET_RULE
                     | (policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
             case CHEST -> policy.rollChestCameo(ThreadLocalRandom.current()) ? STORAGE_CAMEO : 0;
+            case CREATIVE -> CREATIVE_ACCESS | REMOTE_OPEN | TABLET_RULE | (policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
             case BACKPACK -> policy.backpackCameoEnabled ? STORAGE_CAMEO : 0;
             case PLAIN -> 0;
         };
@@ -107,14 +112,37 @@ public final class StoreMenu extends AbstractContainerMenu {
     public static void bag(ServerPlayer p,BagInventory bag,boolean upgrades){
         open(p,upgrades?Page.UPGRADES:Page.BAG,bag,null,null,null,openingFlags(Opening.BACKPACK,!upgrades&&bag.valid()));
     }
-    public static void network(ServerPlayer p,StorageEntity hub){openNetwork(p,hub,Opening.PLAIN);}
+    /** Touching the hub opens its authorized settings. Aggregate inventory is tablet-only. */
+    public static void network(ServerPlayer p,StorageEntity hub){
+        if(!Network.hubReason(p,hub).isEmpty())return;
+        if(hub.ownedBy(p))open(p,Page.BASE,null,hub,null,null);
+        else if(hub.canReadActivity(p))open(p,Page.ACTIVITY,null,hub,null,null);
+        else p.displayClientMessage(Component.literal("Use your linked Cupid Tablet to open base storage."),true);
+    }
+    private static ItemStack heldNetworkTablet(ServerPlayer p,StorageEntity hub) {
+        if(hub==null)return null;
+        for(var hand:InteractionHand.values()){
+            var tablet=p.getItemInHand(hand);
+            if(!tablet.is(Content.CUPID_TABLET.get()))continue;
+            var tag=BagInventory.data(tablet);
+            if(!tag.hasUUID("PocketId") && tag.contains("HubPos",4) && tag.getLong("HubPos")==hub.getBlockPos().asLong()
+                    && tag.getString("HubDimension").equals(hub.getLevel().dimension().location().toString()))return tablet;
+        }
+        return null;
+    }
     public static void remote(ServerPlayer p,StorageEntity hub,boolean tablet){
-        openNetwork(p,hub,tablet ? Opening.TABLET : Opening.REMOTE);
+        if(heldNetworkTablet(p,hub)==null)return;
+        openNetwork(p,hub,Opening.TABLET);
+    }
+    static void creativeNetwork(ServerPlayer p,StorageEntity hub){
+        var session=CreativeTabletAccess.session(p);
+        if(session!=null&&session.matchesHub(p,hub))openNetwork(p,hub,Opening.CREATIVE);
     }
     private static void openNetwork(ServerPlayer p,StorageEntity hub,Opening opening){
-        String reason=Network.hubReason(p,hub);
-        if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return;}
-        open(p,Page.NETWORK,null,hub,null,null,openingFlags(opening,hub.permits(p,BasePermissions.VIEW)));
+        var session=opening==Opening.CREATIVE?CreativeTabletAccess.session(p):null;
+        String reason=Network.hubReason(p,hub,session);
+        if(!reason.isEmpty()){p.displayClientMessage(Component.literal(reason),true);return;}
+        open(p,Page.NETWORK,null,hub,null,null,TABLET_ACCESS|openingFlags(opening,hub.permits(p,BasePermissions.VIEW)));
     }
     public static void container(ServerPlayer p,StorageEntity chest){
         if(chest.pocketId!=null){dev.anya.storage.pocket.PocketService.openChest(p,chest);return;}
@@ -124,7 +152,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         openPocket(p,view,Opening.PLAIN);
     }
     public static void pocketRemote(ServerPlayer p,dev.anya.storage.pocket.PocketView view,boolean tablet){
-        openPocket(p,view,tablet ? Opening.TABLET : Opening.REMOTE);
+        openPocket(p,view,CreativeTabletAccess.pocketSession(p,view.id()) ? Opening.CREATIVE : Opening.TABLET);
     }
     public static void pocketChest(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
         openPocket(p,view,Opening.CHEST);
@@ -155,6 +183,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     public boolean storageView(){return (sync.get(4)&1)!=0;}
     public boolean hasTabletOpeningRule(){return (sync.get(4)&TABLET_RULE)!=0;}
     public boolean showsTabletIntro(){return (sync.get(4)&TABLET_INTRO)!=0;}
+    public boolean creativeTabletOpening(){return (sync.get(4)&CREATIVE_ACCESS)!=0;}
+    boolean usesCreativeSession(CreativeTabletAccess.Session session){return creative==session;}
     public boolean remoteOpening(){return (sync.get(4)&REMOTE_OPEN)!=0;}
     public boolean showsStorageCameo(){return (sync.get(4)&STORAGE_CAMEO)!=0;}
     public boolean backpackView(){return (sync.get(4)&2)!=0;}
@@ -181,7 +211,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(adminPage()&&!owner.hasPermissions(2))return false;
         if(bag!=null&&!bag.valid())return false;
         if(pocket!=null&&!pocket.valid())return false;
-        if(hub!=null&&!Network.hubReason(owner,hub).isEmpty())return false;
+        if((openingFlags&CREATIVE_ACCESS)!=0 && (creative==null||!creative.held()))return false;
+        if(hub!=null && (openingFlags&TABLET_ACCESS)!=0 && creative==null && (networkTablet==null||heldNetworkTablet(owner,hub)!=networkTablet))return false;
+        if(hub!=null&&!Network.hubReason(owner,hub,creative).isEmpty())return false;
         if(chest!=null&&(!chest.stillValid(owner)||!Safety.reason(owner,chest,null).isEmpty()))return false;
         if((page==Page.BASE||page==Page.ROUTE||page==Page.FEED_CONFIRM||page==Page.ACCESS)&&hub!=null&&!hub.ownedBy(owner))return false;
         if(page==Page.ACTIVITY&&(hub==null||(!hub.canReadActivity(owner)&&!hub.ownedBy(owner))))return false;
@@ -191,7 +223,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     @Override public boolean canDragTo(Slot slot){return false;}
     @Override public boolean canTakeItemForPickAll(ItemStack s,Slot slot){return false;}
     @Override public void clicked(int slot,int button,ClickType type,Player p){if(owner!=null)sendAllDataToRemote();}
-    @Override public void removed(Player p){if(chest!=null)chest.closeViewer();if(pocket!=null)pocket.close();pending=null;super.removed(p);}
+    @Override public void removed(Player p){if(chest!=null)chest.closeViewer();if(pocket!=null)pocket.close();if(creative!=null)CreativeTabletAccess.finish(owner,this);pending=null;super.removed(p);}
     @Override public void broadcastChanges(){
         boolean active=owner!=null&&owner.containerMenu==this&&stillValid(owner);
         if(active){
@@ -238,26 +270,28 @@ public final class StoreMenu extends AbstractContainerMenu {
     private void render(){
         resetControlSlots();buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
         sync.set(18,Profiles.of(owner).hideStorageTooltips?1:0);
-        sync.set(4,bag!=null?2:0);sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
+        sync.set(4,(bag!=null?2:0)|(openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
             case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();case ACCESS->access();case ACTIVITY->activity();case FIELD_KIT->fieldKit();case KEEP_RULES->keepRules();
         }
     }
-    private void navigate(Page next){page=next;offset=0;pending=null;clearLogConfirm=false;}
+    private void navigate(Page next){
+        if(next==Page.NETWORK&&hub!=null&&(openingFlags&TABLET_ACCESS)==0){owner.closeContainer();return;}
+        page=next;offset=0;pending=null;clearLogConfirm=false;}
     private void button(int slot,Item item,String name,Consumer<Click> action,String... lore){display.setItem(slot,icon(new ItemStack(item),name,List.of(lore)));if(action!=null)buttons.put(slot,action);}
     private void button(int slot,ControlGlyph glyph,String name,Consumer<Click> action,String... lore){
         button(slot,glyph,action==null?State.READ_ONLY:State.NORMAL,name,action,lore);
     }
     private void button(int slot,ControlGlyph glyph,State state,String name,Consumer<Click> action,String... lore){
-        ItemStack displayItem=icon(new ItemStack(Content.REMOTE.get()),name,List.of(lore));
+        ItemStack displayItem=icon(new ItemStack(Items.PAPER),name,List.of(lore));
         glyph.mark(displayItem,state);
         setControlSlot(slot);
         display.setItem(slot,displayItem);
         if(action!=null)buttons.put(slot,action);
     }
     private static ItemStack icon(ItemStack stack,String name,List<String> lore){
-        ItemStack copy=stack.copy();if(copy.isEmpty())copy=new ItemStack(Content.REMOTE.get());
+        ItemStack copy=stack.copy();if(copy.isEmpty())copy=new ItemStack(Items.PAPER);
         Component originalName=copy.getHoverName().copy();copy.remove(DataComponents.CONTAINER);copy.remove(DataComponents.BUNDLE_CONTENTS);if(copy.is(Content.BACKPACK.get())){copy.remove(DataComponents.CUSTOM_DATA);copy.set(DataComponents.CUSTOM_NAME,originalName);}
         if(name!=null)copy.set(DataComponents.CUSTOM_NAME,Component.literal(name).withStyle(s->s.withItalic(false)));
         // The client font wraps each paragraph at the available screen width.
@@ -267,7 +301,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private void footer(Page back){button(45,ControlGlyph.BACK,"Back",c->navigate(back));button(46,ControlGlyph.PREVIOUS,"Previous page",c->offset=Math.max(0,offset-45));button(47,ControlGlyph.NEXT,"Next page",c->offset+=45);button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());}
     private void toggle(int slot,ControlGlyph glyph,String title,boolean enabled,Runnable change,String... lore){button(slot,glyph,enabled?State.ON:State.OFF,title+(enabled?" [ON]":" [OFF]"),c->change.run(),lore);}
-    private List<Network.Target> targets(){return hub==null?List.of():Network.targets(owner,hub);}
+    private List<Network.Target> targets(){return hub==null?List.of():Network.targets(owner,hub,creative);}
     private List<Container> storageContainers(){if(pocket!=null)return pocket.containers();if(bag!=null)return List.of(bag);if(chest!=null)return List.of(chest);return targets().stream().map(Network.Target::inventory).toList();}
     private List<Container> transferStores(List<Network.Target> targets){
         return hub!=null?targets.stream().map(Network.Target::inventory).toList():storageContainers();
@@ -288,7 +322,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         // Unfiltered views retain physical slot order, including every real empty slot.
         // Search narrows the view without inventing slots or changing the source-slot identity.
         offset=StorageGrid.start(values.size(),offset/9,viewportRows);
-        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|(mayView?openingFlags:0));sync.set(5,viewportRows);
+        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|(mayView?openingFlags:openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);
         synchronizedInt(6,capacity);synchronizedInt(8,values.size());synchronizedInt(10,offset);synchronizedInt(12,occupied);
         int shown=StorageGrid.visible(values.size(),offset,viewportRows);
         for(int i=0;i<shown;i++){
@@ -344,7 +378,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private java.util.function.BooleanSupplier transferGuard(List<Network.Target> targets,int rights){
         if(pocket!=null)return pocket.guard(rights);
-        return hub==null?()->stillValid(owner):Network.guard(owner,hub,targets,rights);
+        return hub==null?()->stillValid(owner):Network.guard(owner,hub,targets,rights,creative);
     }
     private void logWithdrawal(int count){
         if(count<=0)return;
@@ -380,7 +414,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         MainInventory main=main();List<Network.Target> targets=targets();
         if(hub!=null&&targets.stream().noneMatch(t->t.inventory()==entry.inventory)){AnyaStorage.tell(owner,"That source is no longer accessible. Permissions and range have been rechecked.");return;}
         List<Container> all=new ArrayList<>();all.add(main);all.add(entry.inventory);
-        var guard=pocket!=null?pocket.guard(BasePermissions.VIEW|BasePermissions.WITHDRAW):hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.VIEW|BasePermissions.WITHDRAW);
+        var guard=pocket!=null?pocket.guard(BasePermissions.VIEW|BasePermissions.WITHDRAW):hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.VIEW|BasePermissions.WITHDRAW,creative);
         Transactions.Plan plan=new Transactions.Plan(all,guard);int moved=plan.move(entry.inventory,entry.slot,List.of(main),click.button==1?1:entry.snapshot.getCount());
         String error=moved==0?"Your main inventory is full":plan.commit(owner.getServer());if(!error.isEmpty())AnyaStorage.tell(owner,error);
         else if(hub!=null)hub.logTransfer(owner,BaseActivity.Action.WITHDRAW,moved);else if(pocket!=null)pocket.log(BaseActivity.Action.WITHDRAW,moved);
@@ -405,7 +439,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         MainInventory main=main();if(main.getItem(slot).isEmpty())return;
         List<Network.Target> targets=targets();List<Container> destinations=pocket!=null?pocket.containers():bag!=null?List.of(bag):chest!=null?List.of(chest):targets.stream().map(Network.Target::inventory).toList();
         List<Container> all=new ArrayList<>(destinations);all.add(main);
-        var guard=pocket!=null?pocket.guard(BasePermissions.DEPOSIT):hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.DEPOSIT);
+        var guard=pocket!=null?pocket.guard(BasePermissions.DEPOSIT):hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.DEPOSIT,creative);
         Transactions.Plan plan=new Transactions.Plan(all,guard);ItemStack item=plan.work(main)[slot];
         if(hub!=null)destinations=Network.destinations(plan,targets,hub,item,Network.Mode.MANUAL);
         int offered=click.button==1?1:item.getCount();int moved=plan.move(main,slot,destinations,offered);String error=moved==0?"No capacity or the destination filter rejects this item":plan.commit(owner.getServer());if(!error.isEmpty())AnyaStorage.tell(owner,error);
@@ -420,7 +454,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(!Config.get().quickStack){AnyaStorage.tell(owner,"QuickStack is disabled.");return;}
         if(bag!=null&&!Config.get().backpacks)return;
         MainInventory main=main();List<Network.Target> targets=targets();List<Container> storage=transferStores(targets),all=new ArrayList<>(storage);all.add(main);
-        var guard=pocket!=null?pocket.guard(BasePermissions.VIEW|BasePermissions.DEPOSIT):hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.VIEW|BasePermissions.DEPOSIT);
+        var guard=pocket!=null?pocket.guard(BasePermissions.VIEW|BasePermissions.DEPOSIT):hub==null?(java.util.function.BooleanSupplier)()->stillValid(owner):Network.guard(owner,hub,targets,BasePermissions.VIEW|BasePermissions.DEPOSIT,creative);
         Transactions.Plan plan=new Transactions.Plan(all,guard);
         FieldKit.Sweep result=FieldKit.sweep(plan,main,Profiles.of(owner),stack->{
             if(hub!=null)return Network.destinations(plan,targets,hub,stack,dump?Network.Mode.DUMP:Network.Mode.QUICK);
@@ -531,7 +565,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(!permission(BasePermissions.LEGACY))return;
         if(!Config.get().organize){AnyaStorage.tell(owner,"Organization is disabled.");return;}
         List<Network.Target> authorized=targets();pendingContainers=transferStores(authorized);
-        if(hub!=null)pending=Network.organize(owner,hub,authorized);
+        if(hub!=null)pending=Network.organize(owner,hub,authorized,creative);
         else {
             pending=new Transactions.Plan(pendingContainers,pocket!=null?pocket.guard(BasePermissions.LEGACY):()->stillValid(owner));List<ItemStack> stacks=new ArrayList<>();for(Container c:pendingContainers){for(ItemStack s:pending.work(c))if(!s.isEmpty())stacks.add(s.copy());Arrays.fill(pending.work(c),ItemStack.EMPTY);}
             stacks.sort(Categories.order());for(ItemStack stack:stacks){for(Container c:pendingContainers)pending.insert(c,stack);if(!stack.isEmpty())throw new IllegalArgumentException("Items do not fit the proposed sorted layout");}
@@ -648,7 +682,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(12,ControlGlyph.MEMBERS,"Member permissions",c->navigate(Page.ACCESS),"Edit View, Deposit, Withdraw and Activity Log separately.","Existing trusted members keep their previous storage access.","New members begin with View only; claims still apply.");
         button(14,ControlGlyph.FEED_ORE,"Feed ore/resource from inventory",null,"Click an inventory slot while in this base menu.","Left feeds a stack; right feeds one.","Only resources with configured point values are accepted.");
         button(16,ControlGlyph.RADIUS,"Radius: "+hub.radius()+" -> "+hub.nextRadius(),c->{if(hub.radius()>=Config.get().maxRadius)throw new IllegalArgumentException("Maximum radius reached.");if(hub.oreProgress<hub.upgradeCost())throw new IllegalArgumentException("Not enough ore progress.");int cost=hub.upgradeCost();hub.oreProgress-=cost;hub.rangeUpgrades++;hub.profileChanged();AnyaStorage.tell(owner,"Spent "+cost+" points. Radius is now "+hub.radius()+".");},"Stored ore points: "+hub.oreProgress,"Next upgrade costs: "+hub.upgradeCost(),"Click explicitly to spend points and upgrade.","One radius controls search, terminal access and QuickStack.");
-        button(28,ControlGlyph.ROUTING,"Container routing",null,"Bind a remote to this hub.","Sneak-use the remote on a supported chest.","Set category, exact-item filters, priority and overflow there.");
+        button(28,ControlGlyph.ROUTING,"Container routing",null,"Bind a tablet to this hub.","Sneak-use the tablet on a supported chest.","Set category, exact-item filters, priority and overflow there.");
         button(31,ControlGlyph.PERFORMANCE,"Performance",null,Network.performance(hub));button(34,ControlGlyph.TRUSTED,"Trusted UUIDs",null,hub.trusted.toString());
         button(40,ControlGlyph.BASE_LOG,"Base activity log",c->navigate(Page.ACTIVITY),"Opt-in counts-only log; actor UUIDs require server opt-in.","Inventory components and private images are never logged.");
         footer(Page.NETWORK);
@@ -688,7 +722,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
 
     private void memberPage(List<UUID> members,java.util.function.Function<UUID,String> nameOf,java.util.function.ToIntFunction<UUID> maskOf){
-        sync.set(4,16);
+        sync.set(4,16|(openingFlags&CREATIVE_ACCESS));
         int perPage=18;
         offset=Math.min(offset,Math.max(0,((members.size()-1)/perPage)*perPage));
         for(int i=0;i<perPage&&offset+i<members.size();i++){
@@ -766,7 +800,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(pocket!=null){
             if(!permission(BasePermissions.VIEW|BasePermissions.DEPOSIT))return;
             report="Pocket transfers use only this pocket's registered chests. See the latest counts in Field kit.";
-        }else if(bag==null&&chest==null)report=Network.explain(owner,hub,slot,dump);
+        }else if(bag==null&&chest==null)report=Network.explain(owner,hub,slot,dump,creative);
         else if(Profiles.of(owner).protectedSlot(slot))report="Slot "+(slot+1)+" is protected from automatic deposits.";
         else if(!Config.get().quickStack||(bag!=null&&!Config.get().backpacks))report="The relevant storage feature is disabled by the server.";
         else{

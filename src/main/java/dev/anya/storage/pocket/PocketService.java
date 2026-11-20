@@ -86,12 +86,21 @@ public final class PocketService {
     public static String authorize(ServerPlayer p,PocketLedger.Pocket pocket,PocketLeases.Kind kind,boolean arriving,int rights){
         if(!enabled())return disabledHint();
         if(!p.isAlive()||p.isSpectator())return "Player cannot interact";
+        if(kind==PocketLeases.Kind.REMOTE && REMOTE_TABLETS.containsKey(p.getUUID())){
+            ItemStack active=REMOTE_TABLETS.get(p.getUUID());var binding=BagInventory.data(active);
+            if((p.getMainHandItem()!=active&&p.getOffhandItem()!=active)||!StorageItem.permittedTablet(p,active)
+                    ||!binding.hasUUID("PocketId")||!binding.getUUID("PocketId").equals(pocket.id())
+                    ||binding.getLong("HubPos")!=pocket.anchor().hub()||!binding.getString("HubDimension").equals(pocket.anchor().dimension()))
+                return "The linked tablet is no longer held";
+        }
         if(arriving&&kind==PocketLeases.Kind.VISIT){String travel=PocketTravelGuard.reason(p);if(!travel.isEmpty())return travel;}
         StorageEntity hub=home(p,pocket);if(hub==null)return "Loaded home hub/entrance identity is missing or changed";
         String reason=homeAccess(p,pocket,hub,rights|(kind==PocketLeases.Kind.VISIT?BasePermissions.VISIT:0));
         if(!reason.isEmpty())return reason;
         if(kind==PocketLeases.Kind.REMOTE||arriving){
-            if(!Network.inRange(p,hub))return "Outside the loaded home hub's spherical radius";
+            if(kind==PocketLeases.Kind.REMOTE && CreativeTabletAccess.pocketSession(p,pocket.id())){
+                if(!CreativeTabletAccess.permitsPocket(p,pocket,hub))return "Creative Tablet access ended";
+            }else if(!Network.inRange(p,hub))return "Outside the loaded home hub's spherical radius";
             if(kind==PocketLeases.Kind.VISIT&&p.distanceToSqr(Vec3.atCenterOf(BlockPos.of(pocket.anchor().entrance())))>64)return "Stand near the entrance to visit";
         }else if(!inPocket(p.level())||!pocket.contains(p.blockPosition().getX(),p.blockPosition().getY(),p.blockPosition().getZ()))return "Outside your authorized pocket boundary";
         return "";
@@ -105,8 +114,9 @@ public final class PocketService {
     public static void link(ServerPlayer p,PocketContent.EntranceEntity entrance,ItemStack remote){
         try{
             if(!enabled())throw new IOException(disabledHint());
+            if(!StorageItem.isTablet(remote)||!StorageItem.permittedTablet(p,remote)||(p.getMainHandItem()!=remote&&p.getOffhandItem()!=remote))throw new IOException("Hold a permitted Cupid Tablet first.");
             if(inPocket(p.level())||p.isSpectator()||!p.isAlive()||entrance.getLevel()!=p.level()||p.distanceToSqr(Vec3.atCenterOf(entrance.getBlockPos()))>64)throw new IOException("Invalid entrance interaction");
-            StorageEntity hub=StorageItem.bound(p,remote);if(hub==null)throw new IOException("Bind your Remote or Cupid Tablet to a loaded home hub first.");
+            StorageEntity hub=StorageItem.bound(p,remote);if(hub==null||!CreativeTabletAccess.priorHubBinding(p,remote,hub))throw new IOException("Bind your Cupid Tablet to a loaded home hub first.");
             if(!Objects.equals(hub.owner,p.getUUID())||!Objects.equals(entrance.owner,p.getUUID()))throw new IOException("The same player must own the hub and entrance");
             String denied=Safety.locationReason(p,p.serverLevel(),entrance.getBlockPos());if(!denied.isEmpty())throw new IOException(denied);
             PocketLedger l=ledger(p.getServer());PocketLedger.Pocket pocket;
@@ -117,21 +127,25 @@ public final class PocketService {
                 entrance.pocket=pocket.id();entrance.setChanged();
             }else{pocket=l.get(entrance.pocket);if(pocket==null||home(p,pocket)!=hub)throw new IOException("Copied or moved entrance refused; owner reanchor required");}
             var data=BagInventory.data(remote);
-            if(data.hasUUID("PocketId") && pocket.id().equals(data.getUUID("PocketId")))return;
-            data.putUUID("PocketId",pocket.id());BagInventory.data(remote,data);
-            AnyaStorage.tell(p,"Linked to pocket "+pocket.id()+". Stand up and right-click the cube to visit. Use the bound item in air to open storage within the hub radius.");
+            if(data.hasUUID("PocketId") && pocket.id().equals(data.getUUID("PocketId"))){
+                CreativeTabletAccess.bindPocket(p,remote,hub,pocket);return;
+            }
+            data.putUUID("PocketId",pocket.id());BagInventory.data(remote,data);CreativeTabletAccess.bindPocket(p,remote,hub,pocket);
+            String reach=StorageItem.isCreativeTablet(remote)?"from any dimension in Creative mode":"within the hub radius";
+            AnyaStorage.tell(p,"Linked to pocket "+pocket.id()+". Stand up and right-click the cube to visit. Use the tablet in air to open prepared storage "+reach+".");
         }catch(Exception e){error(p,e);}
     }
     public static void reanchor(ServerPlayer p,UUID id,PocketContent.EntranceEntity entrance,ItemStack remote){
         try{
             if(!enabled()||inPocket(p.level()))throw new IOException("Pocket recovery requires the test gate and a home-world entrance");
             PocketLedger l=ledger(p.getServer());var r=l.get(id);StorageEntity hub=StorageItem.bound(p,remote);
-            if(r==null||!r.owner().equals(p.getUUID())||!Objects.equals(entrance.owner,p.getUUID())||hub==null||!Objects.equals(hub.owner,p.getUUID())||entrance.getLevel()!=p.level()||p.distanceToSqr(Vec3.atCenterOf(entrance.getBlockPos()))>64)throw new IOException("Only the recorded owner can reanchor at their nearby entrance and bound hub");
+            if(!StorageItem.isTablet(remote)||!StorageItem.permittedTablet(p,remote)||(p.getMainHandItem()!=remote&&p.getOffhandItem()!=remote))throw new IOException("Hold a permitted Cupid Tablet first.");
+            if(r==null||!r.owner().equals(p.getUUID())||!Objects.equals(entrance.owner,p.getUUID())||hub==null||!CreativeTabletAccess.priorHubBinding(p,remote,hub)||!Objects.equals(hub.owner,p.getUUID())||entrance.getLevel()!=p.level()||p.distanceToSqr(Vec3.atCenterOf(entrance.getBlockPos()))>64)throw new IOException("Only the recorded owner can reanchor at their nearby entrance and bound hub");
             if(LEASES.active().contains(id))throw new IOException("Let every visitor/storage viewer leave before reanchoring");
             if(entrance.pocket!=null&&!entrance.pocket.equals(id))throw new IOException("Replacement entrance belongs to another pocket");
             String denied=Safety.locationReason(p,p.serverLevel(),entrance.getBlockPos());if(!denied.isEmpty())throw new IOException(denied);
             l.reanchor(id,p.getUUID(),new PocketLedger.Anchor(p.level().dimension().location().toString(),hub.getBlockPos().asLong(),hub.storageIdentity(),entrance.getBlockPos().asLong()));
-            entrance.pocket=id;entrance.setChanged();var data=BagInventory.data(remote);data.putUUID("PocketId",id);BagInventory.data(remote,data);
+            entrance.pocket=id;entrance.setChanged();var data=BagInventory.data(remote);data.putUUID("PocketId",id);BagInventory.data(remote,data);CreativeTabletAccess.bindPocket(p,remote,hub,l.get(id));
             AnyaStorage.tell(p,"Existing pocket reanchored. Its cell and chest contents were not copied, reset or regenerated.");
         }catch(Exception e){error(p,e);}
     }
@@ -146,7 +160,7 @@ public final class PocketService {
     public static void enter(ServerPlayer p,PocketContent.EntranceEntity entrance){
         try{
             if(!enabled())throw new IOException(disabledHint());
-            if(entrance.pocket==null)throw new IOException("Bind a Remote or Cupid Tablet to the home hub, then sneak-use it on this Home Void Cube.");
+            if(entrance.pocket==null)throw new IOException("Bind a Cupid Tablet to the home hub, then sneak-use it on this Home Void Cube.");
             var l=ledger(p.getServer());var r=l.get(entrance.pocket);
             if(r==null||entrance.getLevel()!=p.level()||r.anchor().entrance()!=entrance.getBlockPos().asLong())throw new IOException("Unrecognized entrance identity");
             if(l.returning(p.getUUID())!=null){recover(p);return;}
@@ -157,7 +171,10 @@ public final class PocketService {
     /** Returns true when a pocket-bound remote was handled (including denials), never falls back to a different inventory. */
     public static boolean remote(ServerPlayer p,ItemStack stack,StorageEntity hub){
         var tag=BagInventory.data(stack);if(!tag.hasUUID("PocketId"))return false;
-        try{var r=ledger(p.getServer()).get(tag.getUUID("PocketId"));if(r==null||home(p,r)!=hub)throw new IOException("Pocket remote binding is stale");start(p,r,PocketLeases.Kind.REMOTE,stack.is(Content.CUPID_TABLET.get()));}catch(Exception e){error(p,e);}return true;
+        try{
+            if(!StorageItem.isTablet(stack)||!StorageItem.permittedTablet(p,stack)||(p.getMainHandItem()!=stack && p.getOffhandItem()!=stack))
+                throw new IOException("Hold the linked Cupid Tablet first.");
+            var r=ledger(p.getServer()).get(tag.getUUID("PocketId"));if(r==null||home(p,r)!=hub)throw new IOException("Pocket remote binding is stale");start(p,r,PocketLeases.Kind.REMOTE,true);REMOTE_TABLETS.put(p.getUUID(),stack);}catch(Exception e){error(p,e);}return true;
     }
     private static void start(ServerPlayer p,PocketLedger.Pocket r,PocketLeases.Kind kind,boolean tablet)throws IOException {
         Pending pending=PENDING.get(p.getUUID());
@@ -345,7 +362,9 @@ public final class PocketService {
     }
     public static void logout(ServerPlayer p){release(p.getUUID());RECOVERY.remove(p.getUUID());RETRY.remove(p.getUUID());TEST_PLAYERS.remove(p.getUUID());if(p.getServer()!=null)syncTickets(p.getServer());}
     public static void died(ServerPlayer p){p.closeContainer();release(p.getUUID());}
+    private static final Map<UUID,ItemStack> REMOTE_TABLETS=new HashMap<>();
     private static void release(UUID player){
+        REMOTE_TABLETS.remove(player);
         PENDING.remove(player);
         LEASES.release(player);
         RoomPlans.endVisit(currentServer,player);
@@ -362,7 +381,7 @@ public final class PocketService {
         try{if(!physicalAllowed(p,chest))throw new IOException("Pocket chest access denied");var r=ledger.get(chest.pocketId);StoreMenu.pocketChest(p,new PocketView(p,r,PocketLeases.Kind.VISIT,chest));}catch(Exception e){error(p,e);}
     }
     public static void stop(MinecraftServer server){
-        RoomHologram.clear();
+        REMOTE_TABLETS.clear();RoomHologram.clear();
         for(Ticket t:TICKETS){ServerLevel l=server.getLevel(t.dimension());if(l!=null)l.getChunkSource().removeRegionTicket(TICKET,t.chunk(),2,t.pocket());}
         TICKETS.clear();RECOVERY_TICKETS.clear();LEASES.clear();PENDING.clear();RECOVERY.clear();RETRY.clear();PREPARING.clear();TEST_PLAYERS.clear();RoomEditor.clear();ledger=null;failure=null;currentServer=null;clock=0;
     }

@@ -6,3 +6,5 @@ Suggested checks in a disposable world with matching test builds
 4. Look for Cupid squinting on an unselected tablet. Select it and watch the held screen and inventory icon finish together. Turn quickly in both directions and try each main-hand setting.
 5. In the physical pocket, look towards the starter chests. Cupid can visit briefly. Check a visitor loses the hologram when access ends.
 6. Place a Keepsake Globe in unclaimed space, insert one item and have another player retrieve it. Repeat inside your claim to check your installed provider. Break an occupied globe in Survival and count what drops.
+
+7. In Creative, crouch-use a Creative Tablet on your hub. Walk outside its radius, use the tablet in another dimension, then switch to Survival while the screen is open. Check the screen closes. Repeat using a Creative Tablet linked to an established pocket entrance. Compare its pinkish-silver rim and Cupid poses to the ordinary tablet.

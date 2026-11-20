@@ -18,6 +18,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     public UUID owner;
     public UUID pocketId;
     private UUID storageIdentity;
+    // Locations of previously observed storage only. Private server data; never sent in the chunk update tag.
+    final Set<Long> knownStorageChunks = new LinkedHashSet<>();
     public UUID storageIdentity(){if(storageIdentity==null){storageIdentity=UUID.randomUUID();setChanged();}return storageIdentity;}
     /** Looking at an entrance must never initialize a legacy chest or hub. */
     public UUID existingStorageIdentity(){return storageIdentity;}
@@ -98,7 +100,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     @Override public void onLoad(){super.onLoad();if(level!=null&&!level.isClientSide&&kind().equals("hub"))Network.add(this);}
     @Override public void setRemoved(){Network.remove(this);super.setRemoved();}
     @Override protected void saveAdditional(CompoundTag tag,HolderLookup.Provider lookup){
-        super.saveAdditional(tag,lookup);ContainerHelper.saveAllItems(tag,items,lookup);tag.putInt("Capacity",items.size());
+        super.saveAdditional(tag,lookup);
+        if (!knownStorageChunks.isEmpty()) tag.putLongArray("KnownStorageChunks",knownStorageChunks.stream().mapToLong(Long::longValue).toArray());ContainerHelper.saveAllItems(tag,items,lookup);tag.putInt("Capacity",items.size());
         if(storageIdentity!=null)tag.putUUID("StorageIdentity",storageIdentity);if(pocketId!=null)tag.putUUID("PocketId",pocketId);
         if(owner!=null)tag.putUUID("Owner",owner);tag.putString("BaseName",baseName);tag.putString("Symbol",symbol);
         tag.putInt("Ore",oreProgress);tag.putInt("RangeUpgrades",rangeUpgrades);tag.putLong("ProfileRevision",profileRevision);
@@ -109,6 +112,8 @@ public final class StorageEntity extends BlockEntity implements WorldlyContainer
     }
     @Override protected void loadAdditional(CompoundTag tag,HolderLookup.Provider lookup){
         super.loadAdditional(tag,lookup);
+        knownStorageChunks.clear();
+        for(long key:tag.getLongArray("KnownStorageChunks"))if(knownStorageChunks.size()<289)knownStorageChunks.add(key);
         int capacity=tag.contains("Capacity")?tag.getInt("Capacity"):items.size();
         if(capacity<1||capacity>4096)throw new IllegalArgumentException("Refusing corrupt storage capacity "+capacity);
         items=NonNullList.withSize(capacity,ItemStack.EMPTY);ContainerHelper.loadAllItems(tag,items,lookup);

@@ -121,7 +121,7 @@ public final class Client {
             long now = net.minecraft.Util.getMillis();
             tabletIntro.present(now, true, true);
             tabletCoversView = tabletIntro.coversInput();
-            if (tabletCoversView) tabletBoot.draw(graphics, width, height, tabletIntro, openingPlayer, now);
+            if (tabletCoversView) tabletBoot.draw(graphics, width, height, tabletIntro, openingPlayer, now, menu.creativeTabletOpening());
             return tabletCoversView;
         }
         private boolean blockTabletInput() {
@@ -328,7 +328,7 @@ public final class Client {
             reflow();int x=(int)layout.x(mx),y=(int)layout.y(my);int[] colors=palette();
             if (showTabletFrame()) {
                 g.fill(0,0,width,height,-900,0x990c1017);
-                tabletBoot.drawSettled(g,width,height,openingPlayer);
+                tabletBoot.drawSettled(g,width,height,openingPlayer,menu.creativeTabletOpening());
             } else g.fill(0,0,width,height,0x990c1017);
             g.pose().pushPose();g.pose().translate(layout.left(),layout.top(),0);g.pose().scale((float)layout.scale(),(float)layout.scale(),1);
             g.fill(0,0,382,layout.height(),0xff111823);g.fill(2,2,380,layout.height()-2,colors[0]);g.fill(8,8,374,10,colors[2]);

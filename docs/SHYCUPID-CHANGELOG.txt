@@ -1,5 +1,7 @@
-Anya Storage Plus beta.7-shycupid.1
+Anya Storage Plus beta.7-creativetablet.1
 Minecraft 1.21.1 • NeoForge 21.1.249 • Java 21
+
+The Creative Tablet has a pinkish-silver rim and the same Cupid animation and opening settings as the ordinary tablet. In Creative, bind it to your hub, then open linked storage from another dimension. Link it to an established Home Void Cube to access that pocket remotely. Creative Tablets are available from the creative tab. The old heart Remote becomes a regular tablet carrying its existing binding and custom components.
 
 Crouch and use a backpack on the ground to place it. Right-click the placed bag with an upgrade disc, elemental binding, skin patch or the full material cost of its next storage tier. The bag carries its saved items and cosmetic choices with it. The inventory displays its style and tier. Anvil names take precedence.
 
