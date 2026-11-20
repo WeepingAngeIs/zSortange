@@ -1,0 +1,6 @@
+{
+  "parent": "anyastorage:item/creative_tablet_shell",
+  "textures": {
+    "face": "anyastorage:item/creative_tablet_face_expression_3_5"
+  }
+}

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+from tablet_expression_items import write_tablet_overrides
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "src/main/resources/assets/anyastorage"
@@ -40,12 +41,10 @@ def generate():
     shell_id = "anyastorage:item/creative_tablet_shell"
     write("creative_tablet_shell", {"parent": "anyastorage:item/cupid_tablet_shell",
                                    "textures": {"face": "anyastorage:item/creative_tablet_face_dark"}})
-    variants = []
-    for index, face in enumerate(("squint", "shut", "glance", "open"), 1):
+    for face in ("squint", "shut", "glance", "open"):
         name = "creative_tablet_" + face
         write(name, {"parent": shell_id, "textures": {"face": "anyastorage:item/creative_tablet_face_" + face}})
-        variants.append({"predicate": {"anyastorage:cupid_face": index / 4}, "model": "anyastorage:item/" + name})
-    write("creative_tablet", {"parent": shell_id, "overrides": variants})
+    write_tablet_overrides(models, "creative_tablet")
 
 
 if __name__ == "__main__":

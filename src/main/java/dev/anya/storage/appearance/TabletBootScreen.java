@@ -37,9 +37,8 @@ public final class TabletBootScreen {
         float dim = origin == null ? 1f : TabletHandlingPose.eased(elapsed);
         graphics.fill(0, 0, width, height, -900, (Math.round(153 * dim) << 24) | 0x000c1017);
         float progress = origin == null ? 1f : Math.min(1f, origin.progress() + elapsed);
-        boolean carrying = progress < 1;
-        TabletDevice.Portrait portrait = carrying ? origin.portrait() : TabletDevice.opening(blink);
-        drawDevice(graphics, width, height, player, portrait, progress, carrying, creative);
+        // The eligible visit starts on the glass while the hardware finishes its normal raise.
+        drawDevice(graphics, width, height, player, TabletDevice.opening(blink), progress, false, creative);
     }
 
     public void drawSettled(GuiGraphics graphics, int width, int height, Player player) {

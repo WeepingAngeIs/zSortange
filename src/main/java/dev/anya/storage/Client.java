@@ -8,6 +8,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.neoforged.api.distmarker.Dist;
@@ -23,6 +24,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.resources.ResourceLocation;
 import dev.anya.storage.appearance.*;
+import java.lang.ref.WeakReference;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -57,9 +59,11 @@ public final class Client {
     }
     /** Manual drawing and hit testing avoid vanilla cursor prediction over display-only slots. */
     public static final class Screen extends AbstractContainerScreen<StoreMenu> {
+        private static WeakReference<Player> tabletViewer = new WeakReference<>(null);
+        private static GuardianBlink.Playlist tabletVisits = new GuardianBlink.Playlist();
         private final GuardianBlink tabletIntro;
         private final TabletBootScreen tabletBoot = new TabletBootScreen();
-        private final net.minecraft.world.entity.player.Player openingPlayer;
+        private final Player openingPlayer;
         private final boolean tabletPresentation;
         private boolean openingClassified, tabletCoversView;
         private boolean retired, closeRequested, cleaned;
@@ -101,6 +105,13 @@ public final class Client {
             if (openingClassified || !menu.storageView()) return;
             openingClassified = true;
             tabletCoversView = showTabletFrame() && menu.showsTabletIntro();
+            if (tabletCoversView) {
+                if (tabletViewer.get() != openingPlayer) {
+                    tabletViewer = new WeakReference<>(openingPlayer);
+                    tabletVisits = new GuardianBlink.Playlist();
+                }
+                tabletIntro.choose(tabletVisits);
+            }
             if (!menu.privateView() && !menu.remoteOpening() && menu.showsStorageCameo())
                 cameoStarted = net.minecraft.Util.getMillis();
         }

@@ -159,6 +159,7 @@ HOST = {
         public class GuiGraphics {
             public static class StoragePaint extends RuntimeException {}
             public int fills, blits, shells, atlasDraws, row = -1; public boolean pinkShell;
+            public int expressionRow = -1, expressionColumn = -1;
             public net.minecraft.resources.ResourceLocation atlasSprite;
             public float storageX, storageY, storageScale;
             public float shellX, shellY, shellScale;
@@ -188,6 +189,12 @@ HOST = {
                     shellX = matrix.m30(); shellY = matrix.m31(); shellScale = matrix.m00();
                 }
                 if (image.getPath().endsWith("tablet_guardian.png")) row=(int)v/144;
+                if (image.getPath().endsWith("tablet_twin_tails.png")) {
+                    if (tw != 2016 || th != 896 || width != 224 || height != 128 || u % 224 != 0 || v % 128 != 0)
+                        throw new AssertionError("Incorrect close-up portrait cell");
+                    expressionRow = (int)v / 128;
+                    expressionColumn = (int)u / 224;
+                }
             }
         }
     """,

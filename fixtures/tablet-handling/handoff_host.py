@@ -75,17 +75,8 @@ def materialize(root):
         atlasDraws++;
         events.add("atlas");
         casePose = new org.joml.Matrix4f(pose.last().pose());
-    """).replace("throw new StoragePaint();", 'events.add("inventory"); throw new StoragePaint();').replace("blits++;", """
-        blits++;
-        if (image.getPath().endsWith("tablet_expressions.png")) {
-            if (tw != 2016 || th != 896 || width != 224 || height != 128 || u % 224 != 0 || v % 128 != 0)
-                throw new AssertionError("Incorrect expression cell");
-            expressionRow = (int)v / 128;
-            expressionColumn = (int)u / 224;
-        }
-    """)
+    """).replace("throw new StoragePaint();", 'events.add("inventory"); throw new StoragePaint();')
     extend(gui, """
-        public int expressionRow = -1, expressionColumn = -1;
         public final java.util.List<String> events = new java.util.ArrayList<>();
         public org.joml.Matrix4f casePose, armPose;
     """)

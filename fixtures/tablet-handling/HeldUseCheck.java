@@ -92,8 +92,40 @@ public final class HeldUseCheck {
         TabletFaces.clear();
     }
 
+    private static void catchBothHands() {
+        var player = new LocalPlayer();
+        var ordinary = new ItemStack(Content.CUPID_TABLET.get());
+        var creative = new ItemStack(Content.CREATIVE_TABLET.get());
+        player.main = ItemStack.EMPTY;
+        player.inv.slots[1] = ordinary;
+        player.inv.slots[2] = creative;
+        TabletFaces.sample(player, false);
+        player.tickCount = 1368 + 40;
+        TabletFaces.sample(player, false);
+        var first = TabletFaces.face(ordinary);
+        var second = TabletFaces.face(creative);
+        check(first.column() == 4 && second.column() == 4, "Both unselected tablets hold an authored expression");
+        player.inv.selected = 1;
+        player.main = ordinary;
+        player.inv.slots[2] = null;
+        player.off = creative;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(ordinary) == first && TabletFaces.face(creative) == second,
+                "Equipping either kind reselected an expression");
+        player.tickCount += 9;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(ordinary) == TabletIdle.Face.expression(first.row(), 6)
+                && TabletFaces.face(creative) == TabletIdle.Face.expression(second.row(), 6), "Both hands continue their own row");
+        player.tickCount += 6;
+        TabletFaces.sample(player, false);
+        check(TabletFaces.face(ordinary) == TabletIdle.Face.DARK && TabletFaces.face(creative) == TabletIdle.Face.DARK,
+                "Both hands stop within fifteen ticks");
+        TabletFaces.clear();
+    }
+
     public static void main(String[] args) {
         inventoryFaces();
+        catchBothHands();
         CLIENT.player = new LocalPlayer();
         CLIENT.camera = CLIENT.player;
         CLIENT.player.main = new ItemStack(Content.REMOTE.get());

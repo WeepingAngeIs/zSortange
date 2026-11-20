@@ -22,6 +22,28 @@ public final class HeldOpeningCheck {
         if (!ok) throw new AssertionError(reason);
     }
 
+    private static final int[] OPEN_START = {0,260,310,390,440,610,660,760,810};
+    private static final int[] IDLE_START = {0,85,175,275,385,635,760,885,1010};
+    private static final int[] CLASSIC_ROWS = {0,1,2,1,0,1,2,1,0};
+
+    private static int selected(GuiGraphics first) {
+        if (first.row == 0 && first.expressionColumn < 0) return 7;
+        check(first.row < 0 && first.expressionColumn == 0 && first.expressionRow >= 0 && first.expressionRow < 7,
+                "First paint was not an approved opening cell");
+        return first.expressionRow;
+    }
+
+    private static int[] starts(int sequence) { return sequence >= 4 && sequence < 7 ? IDLE_START : OPEN_START; }
+
+    private static void verify(GuiGraphics paint, int sequence, int age) {
+        int[] times = starts(sequence);
+        int column = 0;
+        while (column+1 < times.length && times[column+1] <= age) column++;
+        if (sequence == 7) check(paint.row==CLASSIC_ROWS[column] && paint.expressionColumn<0,"Classic blink lost beat "+column);
+        else check(paint.row<0 && paint.expressionColumn==column && paint.expressionRow==sequence,
+                "Wrong Twin Tails expression row or column at "+age);
+    }
+
     private static Client.Screen open(int id, LocalPlayer owner) {
         return open(new StoreMenu(id), owner);
     }
@@ -66,7 +88,7 @@ public final class HeldOpeningCheck {
                 owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint));
         if (swapSlot) owner.getInventory().selected++;
         var first = paint(open(id, owner), lastPaint + (swapSlot ? 15 : 401));
-        check(first.armPose == null && first.row == 0,
+        check(first.armPose == null && selected(first) >= 0,
                 "An expired sample or changed hotbar slot must drop the grip and still open authorized storage");
     }
 
@@ -96,32 +118,28 @@ public final class HeldOpeningCheck {
         same(withMotion(grip, shown, TabletHandlingPose.armMatrix(WIDTH, HEIGHT, right, false, grip.swing(), grip.equip(), shown)),
                 first.armPose, "The same hand position and motion must cross the menu boundary");
         var next = paint(screen, firstMenuPaint + 22);
+        int sequence = selected(first);
         float continued = Math.min(1, shown + 22f / TabletLift.RISE_MS);
         same(withMotion(grip, continued,
                 TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), continued)),
                 next.casePose, "Continue the existing raise without another anticipation delay");
-        for (var frame : new GuiGraphics[]{first, next}) {
-            check(frame.row < 0, "The blink replaced the carried face before the tablet settled");
-            String suffix = portrait == null ? "dark" : "glance";
-            check(frame.atlasDraws == 1 && frame.atlasSprite.toString().equals("anyastorage:item/" + (creative ? "creative" : "cupid") + "_tablet_face_" + suffix),
-                    "The raise lost the exact physical face sampled in the hand");
-        }
+        verify(first,sequence,0);
+        verify(next,sequence,22);
         var settled = paint(screen, firstMenuPaint + TabletLift.RISE_MS);
-        check(settled.row == 0 && settled.pinkShell == creative && settled.atlasDraws == 0 && settled.expressionColumn < 0,
-                "The authorized opening should switch to Twin Tails once the raise settles");
-        int[] starts = {0,260,310,390,440,610,660,760,810};
-        int[] blinkRows = {0,1,2,1,0,1,2,1,0};
+        verify(settled,sequence,TabletLift.RISE_MS);
+        check(settled.pinkShell == creative && settled.atlasDraws == 0,"Lifting the shell changed its color");
+        int[] starts = starts(sequence);
         var client = Minecraft.getInstance();
         int lookups = client.artLookups;
         for (int i = 1; i < starts.length; i++) {
             var previous = paint(screen, firstMenuPaint + starts[i] - 1);
-            check(previous.row == blinkRows[i - 1], "Prior blink beat ended early");
+            verify(previous,sequence,starts[i] - 1);
             var beat = paint(screen, firstMenuPaint + starts[i]);
-            check(beat.row == blinkRows[i] && beat.expressionColumn < 0,
-                    "The Twin Tails double blink skipped its next beat");
+            verify(beat,sequence,starts[i]);
         }
         var last = paint(screen, firstMenuPaint + 1049);
-        check(last.row == 0 && !last.events.contains("inventory"), "Last face or reveal time");
+        verify(last,sequence,1049);
+        check(!last.events.contains("inventory"), "Last face or reveal time");
         check(client.artLookups == lookups, "The render loop kept looking up the texture");
         var revealed = paint(screen, firstMenuPaint + 1050);
         check(revealed.events.indexOf("arm") == 0 && revealed.events.indexOf("case") > 0
@@ -144,7 +162,7 @@ public final class HeldOpeningCheck {
         screen.onClose();
         check(TabletDevice.takeClosing() == null, "A second close replayed the tablet");
         var nextRemote = paint(open(id + 10, owner), firstMenuPaint + 1100);
-        check(nextRemote.armPose == null && nextRemote.expressionColumn < 0 && nextRemote.row == 0,
+        check(nextRemote.armPose == null && selected(nextRemote) != sequence,
                 "An authorized Cupid Tablet without a matching grip still uses Twin Tails and never replays the arm");
     }
 
@@ -158,7 +176,7 @@ public final class HeldOpeningCheck {
         var screen = open(40, owner);
         // Vanilla's initial ClientboundContainerSetContent replaces even an unchanged held stack.
         owner.off = new net.minecraft.world.item.ItemStack();
-        paint(screen, 40_010);
+        int sequence = selected(paint(screen, 40_010));
         var frame = paint(screen, 40_010 + age);
         if (changedSlot) owner.getInventory().selected++;
         int before = PacketDistributor.sent.size();
@@ -173,10 +191,11 @@ public final class HeldOpeningCheck {
                 "Mid-intro Escape jumped or failed to adopt the synced held slot");
         same(frame.casePose, withMotion(grip, expected, TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT,
                 false, grip.swing(), grip.equip(), expected)), "Handback skipped the last painted matrix");
-        if (age == 325) {
-            check(frame.row == 2 && closing.portrait().image().getPath().endsWith("tablet_guardian.png")
-                    && closing.portrait().v() == 296, "Closing on Cupid's blink lost her closed eyes");
-        } else check(closing.portrait() == face, "Closing partway up lost the original visit");
+        verify(frame,sequence,age);
+        TabletIdle.Face actual = TabletDevice.faceOf(closing.portrait());
+        TabletIdle.Face expectedFace = sequence < 7 ? TabletIdle.Face.expression(sequence,frame.expressionColumn)
+                : switch (frame.row) { case 0 -> TabletIdle.Face.OPEN; case 1 -> TabletIdle.Face.SQUINT; default -> TabletIdle.Face.SHUT; };
+        check(actual == expectedFace, "Closing partway through the visit lost the displayed expression");
     }
 
     private static void changedBindingCannotCarry() {
@@ -188,7 +207,7 @@ public final class HeldOpeningCheck {
         owner.off = new net.minecraft.world.item.ItemStack();
         owner.off.components = "other hub";
         var frame = paint(screen, 41_010);
-        check(frame.armPose == null && frame.row == 0, "A changed binding inherited the other tablet's pose");
+        check(frame.armPose == null && selected(frame) >= 0, "A changed binding inherited the other tablet's pose");
     }
 
     private static void allPortraits() {
@@ -203,6 +222,13 @@ public final class HeldOpeningCheck {
             var graphics = new GuiGraphics();
             TabletDevice.draw(graphics, new TabletDevice.Bounds(0, 0, 1), TabletDevice.physicalFace(TabletIdle.Face.SHUT, false), false, false);
             check(graphics.row == 2 && graphics.atlasDraws == 0, "Missing baked sprite must retain the closed eyes");
+            for(int row=0;row<7;row++)for(int col=0;col<9;col++) {
+                var face=TabletIdle.Face.expression(row,col);
+                var paint=new GuiGraphics();
+                TabletDevice.draw(paint,new TabletDevice.Bounds(0,0,1),TabletDevice.physicalFace(face,true),false,true);
+                check(paint.pinkShell && paint.expressionRow==row && paint.expressionColumn==col && paint.atlasDraws==0,
+                        "Missing item texture must preserve the exact Twin Tails pose");
+            }
         } finally {
             client.missingItemFace = false;
         }
@@ -211,23 +237,37 @@ public final class HeldOpeningCheck {
         var player = new LocalPlayer();
         var creativeScreen = open(creative, player);
         var opening = paint(creativeScreen, 55_000);
-        check(opening.pinkShell && opening.row == 0, "Creative opening lost its pink shell without a held pose");
+        check(opening.pinkShell && selected(opening)>=0, "Creative opening lost its pink shell without a held pose");
         check(paint(creativeScreen, 56_050).pinkShell, "Settled Creative grid must keep the pink shell");
         var miss = new StoreMenu(54);
         miss.creativeTablet = true;
         miss.openingHit = false;
         var quiet = paint(open(miss, player), 57_000);
-        check(quiet.pinkShell && quiet.row < 0 && quiet.events.contains("inventory"), "Creative chance miss must keep its shell and immediately expose slots");
+        check(quiet.pinkShell && quiet.row < 0 && quiet.expressionColumn < 0 && quiet.events.contains("inventory"), "Creative chance miss must keep its shell and immediately expose slots");
         var owner = new LocalPlayer();
-        var fallback = open(20, owner);
-        check(paint(fallback, 60_000).row == 0 && paint(fallback, 60_310).row == 2, "Twin Tails without Cloud art");
+        int last=-1;
+        for(int cycle=0;cycle<2;cycle++) {
+            var seen=new java.util.HashSet<Integer>();
+            for(int i=0;i<8;i++) {
+                var menu=new StoreMenu(100+cycle*8+i);
+                menu.creativeTablet=(i%2)==1;
+                var screen=open(menu,owner);
+                long start=100_000L + 2_000L*(cycle*8+i);
+                int sequence=selected(paint(screen,start));
+                check(seen.add(sequence) && sequence!=last,"Both tablet colors must share one shuffled cycle");
+                last=sequence;
+                for(int beat:starts(sequence)) verify(paint(screen,start+beat),sequence,beat);
+                verify(paint(screen,start+1049),sequence,1049);
+                check(paint(screen,start+1050).events.contains("inventory"),"Opening extended the existing delay");
+                var skip=new StoreMenu(200+cycle*8+i); skip.openingHit=false;
+                expectImmediate(open(skip,owner),skip,start+1060,true);
+            }
+        }
         var reopened = open(21, owner);
-        var face = paint(reopened, 62_000);
-        check(face.row == 0 && face.expressionColumn < 0, "Cloud art displaced the approved opening portrait");
+        int sequence=selected(paint(reopened, 62_000));
         reopened.init(client, 680, 380);
         var resized = paint(reopened, 62_445);
-        check(resized.row == 0 && resized.expressionColumn < 0,
-                "Resize replayed the old appearance or restarted the gesture");
+        verify(resized,sequence,445);
         var pending = open(22, owner);
         StoreMenu menu = (StoreMenu)owner.containerMenu;
         menu.storage = false;
@@ -239,7 +279,7 @@ public final class HeldOpeningCheck {
                 "Unconfirmed storage picked or displayed a face");
         menu.storage = true;
         menu.version = 1;
-        check(paint(pending, 67_100).row == 0, "Confirmed Cupid Tablet hit must open after synchronization");
+        selected(paint(pending, 67_100));
     }
 
     private static void expectImmediate(Client.Screen screen, StoreMenu menu, long now, boolean framed) {
@@ -261,8 +301,9 @@ public final class HeldOpeningCheck {
         var mc = Minecraft.getInstance();
         System.clearProperty("anyastorage.tabletIntro");
         var hit = open(30, owner);
-        check(paint(hit, 80_000).row == 0 && paint(hit, 80_310).row == 2 && paint(hit, 81_049).row == 0,
-                "Server hit must work without a JVM option and use the original clock");
+        int sequence=selected(paint(hit, 80_000));
+        verify(paint(hit,80_310),sequence,310);
+        verify(paint(hit,81_049),sequence,1049);
         var ready = paint(hit, 81_050);
         check(ready.events.contains("inventory"), "Hit extended the existing reveal time");
 
@@ -325,7 +366,7 @@ public final class HeldOpeningCheck {
         earlyClose.openingHit = false;
         open(earlyClose, owner); // Superseded before the first paint.
         var fresh = paint(open(36, owner), 83_020);
-        check(fresh.armPose == null && fresh.row == 0, "Reopened hit inherited an unpainted miss's grip");
+        check(fresh.armPose == null && selected(fresh)>=0, "Reopened hit inherited an unpainted miss's grip");
     }
 
     private static void nonRemoteCannotClaimHeldVisuals() {
@@ -341,7 +382,7 @@ public final class HeldOpeningCheck {
                         owner.getMainHandItem(), InteractionHand.MAIN_HAND, owner.getInventory().selected, 90_000));
                 expectImmediate(open(direct, owner), direct, 90_010, false);
                 var authorized = paint(open(45, owner), 90_020);
-                check(authorized.row == 0 && authorized.armPose == null, "A direct menu replayed a prior held pose");
+                check(selected(authorized)>=0 && authorized.armPose == null, "A direct menu replayed a prior held pose");
             }
         }
         var denied = new StoreMenu(46);
@@ -368,7 +409,7 @@ public final class HeldOpeningCheck {
         System.out.println("PASS: Escape carries the last partial lift, mid-blink portrait and settled case; swapped items discard it");
         System.out.println("PASS: server hit works with default JVM arguments; heart Remote, miss and opt-out reveal "
                 + "immediately, first ready slot dispatches exactly once, and resize/reopening cannot replay the decision");
-        System.out.println("PASS: only close-up faces on the physical tablet, Twin Tails double blink, "
-                + "first actionable slot at 1050 ms, continuous lift, immediate direct inventories, private and legacy isolation");
+        System.out.println("PASS: all seven original nine-frame head sequences and the classic blink across two shared shuffle cycles, "
+                + "first beat during lift, matching Escape handback, immediate direct inventories, and slots at 1050 ms");
     }
 }

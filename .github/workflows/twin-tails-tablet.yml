@@ -1,0 +1,75 @@
+name: Twin Tails tablet expressions
+on:
+  push:
+    branches: [experiment/twin-tails-tablet-expressions]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twin-tails-tablet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build the playable JAR and isolated camera
+        run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle -I fixtures/moon-console/init.gradle jar moonCameraJar createMoonVisualLaunchScript durableAuditClasspath
+      - name: Verify the actual JAR's opening policy, faces and shared hand clock
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar=$(realpath build/libs/anya-storage-plus-*-twintails.1.jar)
+          cp_file="$PWD/build/durable-audit/check.args"
+          printf -- '-classpath\n"%s"\n' "$(cat build/durable-audit/classpath.txt)" > "$cp_file"
+          args=(--jdk "$JAVA_HOME" --classpath-file "$cp_file" --support-jar "$jar")
+          python3 -B fixtures/tablet-chance/check_server.py "${args[@]}" --packaged
+          python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
+          java -cp "$jar" fixtures/tablet-intro/GuardianBlinkCheck.java
+          python3 -B fixtures/tablet-lifecycle/run.py "${args[@]}" --packaged
+          python3 -B fixtures/tablet-handling/run_use.py "${args[@]}" --packaged
+          /usr/bin/python3 -B fixtures/tablet-handling/check_shy_sprites.py "$jar"
+      - name: Open each expression in Minecraft and check a missed appearance
+        env:
+          ANYA_EXPRESSION_REVIEW: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          ALSOFT_DRIVERS: 'null'
+        run: |
+          set -euo pipefail
+          mkdir -p build/moon-review/client
+          printf 'onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\nrenderDistance:5\nsimulationDistance:5\n' > build/moon-review/client/options.txt
+          timeout 9m xvfb-run -a -s '-screen 0 1024x768x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > build/moon-review/launch.log 2>&1 || {
+            grep -E 'Expression review|Caused by:|AssertionError|IllegalStateException' build/moon-review/launch.log | tail -n 45 || true
+            tail -25 build/moon-review/launch.log
+            exit 1
+          }
+          jar=$(realpath build/libs/anya-storage-plus-*-twintails.1.jar)
+          grep -F "$(sha256sum "$jar" | cut -d' ' -f1)" build/moon-review/client/expression-review.txt
+          /usr/bin/python3 -B fixtures/tablet-expressions/screenshot_gallery.py build/moon-review/client/screenshots build/moon-review/gallery.png
+          mkdir -p upload
+          cp "$jar" upload/
+          cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
+          cp docs/TWIN_TAILS_EXPRESSIONS.md upload/TWIN_TAILS_EXPRESSIONS.md
+          cp build/moon-review/client/expression-review.txt upload/EXPRESSIONS-CHECK.txt
+          cp build/moon-review/gallery.png upload/expressions-in-game.png
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-twintails.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14

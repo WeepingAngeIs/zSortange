@@ -33,6 +33,18 @@ public final class TabletDevice {
     private static final Portrait HALF = new Portrait(ORIGINAL, 8, 152, 240, 432);
     private static final Portrait CLOSED = new Portrait(ORIGINAL, 8, 296, 240, 432);
     private static final Portrait GAZE = new Portrait(gui("tablet_gaze_left"), 8, 8, 240, 144);
+    private static final ResourceLocation TWIN_TAILS = gui("tablet_twin_tails");
+    private static final Portrait[][] HEADS = headPortraits();
+
+    private static Portrait[][] headPortraits() {
+        Portrait[][] heads = new Portrait[7][9];
+        for (int row = 0; row < heads.length; row++) {
+            for (int column = 0; column < heads[row].length; column++) {
+                heads[row][column] = new Portrait(TWIN_TAILS, column * CELL_W, row * CELL_H, 9 * CELL_W, 7 * CELL_H);
+            }
+        }
+        return heads;
+    }
 
     public record Bounds(float x, float y, float scale) {}
     record Portrait(ResourceLocation image, int u, int v, int atlasWidth, int atlasHeight, TabletIdle.Face itemFace) {
@@ -75,6 +87,8 @@ public final class TabletDevice {
     }
 
     static Portrait opening(GuardianBlink blink) {
+        if (blink.column() < 0) return null;
+        if (blink.sequence() >= 0 && blink.sequence() < HEADS.length) return HEADS[blink.sequence()][blink.column()];
         return switch (blink.frame()) {
             case OPEN -> OPEN;
             case HALF -> HALF;
@@ -86,6 +100,8 @@ public final class TabletDevice {
         return (creative ? CREATIVE : PHYSICAL)[face.ordinal()];
     }
     static TabletIdle.Face faceOf(Portrait portrait) {
+        if (portrait != null && portrait.image().equals(TWIN_TAILS))
+            return TabletIdle.Face.expression(portrait.v() / CELL_H, portrait.u() / CELL_W);
         if (portrait == OPEN) return TabletIdle.Face.OPEN;
         if (portrait == HALF) return TabletIdle.Face.SQUINT;
         if (portrait == CLOSED) return TabletIdle.Face.SHUT;
@@ -168,7 +184,7 @@ public final class TabletDevice {
                 var face = faceOf(portrait);
                 if (drawItemFace(g, physicalFace(face, creative).image())) return;
                 // Resource packs can omit a sprite. Keep the corresponding approved GUI face.
-                portrait = switch (face) {
+                portrait = face.row() >= 0 ? HEADS[face.row()][face.column()] : switch (face) {
                     case SQUINT -> HALF;
                     case SHUT -> CLOSED;
                     case GLANCE -> GAZE;

@@ -35,7 +35,37 @@ public final class GuardianBlinkCheck {
         expect(pageChanged, 90, true, true, DONE);
         expect(new GuardianBlink(false), 0, true, true, DONE);
         expect(new GuardianBlink(true), 2000, true, true, OPEN);
+        playlists();
         System.out.println("PASS: two blinks in 1050 ms, opt-out, input coverage, bounded sync, nonstorage, close, page changes and independent reopen");
+    }
+
+    private static void playlists() {
+        var choices = new GuardianBlink.Playlist();
+        int prior = -1;
+        int[] opening = {0,260,310,390,440,610,660,760,810};
+        int[] visit = {0,85,175,275,385,635,760,885,1010};
+        for (int cycle=0;cycle<3;cycle++) {
+            var seen = new java.util.HashSet<Integer>();
+            for (int i=0;i<8;i++) {
+                var disabled = new GuardianBlink(false);
+                disabled.choose(choices);
+                require(disabled.sequence()==-1,"Disabled opening spent a choice");
+                var blink = new GuardianBlink(true);
+                blink.choose(choices);
+                int selection = blink.sequence();
+                blink.choose(choices);
+                require(blink.sequence()==selection && selection!=prior && seen.add(selection),"Shuffle repeated or changed during a visit");
+                prior = selection;
+                int[] times = selection>=4 && selection<7 ? visit : opening;
+                for (int beat=0;beat<times.length;beat++) {
+                    blink.present(times[beat],true,true);
+                    require(blink.column()==beat && blink.coversInput(),"Selected visit skipped authored beat "+beat);
+                }
+                blink.present(1049,true,true);
+                require(blink.column()==8,"Ending held for the wrong duration");
+                expect(blink,1050,true,true,DONE);
+            }
+        }
     }
 
     private static void expect(GuardianBlink blink, long time, boolean storage, boolean known, GuardianBlink.Frame expected) {

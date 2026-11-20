@@ -24,7 +24,7 @@ public final class ScreenDispatchCheck {
     private static long millis;
     private static final int WIDTH = 480, HEIGHT = 320;
     private static final int STALE = -3, STORAGE = -2;
-    private static final int OPEN = 0, HALF = 1, CLOSED = 2;
+    private static final int PORTRAIT = 0;
 
     private final Minecraft mc;
     private final StoreMenu menu;
@@ -59,7 +59,9 @@ public final class ScreenDispatchCheck {
             lastMenuPaint = graphics;
             return STORAGE;
         }
-        return graphics.fills == 0 && graphics.blits == 0 ? STALE : graphics.row;
+        if (graphics.fills == 0 && graphics.blits == 0) return STALE;
+        require(graphics.row >= 0 || graphics.expressionColumn >= 0,"Eligible opening drew no portrait");
+        return PORTRAIT;
     }
 
     private void click(int logicalX, int logicalY) {
@@ -111,7 +113,7 @@ public final class ScreenDispatchCheck {
         require(off.paint(0) == STORAGE, "Explicit opt-out skips intro");
         off.requireSlotSent("Explicit opt-out");
         var on = new ScreenDispatchCheck(2, true);
-        require(on.paint(10) == OPEN, "Enabled opens at mascot");
+        require(on.paint(10) == PORTRAIT, "Enabled opens at mascot");
         on.expectBlocked("Original opening");
         require(on.paint(1060) == STORAGE, "First visible storage frame");
         on.requireSlotSent("First revealed frame");
@@ -131,7 +133,6 @@ public final class ScreenDispatchCheck {
 
     private static void closeEveryPhase() {
         int[] offsets = {-1,0,260,310,390,440,610,660,760,810,1050};
-        int[] frames = {STORAGE,OPEN,HALF,CLOSED,HALF,OPEN,HALF,CLOSED,HALF,OPEN,STORAGE};
         for (int phase = 0; phase < offsets.length; phase++) {
             var visit = new ScreenDispatchCheck(10 + phase, true);
             if (phase == 0) {
@@ -141,7 +142,7 @@ public final class ScreenDispatchCheck {
                 visit.menu.remote = false;
             }
             visit.paint(0);
-            require(visit.paint(Math.max(0, offsets[phase])) == frames[phase], "Close setup phase " + phase);
+            require(visit.paint(Math.max(0, offsets[phase])) == (phase==0 || phase==offsets.length-1 ? STORAGE : PORTRAIT), "Close setup phase " + phase);
             int closes = AbstractContainerScreen.closes;
             int packets = PacketDistributor.sent.size();
             visit.screen.keyPressed(256, 0, 0);
@@ -152,7 +153,7 @@ public final class ScreenDispatchCheck {
             require(visit.paint(9999) == STALE && AbstractContainerScreen.closes == closes + 1
                     && PacketDistributor.sent.size() == packets, "Late callbacks revived closed phase " + phase);
             var reopened = new ScreenDispatchCheck(visit.mc, 100 + phase, true);
-            require(reopened.paint(10_000) == OPEN, "Fresh screen after close phase " + phase);
+            require(reopened.paint(10_000) == PORTRAIT, "Fresh screen after close phase " + phase);
             require(reopened.paint(11_050) == STORAGE, "Reopened screen reveals its own menu");
             reopened.requireSlotSent("Fresh menu " + phase);
         }
@@ -178,13 +179,13 @@ public final class ScreenDispatchCheck {
         old.screen.removed();
         require(newer.mc.screen == newer.screen && newer.mc.player.containerMenu == newer.menu,
                 "Old callback displaced newer screen");
-        require(newer.paint(1200) == OPEN && newer.paint(2250) == STORAGE, "Replacement opens itself");
+        require(newer.paint(1200) == PORTRAIT && newer.paint(2250) == STORAGE, "Replacement opens itself");
         newer.requireSlotSent("Replacement");
     }
 
     private static void overlaysAndOwnerChanges() {
         var covered = new ScreenDispatchCheck(53, true);
-        require(covered.paint(20) == OPEN, "Initial real open");
+        require(covered.paint(20) == PORTRAIT, "Initial real open");
         covered.mc.screen = new net.minecraft.client.gui.screens.Screen();
         int closeCalls = AbstractContainerScreen.closes;
         int ticks = ClientInteriors.ticks;
@@ -195,7 +196,7 @@ public final class ScreenDispatchCheck {
         require(AbstractContainerScreen.closes == closeCalls && ClientInteriors.ticks == ticks,
                 "Covered screen closed or ticked through overlay");
         covered.mc.screen = covered.screen;
-        require(covered.paint(1069) == OPEN && covered.paint(1070) == STORAGE, "Uncovered same screen safely");
+        require(covered.paint(1069) == PORTRAIT && covered.paint(1070) == STORAGE, "Uncovered same screen safely");
         covered.requireSlotSent("Uncovered storage");
 
         for (boolean disconnected : new boolean[]{true, false}) {

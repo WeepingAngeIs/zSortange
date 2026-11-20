@@ -1,4 +1,4 @@
-"""Show example visits and openings from a packaged tablet with the production pose and expression clocks."""
+"""Compose an offline preview using the packaged twin-tail artwork, hand poses and expression clocks."""
 import argparse
 from dataclasses import replace
 from functools import lru_cache
@@ -18,6 +18,12 @@ HERE = Path(__file__).resolve().parent
 HAND = HERE.parent / "tablet-handling"
 DRAW = runpy.run_path(str(HAND / "preview.py"))
 ROOT_TEXTURE = "assets/anyastorage/textures/gui/"
+ITEM_TEXTURE = "assets/anyastorage/textures/item/"
+OPENINGS = [
+    ("A shy blush", 6), ("The sideways smile", 4), ("Looking up with a wink", 8),
+    ("The smug blink", 2), ("Looks out, turns away", 5), ("The giggle", 4),
+    ("Peeks up, tongue out", 4), ("The classic double blink", 2),
+]
 
 
 def timelines(options):
@@ -35,45 +41,54 @@ def timelines(options):
         poses[int(ms)] = DRAW["Pose"](int(ms), face, float(progress), float(dim), device, arm)
     clocks = {}
     for line in face_rows.splitlines():
-        visit, ms, row, col = line.split()
-        clocks.setdefault(visit, []).append((int(ms), int(row), int(col)))
+        visit, ms, face = line.split()
+        clocks.setdefault(visit, []).append((int(ms), face))
     assert poses[1110].face == "DONE"
     return poses, clocks
 
 
-def read_art(jar, capture):
+def read_art(jar, capture, clocks, creative):
     scene, inventory = DRAW["PREVIOUS"]["read_screenshot"](capture)
+    tablet = "creative_tablet" if creative else "cupid_tablet"
+    case = "creative_tablet_device.png" if creative else "tablet_device.png"
     with zipfile.ZipFile(jar) as z:
-        def image(name):
-            return Image.open(io.BytesIO(z.read(ROOT_TEXTURE + name))).convert("RGBA")
-        shell, sheet, tumble = (image(name) for name in ("tablet_device.png", "tablet_expressions.png", "tablet_tumble.png"))
-    surfaces = {"WAIT": np.array(shell)}
+        def image(path):
+            with Image.open(io.BytesIO(z.read(path))) as im:
+                return im.convert("RGBA")
+        shell, sheet, classic = (image(ROOT_TEXTURE + name) for name in
+                                 (case, "tablet_twin_tails.png", "tablet_guardian.png"))
+        surfaces = {"WAIT": np.array(shell)}
+        # Held glass and the hotbar use the same baked sprite. Sample the actual item texture.
+        physical = {face for times in clocks.values() for _, face in times if face.startswith("item_")}
+        for face in physical:
+            sprite = image(ITEM_TEXTURE + tablet + "_face_" + face.removeprefix("item_") + ".png")
+            surfaces[face] = np.array(sprite.resize(shell.size, Image.Resampling.NEAREST))
     ready = shell.copy()
     ready.paste(inventory, (25,20))
     surfaces["DONE"] = np.array(ready)
     width, height = 224, 128
     assert sheet.size == (9*width, 7*height)
     face_height = round(400 * height / width)
-    assert tumble.size == (9*width, height)
+    assert classic.size == (240, 432)
+    eyelids = (0, 1, 2, 1, 0, 1, 2, 1, 0)
     for row in range(8):
-        atlas, y = (tumble, 0) if row == 7 else (sheet, row * height)
         for col in range(9):
-            tile = atlas.crop((col*width, y, (col+1)*width, y+height))
+            atlas, x, y = (classic, 8, 8 + 144 * eyelids[col]) if row == 7 else (sheet, col*width, row*height)
+            tile = atlas.crop((x, y, x + width, y + height))
             frame = shell.copy()
             frame.paste(tile.resize((400,face_height),Image.Resampling.NEAREST),
                         (16,round(20+(268-face_height)/2)))
-            surfaces[(row,col)] = np.array(frame)
+            surfaces[f"gui_{row}_{col}"] = np.array(frame)
     return scene, surfaces
 
 
 def sample(poses, clocks, visit):
-    idle = visit.startswith("idle")
+    idle = not visit.startswith("open")
     times = clocks[visit]
     start = poses[0]
     yield start, 240
-    for i,(ms,row,col) in enumerate(times):
+    for i,(ms,face) in enumerate(times):
         pose = start if idle else poses[ms]
-        face = (row,col) if row >= 0 else ("DONE" if pose.face == "DONE" else "WAIT")
         duration = times[i+1][0] - ms if i+1 < len(times) else (320 if idle else 560)
         yield replace(pose, face=face), duration
 
@@ -97,37 +112,36 @@ def decorate(img, caption, idle):
     d.text((13,20),caption,font=font("segoeuib.ttf",17),fill="#edf2f8",anchor="lm")
     d.text((606,20),"Offline tablet preview",font=font("segoeui.ttf",14),fill="#a8c3d6",anchor="rm")
     d.line((0,40,620,40),fill="#4e667b")
-    note="Held tablet detail  ·  quiet wait skipped" if idle else "Opening and inventory reveal at normal speed"
+    note="Select after one second to finish the visit" if idle else "Opening and inventory reveal at normal speed"
     d.text((12,451),note,font=font("segoeui.ttf",12),fill="#bfcedb",anchor="lm")
     return canvas
 
 
 def gallery(surfaces, path):
-    choices = [("Waving hello", (1, 3)), ("On tiptoe", (6, 4)),
-               ("Upside down", (7, 1)), ("Finding her feet", (7, 5))]
-    out = Image.new("RGB", (768, 586), "#101821")
+    out = Image.new("RGB", (768, 1152), "#101821")
     pen = ImageDraw.Draw(out)
-    for i, (label, cell) in enumerate(choices):
+    for i, (label, col) in enumerate(OPENINGS):
         x, y = 12 + (i % 2) * 378, 7 + (i // 2) * 287
         pen.text((x + 4, y), label, font=font("segoeuib.ttf", 17), fill="#edf2f8")
-        case = Image.fromarray(surfaces[cell]).resize((364, 256), Image.Resampling.LANCZOS)
+        case = Image.fromarray(surfaces[f"gui_{i}_{col}"]).resize((364, 256), Image.Resampling.LANCZOS)
         out.paste(case, (x, y + 26), case.getchannel("A"))
     out.save(path, optimize=True)
 
 
 def export(options):
     poses, clocks=timelines(options)
-    scene, surfaces=read_art(options.jar, options.capture)
+    scene, surfaces=read_art(options.jar, options.capture, clocks, options.creative)
     with zipfile.ZipFile(options.resources) as z:
         with Image.open(io.BytesIO(z.read("assets/minecraft/textures/entity/player/wide/steve.png"))) as im:
             skin=np.array(im.convert("RGBA"))
-    sections = [("idle3","An upside-down visit"), ("open1","A wave on opening"),
-                ("idle2","Up on tiptoe"), ("open2","A wink on opening")]
+    sections = [("squint", "Caught squinting"), ("open1", OPENINGS[1][0]),
+                ("idle5", "A quick giggle, then she hides"), ("open2", OPENINGS[2][0]),
+                ("open7", OPENINGS[7][0])]
     frames=[]; durations=[]; picks=[]
     for key,title in sections:
         last=None; first=len(frames)
         for pose,ms in sample(poses,clocks,key):
-            idle=key.startswith("idle")
+            idle=not key.startswith("open")
             identity=(pose.face,pose.dim,pose.device.tobytes(),pose.arm.tobytes())
             if identity==last:
                 durations[-1]+=ms
@@ -168,4 +182,5 @@ if __name__=="__main__":
     for argument in ("jdk","joml","jar","resources","capture","output"):
         parser.add_argument("--"+argument,required=True,type=Path)
     parser.add_argument("--gallery",type=Path)
+    parser.add_argument("--creative", action="store_true", help="Use the Creative Tablet case and baked face sprites")
     export(parser.parse_args())

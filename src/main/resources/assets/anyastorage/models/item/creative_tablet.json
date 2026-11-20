@@ -3,6 +3,384 @@
   "overrides": [
     {
       "predicate": {
+        "anyastorage:cupid_face": 0.00390625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0078125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.01171875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.015625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.01953125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0234375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.02734375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.03125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.03515625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_0_8"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0390625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.04296875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.046875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.05078125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0546875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.05859375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.06640625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0703125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_1_8"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.07421875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.078125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.08203125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.0859375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.08984375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.09375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.09765625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1015625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.10546875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_2_8"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.109375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.11328125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1171875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.12109375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.12890625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1328125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.13671875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.140625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_3_8"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.14453125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1484375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.15234375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.15625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.16015625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1640625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.16796875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.171875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.17578125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_4_8"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1796875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.18359375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.19140625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.1953125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.19921875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.203125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.20703125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.2109375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_5_8"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.21484375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_0"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.21875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_1"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.22265625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_2"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.2265625
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_3"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.23046875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_4"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.234375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_5"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.23828125
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_6"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.2421875
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_7"
+    },
+    {
+      "predicate": {
+        "anyastorage:cupid_face": 0.24609375
+      },
+      "model": "anyastorage:item/creative_tablet_expression_6_8"
+    },
+    {
+      "predicate": {
         "anyastorage:cupid_face": 0.25
       },
       "model": "anyastorage:item/creative_tablet_squint"

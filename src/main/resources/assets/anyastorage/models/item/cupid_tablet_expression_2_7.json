@@ -1,0 +1,6 @@
+{
+  "parent": "anyastorage:item/cupid_tablet_shell",
+  "textures": {
+    "face": "anyastorage:item/cupid_tablet_face_expression_2_7"
+  }
+}

@@ -1,6 +1,8 @@
 # Cupid settings
 
-The server rolls **Tablet opening appearance chance** when a bound Cupid Tablet successfully opens storage the player may view. The default is **24%**. A hit plays Cupid's 1.05-second opening. A miss opens storage as soon as it is ready. An unselected tablet can show a long squint in the hotbar. Selecting it finishes the current expression in up to 15 game ticks. The hotbar and held screen share that expression and then go dark together. Old heart Remotes become regular Cupid Tablets and use the same server settings.
+The server rolls **Tablet opening appearance chance** when a bound regular or Creative Cupid Tablet opens storage the player may view. The default is **24%**. On a hit, the tablet plays one of eight 1.05-second openings. On a miss, storage opens as soon as it is ready. Old heart Remotes become regular Cupid Tablets and use the same settings.
+
+An unselected tablet in the hotbar can show Cupid's long squint, a shy glance, a giggle or a peek from below. Selecting the tablet finishes her current visit within 15 game ticks. The hotbar and held tablet show the same expression and go dark together. [Cupid's expression guide](TWIN_TAILS_EXPRESSIONS.md)
 
 Opening a supported Anya Storage Plus chest or backpack directly opens its inventory immediately. The optional cameos are brief portraits beside the inventory and leave the controls usable. Vanilla and other mods' containers use their ordinary behavior.
 
@@ -10,7 +12,7 @@ As an operator, open `/anya storage` and select **Elemental, cosmetics, image an
 
 | Setting | Config key in `expansion` | Default and effect |
 | --- | --- | --- |
-| Tablet opening appearance chance | `tabletOpeningChancePercent` | **24%** for an authorized Cupid Tablet open. Set `0` for immediate access or `100` for the intro on every eligible use. |
+| Tablet opening appearance chance | `tabletOpeningChancePercent` | **24%** for either tablet. Set `0` for immediate access or `100` for an animation on every eligible opening. |
 | Chest Cupid cameo | `chestCameoEnabled` | **Off**. Enable to allow a cameo on a direct Anya chest open. |
 | Chest Cupid cameo chance | `chestCameoChancePercent` | **1%** per eligible direct chest open when its toggle is on. Accepts `0`–`100`. |
 | Backpack Cupid cameo | `backpackCameoEnabled` | **Off**. Enable for a cameo on a supported backpack inventory open. |

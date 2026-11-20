@@ -1,4 +1,5 @@
 """Verify the packaged physical item selects exactly the approved pixels used by the detailed hand."""
+import hashlib
 import io
 import json
 import sys
@@ -29,9 +30,12 @@ def check(jar):
     assert base["parent"] == shell_id and "elements" not in base
     assert shell["textures"]["face"] == "anyastorage:item/cupid_tablet_face_dark"
     names = ("squint", "shut", "glance", "open")
-    assert base["overrides"] == [{"predicate": {"anyastorage:cupid_face": n / 4},
+    cells = [(row, column, f"expression_{row}_{column}") for row in range(7) for column in range(9)]
+    states = [(name, (1 + row * 9 + column) / 256) for row, column, name in cells]
+    states.extend((name, n / 4) for n, name in enumerate(names, 1))
+    assert base["overrides"] == [{"predicate": {"anyastorage:cupid_face": value},
                                   "model": "anyastorage:item/cupid_tablet_" + name}
-                                 for n, name in enumerate(names, 1)]
+                                 for name, value in states]
     for name in names:
         assert model("_" + name) == {"parent": shell_id,
                                       "textures": {"face": "anyastorage:item/cupid_tablet_face_" + name}}
@@ -52,8 +56,8 @@ def check(jar):
         return json.loads(jar.read(creative + suffix + ".json"))
     assert variant("_shell") == {"parent": shell_id, "textures": {"face": "anyastorage:item/creative_tablet_face_dark"}}
     assert variant("") == {"parent": creative_shell, "overrides": [
-        {"predicate": {"anyastorage:cupid_face": n / 4}, "model": "anyastorage:item/creative_tablet_" + name}
-        for n, name in enumerate(names, 1)]}
+        {"predicate": {"anyastorage:cupid_face": value}, "model": "anyastorage:item/creative_tablet_" + name}
+        for name, value in states]}
     for name in names:
         assert variant("_" + name) == {"parent": creative_shell, "textures": {"face": "anyastorage:item/creative_tablet_face_" + name}}
     def check_rim(ordinary, pink, aperture):
@@ -65,6 +69,23 @@ def check(jar):
     for name in ("dark", *names):
         check_rim(image(texture + "_" + name + ".png"), image(root + "textures/item/creative_tablet_face_" + name + ".png"),
                   (10, 12, 246, 166))
+    source = root + "textures/gui/tablet_twin_tails.png"
+    assert hashlib.sha256(jar.read(source)).hexdigest() == "e64168156de620bec2de57f606067dbe59aed473a8fada89fc1f4841e25c2002"
+    sheet = image(source)
+    assert sheet.size == (2016, 896)
+    for item, shell_name in (("cupid_tablet", "tablet_device"), ("creative_tablet", "creative_tablet_device")):
+        hardware = image(root + f"textures/gui/{shell_name}.png")
+        for row, col, name in cells:
+            path = root + f"textures/item/{item}_face_{name}.png"
+            actual = image(path)
+            assert path + ".mcmeta" not in jar.namelist(), "Unexpected independent animator"
+            cell = sheet.crop((224 * col, 128 * row, 224 * (col + 1), 128 * (row + 1)))
+            expected = hardware.copy()
+            expected.alpha_composite(cell.resize((400, 229), Image.Resampling.NEAREST), (16, 40))
+            assert expected.resize((256, 176), Image.Resampling.NEAREST).tobytes() == actual.tobytes(), path
+            child = json.loads(jar.read(root + f"models/item/{item}_{name}.json"))
+            assert child == {"parent": f"anyastorage:item/{item}_shell", "textures": {"face": f"anyastorage:item/{item}_face_{name}"}}
+    print("PASS: all 63 archived face cells on each tablet reproduce the source art and resolve in sorted predicate order")
     print("PASS: physical tablet model overrides and five pixel-identical approved glass states")
 
 
