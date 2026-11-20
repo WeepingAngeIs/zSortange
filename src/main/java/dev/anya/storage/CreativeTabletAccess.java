@@ -78,7 +78,7 @@ public final class CreativeTabletAccess {
         if(!StorageItem.isCreativeTablet(tablet))return true;
         var tag=BagInventory.data(tablet);var binding=Binding.read(tag);
         return binding!=null && binding.pos==hub.getBlockPos().asLong() && binding.hub.equals(hub.existingStorageIdentity())
-                && binding.dim.equals(p.level().dimension().location().toString())
+                && binding.dim.equals(hub.getLevel().dimension().location().toString())
                 && MessageDigest.isEqual(tag.getByteArray("CreativeSeal"),signing(p.server).sign(binding));
     }
     private static void stamp(ServerPlayer p,ItemStack tablet,StorageEntity hub){

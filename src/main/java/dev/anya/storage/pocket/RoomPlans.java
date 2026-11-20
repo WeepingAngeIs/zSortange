@@ -14,7 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
-final class RoomPlans {
+public final class RoomPlans {
     static final int LIMIT = 8;
     static final String ONE_CHEST = "Add one chest pad at a time. Apply your plan or undo the chest mark before marking another pad.";
     private static final int LIFETIME = 20 * 60 * 5;
@@ -39,11 +39,14 @@ final class RoomPlans {
         }
     }
 
+    public static void show(ServerPlayer player) {
+        AnyaStorage.tell(player, HELP);
+        ChestPadGuide.showPlan(player);
+    }
     static LiteralArgumentBuilder<CommandSourceStack> commands() {
         var root = Commands.literal("plan").executes(c -> {
             var player = c.getSource().getPlayerOrException();
-            AnyaStorage.tell(player, HELP);
-            ChestPadGuide.showPlan(player);
+            show(player);
             return 1;
         });
         for (String action : new String[]{"add", "undo", "cancel", "apply"})

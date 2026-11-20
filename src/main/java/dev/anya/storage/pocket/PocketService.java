@@ -168,6 +168,25 @@ public final class PocketService {
             start(p,r,PocketLeases.Kind.VISIT,false);
         }catch(Exception e){error(p,e);}
     }
+    /** A linked tablet used inside a pocket reuses the current physical visit. */
+    public static boolean openVisitedTablet(ServerPlayer player, net.minecraft.world.InteractionHand hand) {
+        if (!inPocket(player.level())) return false;
+        ItemStack tablet = player.getItemInHand(hand);
+        var data = BagInventory.data(tablet);
+        if (!data.hasUUID("PocketId")) return false;
+        try {
+            var lease = lease(player.getUUID());
+            var room = loadedPocket(player.getServer(),data.getUUID("PocketId"));
+            if (lease==null || room==null || !lease.pocket().equals(room.id()) || lease.kind()!=PocketLeases.Kind.VISIT
+                    || player.containerMenu!=player.inventoryMenu)
+                throw new IOException("Use a tablet linked to the room you are visiting.");
+            var view = PocketView.localTablet(player,room,hand);
+            StoreMenu.visitTablet(player,view,StorageItem.isCreativeTablet(tablet));
+        } catch (IOException denied) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(denied.getMessage()),true);
+        }
+        return true;
+    }
     /** Returns true when a pocket-bound remote was handled (including denials), never falls back to a different inventory. */
     public static boolean remote(ServerPlayer p,ItemStack stack,StorageEntity hub){
         var tag=BagInventory.data(stack);if(!tag.hasUUID("PocketId"))return false;
@@ -367,6 +386,7 @@ public final class PocketService {
         REMOTE_TABLETS.remove(player);
         PENDING.remove(player);
         LEASES.release(player);
+        RoomEditor.endVisit(player);
         RoomPlans.endVisit(currentServer,player);
         RoomHologram.end(currentServer,player);
     }

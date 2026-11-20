@@ -25,7 +25,7 @@ import java.util.*;
 /** Conservative protection envelope for the gated room prototype, not a generic claims replacement. */
 @EventBusSubscriber(modid=AnyaStorage.ID)
 public final class PocketEvents {
-    @SubscribeEvent public static void tick(ServerTickEvent.Post e){PocketService.tick(e.getServer());RoomPlans.tick(e.getServer());}
+    @SubscribeEvent public static void tick(ServerTickEvent.Post e){PocketService.tick(e.getServer());RoomPlans.tick(e.getServer());RoomEditor.tick(e.getServer());}
     @SubscribeEvent public static void stop(ServerStoppingEvent e){PocketService.stop(e.getServer());}
     @SubscribeEvent public static void login(PlayerEvent.PlayerLoggedInEvent e){if(e.getEntity() instanceof ServerPlayer p)PocketService.login(p);}
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent e){if(e.getEntity() instanceof ServerPlayer p)PocketService.logout(p);}
@@ -49,13 +49,14 @@ public final class PocketEvents {
         if(e.getEntity() instanceof ServerPlayer p&&PocketService.inPocket(p.level()))e.setCanceled(true); // Safe prototype room; /kill/death lifecycle still has independent cleanup.
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void breakBlock(BlockEvent.BreakEvent e){
+        if(RoomEditor.permissionEvent(e))return;
         if(e.getLevel() instanceof Level level&&PocketService.inPocket(level)){e.setCanceled(true);return;}
         if(e.getLevel().getBlockEntity(e.getPos()) instanceof StorageEntity chest&&chest.pocketId!=null){e.setCanceled(true);return;}
         if(e.getLevel().getBlockEntity(e.getPos()) instanceof PocketContent.EntranceEntity entrance&&e.getPlayer() instanceof ServerPlayer p){
             if(!Objects.equals(entrance.owner,p.getUUID())||!Safety.locationReason(p,p.serverLevel(),e.getPos()).isEmpty())e.setCanceled(true);
         }
     }
-    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void place(BlockEvent.EntityPlaceEvent e){if(e.getLevel() instanceof Level level&&PocketService.inPocket(level))e.setCanceled(true);}
+    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void place(BlockEvent.EntityPlaceEvent e){if(!RoomEditor.permissionEvent(e)&&e.getLevel() instanceof Level level&&PocketService.inPocket(level))e.setCanceled(true);}
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void piston(PistonEvent.Pre e){if(e.getLevel() instanceof Level level&&PocketService.inPocket(level))e.setCanceled(true);}
     @SubscribeEvent public static void explosion(ExplosionEvent.Detonate e){if(PocketService.inPocket(e.getLevel())){e.getAffectedBlocks().clear();e.getAffectedEntities().clear();}}
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void join(EntityJoinLevelEvent e){
@@ -64,12 +65,36 @@ public final class PocketEvents {
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void travel(EntityTravelToDimensionEvent e){
         if(!PocketService.ownTeleport()&&(PocketService.inPocket(e.getEntity().level())||e.getDimension().equals(PocketService.DIMENSION)))e.setCanceled(true);
     }
-    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void clickToRemove(PlayerInteractEvent.LeftClickBlock e){
+        if(!PocketService.inPocket(e.getLevel()))return;
+        boolean denied=e.getUseBlock().isFalse() || e.getUseItem().isFalse();
+        // NeoForge still sends START, but suppresses client mining, block callbacks, and predicted Creative breaks.
+        e.setCanceled(true);
+        if(!denied && e.getEntity() instanceof ServerPlayer p && e.getAction()==PlayerInteractEvent.LeftClickBlock.Action.START)
+            RoomEditor.click(p,e.getPos(),e.getFace(),true);
+    }
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
+        boolean denied=e.getUseBlock().isFalse() || e.getUseItem().isFalse();
+        if(e.getLevel().isClientSide && PocketService.inPocket(e.getLevel())){
+            // The use-on packet still goes to the server. Plain surfaces also allow the usual air-use
+            // fallback for the tablet, backpack, guide, or an empty main hand with an item in the offhand.
+            var held=e.getItemStack();
+            var state=e.getLevel().getBlockState(e.getPos());
+            boolean interactive=state.is(Content.CRATE.get()) || state.is(net.minecraft.world.level.block.Blocks.LODESTONE)
+                    || dev.anya.storage.furniture.Furniture.isFurniture(state.getBlock());
+            boolean useInAir=held.isEmpty() || StorageItem.isTerminal(held) || held.is(Content.BACKPACK.get()) || held.is(Content.GUIDE.get());
+            e.setCanceled(true);
+            e.setCancellationResult(denied ? InteractionResult.FAIL : !interactive && useInAir ? InteractionResult.PASS : InteractionResult.SUCCESS);
+            return;
+        }
         if(!(e.getEntity() instanceof ServerPlayer p))return;
         if(PocketService.inPocket(p.level())&&!p.serverLevel().hasChunkAt(e.getPos())){
             e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);return;
         }
         var be=p.level().getBlockEntity(e.getPos());
+        if(denied && (PocketService.inPocket(p.level()) || be instanceof PocketContent.EntranceEntity)){
+            e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);return;
+        }
         if(PocketService.inPocket(p.level())){
             e.setCanceled(true);e.setCancellationResult(InteractionResult.SUCCESS);
             var l=PocketService.lease(p.getUUID());
@@ -80,6 +105,8 @@ public final class PocketEvents {
             if(be instanceof StorageEntity chest&&chest.pocketId!=null)PocketService.openChest(p,chest);
             else if(be instanceof dev.anya.storage.furniture.FurnitureEntity furniture && e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND)
                 dev.anya.storage.furniture.Furniture.use(p,furniture);
+            else if(e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND && e.getItemStack().getItem() instanceof net.minecraft.world.item.BlockItem
+                    && RoomEditor.click(p,e.getPos(),e.getFace(),false))return;
             else if(e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND&&e.getItemStack().is(Content.CRATE.get().asItem()))ChestPadGuide.show(p);
         }else if(be instanceof PocketContent.EntranceEntity entrance){
             e.setCanceled(true);e.setCancellationResult(InteractionResult.SUCCESS);
@@ -91,7 +118,7 @@ public final class PocketEvents {
         }
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void useItem(PlayerInteractEvent.RightClickItem e){
-        if(PocketService.inPocket(e.getLevel())&&!StorageItem.isCreativeTablet(e.getItemStack())&&!e.getItemStack().is(Content.BACKPACK.get())&&!e.getItemStack().is(Content.GUIDE.get())){e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);}
+        if(PocketService.inPocket(e.getLevel())&&!StorageItem.isTerminal(e.getItemStack())&&!e.getItemStack().is(Content.BACKPACK.get())&&!e.getItemStack().is(Content.GUIDE.get())){e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);}
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void entityUse(PlayerInteractEvent.EntityInteract e){if(PocketService.inPocket(e.getLevel()))e.setCanceled(true);}
     private static PocketContent.EntranceEntity lookingAt(ServerPlayer p){

@@ -270,8 +270,39 @@ public final class ScreenDispatchCheck {
         require(denied.paint(10) == STORAGE && denied.latestPaint.shells == 0, "Private view must skip the Cupid Tablet intro");
     }
 
+    private void expectControl(int x, int y, String verb, int value) {
+        int before = PacketDistributor.sent.size();
+        click(x, y);
+        require(PacketDistributor.sent.size() == before + 1, "Expected one action for " + verb);
+        var packet = (Packets.Action) PacketDistributor.sent.get(before);
+        require(verb.equals(packet.verb()) && packet.value() == value && packet.menu() == menu.containerId
+                && packet.session() == menu.session() && packet.revision() == menu.revision(), verb);
+    }
+
+    private static void roomControls() {
+        var visit = new ScreenDispatchCheck(83, false);
+        visit.menu.localRoom = true;
+        visit.menu.editAllowed = true;
+        require(visit.paint(0) == STORAGE, "Room inventory available");
+        visit.expectControl(51, 78, "room_edit", 1);
+        visit.menu.editActive = true;
+        visit.expectControl(51, 78, "room_edit", 0);
+        visit.expectControl(51, 160, "room_plan", 0);
+        visit.expectControl(320, 18, "tooltips", 0);
+        visit.menu.tips = false;
+        visit.expectControl(320, 18, "tooltips", 1);
+        visit.menu.editAllowed = false;
+        visit.menu.editActive = false;
+        int before = PacketDistributor.sent.size();
+        visit.click(51, 78);
+        visit.click(51, 160);
+        require(PacketDistributor.sent.size() == before, "Disabled room controls must send no request");
+        System.out.println("PASS: packaged screen dispatches Edit Mode on/off, Room plan and the upper-right tooltip toggle.");
+    }
+
     public static void main(String[] args) {
         Util.timeSource = () -> millis * 1_000_000;
+        if (args.length == 1 && args[0].equals("room-controls")) { roomControls(); return; }
         defaultAndReveal();
         closeEveryPhase();
         replacement(false);

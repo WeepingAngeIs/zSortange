@@ -1,7 +1,11 @@
 package dev.anya.storage.pocket;
 
 import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.List;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.ChunkPos;
 import net.neoforged.fml.ModList;
 
 /** The optional hosted repair module owns its quarantine decisions. A missing active hook closes the peek. */
@@ -20,11 +24,17 @@ final class StillRepairGuard {
         }
     }
 
-    static boolean permits(UUID room, long column) {
+    static boolean permits(UUID room, List<BlockPos> chestPositions) {
         if (!ENABLED) return true;
         if (CHECKS == null) return false;
         try {
-            return Boolean.FALSE.equals(CHECKS.room.invoke(null, room)) && Boolean.FALSE.equals(CHECKS.column.invoke(null, column));
+            if (!Boolean.FALSE.equals(CHECKS.room.invoke(null, room))) return false;
+            var columns = new HashSet<Long>();
+            for (BlockPos pos : chestPositions) {
+                long column = new ChunkPos(pos).toLong();
+                if (columns.add(column) && !Boolean.FALSE.equals(CHECKS.column.invoke(null, column))) return false;
+            }
+            return true;
         } catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
             return false;
         }

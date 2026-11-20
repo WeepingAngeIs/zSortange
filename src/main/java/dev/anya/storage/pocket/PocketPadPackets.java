@@ -15,9 +15,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 /** Optional play channel for one ephemeral diagram, scoped to the requesting connection. */
 public final class PocketPadPackets {
     public static BiConsumer<Connection, Update> receiver = (connection, update) -> {};
-    public static BiConsumer<Connection, StillUpdate> stillReceiver = (connection, update) -> {};
     public static final int PUBLIC = 0, CYAN = 1, PURPLE = 2;
-    static final boolean STILL_ENABLED = Boolean.getBoolean("anyastorage.stillFramePeek");
 
     public record Focus(BlockPos pos, long token, boolean watching) implements CustomPacketPayload {
         public static final Type<Focus> TYPE = new Type<>(id("pad_focus"));
@@ -54,7 +52,8 @@ public final class PocketPadPackets {
         @Override public Type<Update> type() { return TYPE; }
     }
 
-    /** Only the home entrance is addressable. The server chooses the one destination cell. */
+    /** Historical fixture shape. No handler is registered for this payload. */
+    @Deprecated
     public record StillFocus(BlockPos pos, long token, boolean watching) implements CustomPacketPayload {
         public static final Type<StillFocus> TYPE = new Type<>(id("still_focus"));
         public static final StreamCodec<RegistryFriendlyByteBuf, StillFocus> CODEC = StreamCodec.ofMember(
@@ -69,7 +68,8 @@ public final class PocketPadPackets {
         @Override public Type<StillFocus> type() { return TYPE; }
     }
 
-    /** One fixed-width, allowlisted material. Every other pixel in the still is a bundled public asset. */
+    /** Historical fixture shape. The playable mod never sends or accepts this payload. */
+    @Deprecated
     public record StillUpdate(BlockPos pos, long token, long sequence, int material) implements CustomPacketPayload {
         public static final Type<StillUpdate> TYPE = new Type<>(id("still_frame"));
         public static final StreamCodec<RegistryFriendlyByteBuf, StillUpdate> CODEC = StreamCodec.ofMember(
@@ -101,17 +101,6 @@ public final class PocketPadPackets {
         });
         registrar.playToClient(Update.TYPE, Update.CODEC,
                 (update, context) -> receiver.accept(context.connection(), update));
-        if (STILL_ENABLED) {
-            var still = event.registrar("still1").optional();
-            still.playToServer(StillFocus.TYPE, StillFocus.CODEC, (focus, context) -> {
-                if (focus.token() <= 0 || !(context.player() instanceof ServerPlayer player)) return;
-                if (player.connection.getConnection() != context.connection() || !player.connection.hasChannel(StillUpdate.TYPE)) return;
-                if (focus.watching()) PocketPadObservation.focus(player, focus.pos(), focus.token(), true);
-                else PocketPadObservation.unfocus(player, focus.pos(), focus.token());
-            });
-            still.playToClient(StillUpdate.TYPE, StillUpdate.CODEC,
-                    (update, context) -> stillReceiver.accept(context.connection(), update));
-        }
     }
 
     static void send(ServerPlayer player, BlockPos pos, long token, int mask) {

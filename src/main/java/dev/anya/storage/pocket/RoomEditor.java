@@ -17,16 +17,34 @@ import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.*;
 import net.minecraft.world.phys.shapes.CollisionContext;
+import net.neoforged.bus.api.ICancellableEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
+import net.neoforged.neoforge.event.level.BlockEvent;
 import java.io.IOException;
 import java.util.*;
 
-/** Explicit server-raycast commands, not vanilla mining or mover callbacks. No inventory-bearing block items. */
+/** The physical room tools and commands share one server-raycast build transaction. */
 public final class RoomEditor {
     // A Visit lease is checked separately; chest changes need all four rights at the home hub.
     static final int CHEST_EDIT_RIGHTS = BasePermissions.BUILD | BasePermissions.LEGACY;
     private static final Set<Block> DECOR=Set.of(Blocks.STONE_BRICKS,Blocks.QUARTZ_BLOCK,Blocks.OAK_PLANKS,Blocks.CHERRY_PLANKS,Blocks.BLACK_CONCRETE,Blocks.PURPLE_CONCRETE,Blocks.CYAN_CONCRETE,Blocks.SEA_LANTERN);
     private static final Map<ServerPlayer,Long> LAST=new WeakHashMap<>();
     private static final Set<UUID> FAILED=new HashSet<>();
+    private static final Map<UUID,Access> MODES=new HashMap<>();
+    private static BlockEvent permissionEvent;
+    static boolean permissionEvent(BlockEvent event) { return permissionEvent==event; }
+    /** Only this exact event bypasses our blanket protection; nested or unrelated edits remain blocked. */
+    private static <T extends BlockEvent & ICancellableEvent> boolean vetoed(T event) {
+        if(permissionEvent!=null)return true;
+        permissionEvent=event;
+        try { return NeoForge.EVENT_BUS.post(event).isCanceled(); }
+        catch (RuntimeException problem) {
+            AnyaStorage.LOG.warn("Room edit denied because a block permission listener failed at {}",event.getPos(),problem);
+            return true;
+        }
+        finally { permissionEvent=null; }
+    }
     public static boolean quarantined(UUID pocket){return FAILED.contains(pocket);}
     private static boolean editing;
     public static boolean enabled(){return PocketService.enabled()&&ExpansionRules.get().pocketEditing;}
@@ -34,7 +52,7 @@ public final class RoomEditor {
     static boolean canAddChest(int registeredChests, int configuredLimit) {
         return registeredChests >= 4 && registeredChests < Math.min(8, configuredLimit);
     }
-    public static String help(){return "Room editing enabled = "+enabled()+". Use /anya pocket build place with a plain block, or remove to return it to inventory. Try stone bricks, quartz, oak or cherry planks, black, purple or cyan concrete, sea lanterns, Keepsake Shelves or Delivery Hatches. Labelled Storage Chests use four reserved pads.";}
+    public static String help(){return "Room editing enabled = "+enabled()+". Open your linked tablet inside the room to turn on editing. Right-click with a plain supported block in your main hand to place it. Left-click to return a block to your inventory. Labelled Storage Chests use four reserved pads.";}
     // Server commands use the current pose, never a previous-tick interpolated camera.
     public static BlockHitResult looking(ServerPlayer p){
         BlockHitResult hit = loadedHit(p);
@@ -80,6 +98,87 @@ public final class RoomEditor {
                     && hub.allowed(p) && hub.permits(p,BasePermissions.VISIT | rights);
         }
     }
+
+    private static Access builderAccess(ServerPlayer p) throws IOException {
+        if (p.getServer() == null || !p.getServer().isSameThread() || !PocketService.inPocket(p.level()))
+            throw new IOException("Visit the pocket room to edit it.");
+        if (!enabled()) throw new IOException("Room editing is turned off in the server settings.");
+        if (p.gameMode.getGameModeForPlayer() == GameType.ADVENTURE) throw new IOException("Adventure mode cannot build.");
+        var room = record(p);
+        var returning = PocketService.ledger(p.getServer()).returning(p.getUUID());
+        if (returning == null || !room.id().equals(returning.pocket()) || PocketService.recovering(p.getUUID()))
+            throw new IOException("Enter this pocket through its Home Void Cube to edit.");
+        var access = Access.capture(p,room);
+        if (!access.hub().permits(p,BasePermissions.VISIT | BasePermissions.BUILD))
+            throw new IOException("The pocket owner must grant both Visit and Build.");
+        String denied = PocketService.authorize(p,room,PocketLeases.Kind.VISIT,false,BasePermissions.BUILD);
+        if (!denied.isEmpty()) throw new IOException(denied);
+        if (!access.current(p,BasePermissions.BUILD)) throw new IOException("Your visit or Build access changed.");
+        return access;
+    }
+
+    public static String modeDenial(ServerPlayer p) {
+        try { builderAccess(p); return ""; }
+        catch (IOException problem) { return problem.getMessage(); }
+    }
+
+    public static String setMode(ServerPlayer p, boolean on) {
+        if (p.getServer() == null || !p.getServer().isSameThread()) return "Room controls need the server thread.";
+        if (on) {
+            try { MODES.put(p.getUUID(),builderAccess(p)); }
+            catch (IOException problem) { endVisit(p.getUUID()); return problem.getMessage(); }
+            notice(p,"Room editing on. Right-click to place a block. Left-click to take it back.");
+        } else {
+            endVisit(p.getUUID());
+            notice(p,"Room editing off.");
+        }
+        return "";
+    }
+
+    public static boolean active(ServerPlayer p) {
+        if (p.getServer() == null || !p.getServer().isSameThread()) return false;
+        var access = MODES.get(p.getUUID());
+        if (access == null) return false;
+        if (access.current(p,BasePermissions.BUILD)
+                && PocketService.authorize(p,access.room(),PocketLeases.Kind.VISIT,false,BasePermissions.BUILD).isEmpty()
+                && access.current(p,BasePermissions.BUILD) && MODES.get(p.getUUID()) == access) return true;
+        if (MODES.remove(p.getUUID(),access)) notice(p,"Room editing ended because your visit or Build access changed.");
+        return false;
+    }
+
+    static void tick(net.minecraft.server.MinecraftServer server) {
+        if (MODES.isEmpty() || server.getTickCount() % 10 != 0) return;
+        for (UUID id : List.copyOf(MODES.keySet())) {
+            var p = server.getPlayerList().getPlayer(id);
+            if (p == null) endVisit(id); else active(p);
+        }
+    }
+
+    static void endVisit(UUID id) { MODES.remove(id); }
+    private static void notice(ServerPlayer p, String text) {
+        p.displayClientMessage(net.minecraft.network.chat.Component.literal(text),true);
+    }
+
+    /** Event coordinates only identify the click. The server ray and current Visit control every edit. */
+    static boolean click(ServerPlayer p, BlockPos clicked, net.minecraft.core.Direction face, boolean removal) {
+        var mode = MODES.get(p.getUUID());
+        if (mode == null || !active(p)) return false;
+        if (p.containerMenu != p.inventoryMenu) return true;
+        try {
+            var hit = looking(p);
+            if (!hit.getBlockPos().equals(clicked) || hit.getDirection() != face)
+                throw new IOException("Aim at the face you want to edit within reach.");
+            if (!canClick(p,clicked,removal)) throw new IOException("You cannot edit that spot with your current reach, abilities or cooldown.");
+            var edit = prepare(p,hit,removal,mode);
+            String result = edit.commit();
+            if (!result.isEmpty()) notice(p,result);
+        } catch (IOException | IllegalArgumentException problem) { notice(p,problem.getMessage()); }
+        return true;
+    }
+    private static boolean canClick(ServerPlayer p, BlockPos support, boolean removal) {
+        return p.getAbilities().mayBuild && p.canInteractWithBlock(support,0.0) && p.serverLevel().mayInteract(p,support)
+                && (removal || !p.getCooldowns().isOnCooldown(p.getMainHandItem().getItem()));
+    }
     private static int rights(BlockState state) {
         return state.is(Content.CRATE.get()) || state.is(Content.HATCH.get()) ? CHEST_EDIT_RIGHTS : BasePermissions.BUILD;
     }
@@ -111,6 +210,9 @@ public final class RoomEditor {
         return Safety.buildReason(p,p.serverLevel(),pos,state,removal);
     }
     public static Edit prepare(ServerPlayer p,BlockHitResult hit,boolean removal)throws IOException{
+        return prepare(p,hit,removal,null);
+    }
+    private static Edit prepare(ServerPlayer p,BlockHitResult hit,boolean removal,Access mode)throws IOException{
         if(p.getServer()==null||!p.getServer().isSameThread()||editing)throw new IOException("Overlapping or off-thread edit denied");
         if(!sight(p,hit))throw new IOException("Target is not the current server raycast");
         var r=record(p);BlockPos pos=removal?hit.getBlockPos():hit.getBlockPos().relative(hit.getDirection());
@@ -139,7 +241,7 @@ public final class RoomEditor {
                     || !furniture.belongsTo(r.owner(), r.id()) || !furniture.ownerMayRemove(p) || !furniture.emptyForRemoval())
                 throw new IOException("Empty a globe before removing it. Only the owner can remove an empty delivery hatch.");
         }else if(p.serverLevel().getBlockEntity(pos)!=null)throw new IOException("Block entities are not decorative blocks");
-        return new Edit(p,access,hit,pos,proposed,removal,registry);
+        return new Edit(p,access,hit,pos,proposed,removal,registry,mode);
     }
     public static void command(ServerPlayer p,boolean removal){
         try {
@@ -206,7 +308,7 @@ public final class RoomEditor {
         if (marks.isEmpty() || marks.size() > RoomPlans.LIMIT) throw new IOException("Mark between one and eight spots.");
         String denied = batchDenial(player, draft.access, marks);
         if (!denied.isEmpty()) throw new IOException(denied);
-        var cells = marks.stream().map(m -> new Cell(player, draft.access, m.pos(), m.state(), false)).toList();
+        var cells = marks.stream().map(m -> new Cell(player, draft.access, m.pos(), m.state(), false, null)).toList();
         var main = new MainInventory(player);
         List<Container> affected = new ArrayList<>(cells);
         affected.add(main);
@@ -255,22 +357,25 @@ public final class RoomEditor {
         private final Cell cell;
         private final MainInventory main;
         private final Transactions.Plan plan;
+        private final int inputSlot;
         private boolean used;
         Mark mark() { return new Mark(pos,proposed,hit,p.serverLevel().getBlockState(hit.getBlockPos())); }
         Access access() { return access; }
-        private Edit(ServerPlayer p,Access access,BlockHitResult hit,BlockPos pos,BlockState proposed,boolean removal,List<StorageEntity> registry)throws IOException{
+        private Edit(ServerPlayer p,Access access,BlockHitResult hit,BlockPos pos,BlockState proposed,boolean removal,List<StorageEntity> registry,Access mode)throws IOException{
             this.p=p;this.pocket=access.room();this.access=access;this.hit=hit;this.pos=pos;this.proposed=proposed;this.removal=removal;this.registry=registry;
-            cell=new Cell(p,access,pos,proposed,removal);main=new MainInventory(p);
+            cell=new Cell(p,access,pos,proposed,removal,mode);main=new MainInventory(p);
+            inputSlot=p.getInventory().selected;
             plan=new Transactions.Plan(List.of(cell,main),this::valid);
-            int moved=removal?plan.move(cell,0,List.of(main),1):plan.move(main,p.getInventory().selected,List.of(cell),1);
+            int moved=removal?plan.move(cell,0,List.of(main),1):plan.move(main,inputSlot,List.of(cell),1);
             if(moved!=1)throw new IOException(removal?"Inventory full; block left untouched":"Held input changed; block left untouched");
         }
         private boolean valid(){
             try{
                 var r=record(p);
                 if (!removal && proposed.is(Content.CRATE.get()) && !canAddChest(registry.size(), ExpansionRules.get().pocketContainers)) return false;
-                return r.equals(pocket)&&access.current(p,rights(proposed))&&permission(p,r,pos,proposed,removal).isEmpty()
+                return (removal || p.getInventory().selected==inputSlot) && r.equals(pocket)&&access.current(p,rights(proposed))&&permission(p,r,pos,proposed,removal).isEmpty()
                         &&access.current(p,rights(proposed))&&sight(p,hit)&&registry.equals(PocketRoomLayout.present(access.level(),r))&&cell.originalUnchanged()
+                        && (cell.mode == null || canClick(p,hit.getBlockPos(),removal))
                         && (removal || unobstructed(p, pos, proposed));
             }catch(IOException|RuntimeException e){return false;}
         }
@@ -281,6 +386,15 @@ public final class RoomEditor {
             if(!plan.current())return "Build rights, view, inventory or world changed; no changes made";
             editing=true;
             try{
+                if (cell.mode != null) {
+                    if (removal && vetoed(new BlockEvent.BreakEvent(p.serverLevel(),pos,proposed,p)))
+                        return "Another mod denied removing this block.";
+                    if (!removal) {
+                        String denial = cell.placementDenial(hit.getBlockPos());
+                        if (!denial.isEmpty()) return denial;
+                    }
+                }
+                // The permission event has finished. The plan rechecks the room, inventory and rights before any writes.
                 String result=plan.commit(p.getServer());
                 if(!result.isEmpty()){
                     if(Transactions.quarantined(cell)||Transactions.quarantined(main)){FAILED.add(pocket.id());AnyaStorage.LOG.error("ROOM EDIT QUARANTINE {} at {}: {}. Preserve the world for inspection; do not replay.",pocket.id(),pos,result);}
@@ -298,18 +412,21 @@ public final class RoomEditor {
         private final Access access;
         private final ServerLevel level;
         private final int required;
+        private final Access mode;
         private final BlockPos pos;
         private final BlockState before,after;
         private final net.minecraft.world.level.block.entity.BlockEntity original;
         private final CompoundTag originalData;
         private final ItemStack input,output;
-        Cell(ServerPlayer p,Access access,BlockPos pos,BlockState proposed,boolean removal){
+        Cell(ServerPlayer p,Access access,BlockPos pos,BlockState proposed,boolean removal,Access mode){
+            this.mode=mode;
             this.p=p;this.r=access.room();this.access=access;this.level=access.level();this.required=rights(proposed);
             this.pos=pos;before=level.getBlockState(pos);after=removal?Blocks.AIR.defaultBlockState():proposed;
             original=level.getBlockEntity(pos);originalData=original==null?null:original.saveWithFullMetadata(level.registryAccess());
             input=before.isAir()?ItemStack.EMPTY:new ItemStack(before.getBlock());output=after.isAir()?ItemStack.EMPTY:new ItemStack(after.getBlock());
         }
         boolean originalUnchanged(){
+            if (!modeCurrent()) return false;
             if (!level.hasChunkAt(pos) || level.getBlockState(pos) != before || level.getBlockEntity(pos) != original) return false;
             if (original == null) return true;
             boolean removable = original instanceof StorageEntity c && c.isEmpty() && !Transactions.quarantined(c)
@@ -335,7 +452,7 @@ public final class RoomEditor {
                 throw new IllegalStateException("The room or builder changed.");
             if (!restore && before.isAir() && state != target && !unobstructed(p, pos, target))
                 throw new IllegalStateException("Do not build inside a player or entity");
-            if(state!=target&&!level.setBlock(pos,target,3))throw new IllegalStateException("World refused block edit");
+            if(state!=target && !level.setBlock(pos,target,3))throw new IllegalStateException("World refused block edit");
             if(target.is(Content.CRATE.get())){
                 if(!(level.getBlockEntity(pos) instanceof StorageEntity c))throw new IllegalStateException("Supported chest did not create expected block entity");
                 if(restore&&originalData!=null)c.loadWithComponents(originalData,level.registryAccess());
@@ -348,7 +465,59 @@ public final class RoomEditor {
                 else furniture.initialize(r.owner(), r.id());
             }
             if(level.getBlockState(pos)!=target)throw new IllegalStateException("World edit failed verification");
-            if (!restore && !access.current(p,required)) throw new IllegalStateException("Build access changed during placement.");
+            if (!restore && (!access.current(p,required) || !modeCurrent())) throw new IllegalStateException("Build access changed during placement.");
+        }
+        /** Let placement listeners inspect the real proposed state before committing any inventory or block changes. */
+        private String placementDenial(BlockPos against) {
+            if (level.captureBlockSnapshots || level.restoringBlockSnapshots || !level.capturedBlockSnapshots.isEmpty())
+                return "Another placement is active.";
+            List<BlockSnapshot> captured = new ArrayList<>();
+            boolean keepForeignChange = false;
+            try {
+                boolean placed;
+                level.captureBlockSnapshots = true;
+                try { placed = level.setBlock(pos,after,Block.UPDATE_ALL); }
+                finally {
+                    level.captureBlockSnapshots = false;
+                    captured.addAll(level.capturedBlockSnapshots);
+                    level.capturedBlockSnapshots.clear();
+                }
+                if (!placed || captured.size() != 1 || !pos.equals(captured.getFirst().getPos()))
+                    return "The room cannot place this block here.";
+
+                BlockEntity preview = level.getBlockEntity(pos);
+                boolean denied;
+                try { denied = vetoed(new BlockEvent.EntityPlaceEvent(captured.getFirst(),level.getBlockState(against),p)); }
+                finally {
+                    // Ownership annotations on the trial are disposable. Preserve an independent replacement or real deposit.
+                    keepForeignChange = level.getBlockState(pos) != after || level.getBlockEntity(pos) != preview;
+                    if (!keepForeignChange && (preview instanceof Container inventory && !inventory.isEmpty()
+                            || preview instanceof FurnitureEntity furniture && !furniture.emptyForRemoval())) {
+                        keepForeignChange = true;
+                        FAILED.add(r.id());
+                        AnyaStorage.LOG.error("ROOM EDIT QUARANTINE {} at {}: a placement listener deposited contents in the provisional block. Contents preserved.",r.id(),pos);
+                    }
+                }
+                if (FAILED.contains(r.id())) return "The room kept an unexpected deposit. Editing is paused for operator inspection.";
+                if (keepForeignChange) return "Another mod changed that spot. No materials were taken.";
+                return denied ? "Another mod denied placing this block." : "";
+            } finally {
+                level.restoringBlockSnapshots = true;
+                try {
+                    for (var snapshot : captured.reversed()) {
+                        if (keepForeignChange && pos.equals(snapshot.getPos())) continue;
+                        if (snapshot.getCurrentState() != snapshot.getState() && !snapshot.restore(Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS)) {
+                            FAILED.add(r.id());
+                            AnyaStorage.LOG.error("ROOM EDIT QUARANTINE {}: could not restore placement check at {}",r.id(),snapshot.getPos());
+                        }
+                    }
+                } finally {
+                    level.restoringBlockSnapshots = false;
+                }
+            }
+        }
+        private boolean modeCurrent() {
+            return mode == null || MODES.get(p.getUUID()) == mode && p.containerMenu == p.inventoryMenu && mode.current(p,required);
         }
         public void setChanged(){}
         public boolean stillValid(Player player){return player==p;}
@@ -356,6 +525,6 @@ public final class RoomEditor {
         public ItemStack removeItemNoUpdate(int i){throw new UnsupportedOperationException();}
         public void clearContent(){throw new UnsupportedOperationException();}
     }
-    public static void clear(){RoomPlans.clear();LAST.clear();FAILED.clear();editing=false;}
+    public static void clear(){RoomPlans.clear();MODES.clear();LAST.clear();FAILED.clear();editing=false;}
     private RoomEditor(){}
 }

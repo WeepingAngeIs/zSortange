@@ -60,6 +60,7 @@ public final class StorageItem extends Item {
                     p.displayClientMessage(Component.literal("The Creative Tablet requires Creative mode."),true);
                     return InteractionResultHolder.fail(stack);
                 }
+                if (PocketService.openVisitedTablet(p,hand)) return InteractionResultHolder.consume(stack);
                 if (isCreativeTablet(stack)) {
                     CreativeTabletAccess.open(p,hand);
                     return InteractionResultHolder.consume(stack);
@@ -136,6 +137,7 @@ public final class StorageItem extends Item {
                     : "Sneak-use on a hub to bind. Use in air within its radius to open storage."));
             lines.add(Component.literal("Sneak-use on a Home Void Cube to link pocket storage."));
             lines.add(Component.literal("Right-click a linked cube to visit with permission."));
+            lines.add(Component.literal("Inside your linked room, use the tablet in air for storage and Edit Mode."));
             lines.add(Component.literal("Owners can sneak-use on a chest to edit its routing."));
         }
     }

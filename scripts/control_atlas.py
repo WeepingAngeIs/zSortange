@@ -77,6 +77,14 @@ def sprite(shape, badge=""):
         line([(2,10),(5,10)],LIGHT);line([(6,7),(8,7)],MINT)
         poly([(5,13),(10,5),(9,3),(11,1),(15,5),(13,7),(12,6),(7,14)],ROSE)
         line([(10,3),(11,2),(13,4)],LIGHT)
+    elif shape=="wrench":
+        # Open crescent jaw and a ring at the far end of the insulated handle.
+        poly([(9,1),(12,0),(9,4),(11,6),(15,3),(15,6),(13,9),(10,10),(8,9),
+              (4,14),(2,15),(0,13),(1,11),(6,6),(6,4)],ALLOY)
+        line([(7,5),(8,3),(10,2)],LIGHT)
+        line([(11,8),(13,7),(14,5)],MINT)
+        line([(2,12),(6,8),(7,8)],ROSE,2)
+        d.point((2,13),fill=INK)
     elif shape in ("crew","person"):
         if shape=="crew":
             gem(12,5,3,ROSE);poly([(10,9),(13,8),(15,10),(15,13),(11,13)],ALLOY)
@@ -446,6 +454,7 @@ SKIN_GALAXY moon
 SKIN_OAK leaf sheet
 SKIN_CHERRY leaf plus
 SKIN_DARK_OAK leaf lock
+ROOM_WRENCH wrench
 """
 CAT = {row.split()[0]: row.split()[1:] for row in CATALOG.strip().splitlines()}
 ASSET = DEST / "control_atlas.png"

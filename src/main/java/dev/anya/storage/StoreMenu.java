@@ -20,6 +20,8 @@ import dev.anya.storage.appearance.*;
 import dev.anya.storage.images.InteriorImages;
 import dev.anya.storage.pocket.PocketService;
 import dev.anya.storage.pocket.RoomBounds;
+import dev.anya.storage.pocket.RoomEditor;
+import dev.anya.storage.pocket.RoomPlans;
 import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -36,6 +38,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private final SimpleContainer display=new SimpleContainer(54);
     private final ContainerData sync=new SimpleContainerData(19);
     private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256, CREATIVE_ACCESS=512, TABLET_ACCESS=1024;
+    private static final int LOCAL_ROOM=2048, EDIT_ALLOWED=4096, EDIT_ACTIVE=8192;
     private CreativeTabletAccess.Session creative;
     private ItemStack networkTablet;
     static final int POCKET_ACTION_SLOT = 51;
@@ -80,7 +83,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos,int flags){
         this(id,inventory,flags);this.owner=owner;this.page=page;this.bag=bag;this.hub=hub;this.chest=chest;this.routePos=routePos;
-        if((flags&CREATIVE_ACCESS)!=0)creative=CreativeTabletAccess.session(owner);
+        if((flags&CREATIVE_ACCESS)!=0 && (flags&LOCAL_ROOM)==0)creative=CreativeTabletAccess.session(owner);
         if(page==Page.NETWORK && creative==null)networkTablet=heldNetworkTablet(owner,hub);
         if(owner.hasPermissions(2))draft=Config.copy(Config.get());
         int session=ThreadLocalRandom.current().nextInt();sync.set(0,session&65535);sync.set(1,session>>>16);bump();
@@ -156,12 +159,15 @@ public final class StoreMenu extends AbstractContainerMenu {
     public static void pocketChest(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
         openPocket(p,view,Opening.CHEST);
     }
+    public static void visitTablet(ServerPlayer p,dev.anya.storage.pocket.PocketView view,boolean creativeTablet){
+        if(view.localTablet())openPocket(p,view,creativeTablet?Opening.CREATIVE:Opening.TABLET);
+    }
     private static void openPocket(ServerPlayer p,dev.anya.storage.pocket.PocketView view,Opening opening){
         if(!view.valid())return;
-        int flags=openingFlags(opening,view.permits(BasePermissions.VIEW));
+        int flags=openingFlags(opening,view.permits(BasePermissions.VIEW)) | (view.localTablet()?LOCAL_ROOM:0);
         p.openMenu(new SimpleMenuProvider((id,inv,ignored)->{
             StoreMenu menu=new StoreMenu(id,inv,p,Page.CHEST,null,null,null,null,flags);menu.pocket=view;menu.render();menu.bump();return menu;
-        },Component.literal("Experimental pocket storage")));
+        },Component.literal(view.localTablet()?"Home Void Cube":"Experimental pocket storage")));
     }
     public boolean hasPocket(UUID id){return pocket!=null&&pocket.id().equals(id);}
     public static void route(ServerPlayer p,StorageEntity hub,BlockPos pos){if(hub.ownedBy(p))open(p,Page.ROUTE,null,hub,null,pos.immutable());}
@@ -180,6 +186,9 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     public boolean tooltipsEnabled(){return sync.get(18)==0;}
     public boolean storageView(){return (sync.get(4)&1)!=0;}
+    public boolean localRoomPanel(){return (sync.get(4)&LOCAL_ROOM)!=0;}
+    public boolean roomEditAllowed(){return (sync.get(4)&EDIT_ALLOWED)!=0;}
+    public boolean roomEditActive(){return (sync.get(4)&EDIT_ACTIVE)!=0;}
     public boolean hasTabletOpeningRule(){return (sync.get(4)&TABLET_RULE)!=0;}
     public boolean showsTabletIntro(){return (sync.get(4)&TABLET_INTRO)!=0;}
     public boolean creativeTabletOpening(){return (sync.get(4)&CREATIVE_ACCESS)!=0;}
@@ -210,7 +219,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(adminPage()&&!owner.hasPermissions(2))return false;
         if(bag!=null&&!bag.valid())return false;
         if(pocket!=null&&!pocket.valid())return false;
-        if((openingFlags&CREATIVE_ACCESS)!=0 && (creative==null||!creative.held()))return false;
+        if((openingFlags&CREATIVE_ACCESS)!=0 && (openingFlags&LOCAL_ROOM)==0 && (creative==null||!creative.held()))return false;
         if(hub!=null && (openingFlags&TABLET_ACCESS)!=0 && creative==null && (networkTablet==null||heldNetworkTablet(owner,hub)!=networkTablet))return false;
         if(hub!=null&&!Network.hubReason(owner,hub,creative).isEmpty())return false;
         if(chest!=null&&(!chest.stillValid(owner)||!Safety.reason(owner,chest,null).isEmpty()))return false;
@@ -234,7 +243,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private boolean accessChanged(){return page==Page.ACCESS&&hub!=null&&shownAccessRevision!=hub.profileRevision;}
     public void action(Packets.Action packet){
-        if(owner==null||packet.session()!=session())return;
+        if(owner==null||owner.containerMenu!=this||packet.menu()!=containerId||packet.session()!=session())return;
         // A personal preference has no dependency on the inventory snapshot revision.
         if(packet.verb().equals("tooltips")){
             if(!stillValid(owner) || (packet.value()!=0 && packet.value()!=1))return;
@@ -257,6 +266,20 @@ public final class StoreMenu extends AbstractContainerMenu {
                 viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
             }
             else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
+            else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("room_edit")){
+                if(packet.value()!=0 && packet.value()!=1)return;
+                boolean desired=packet.value()==1;
+                if(desired==roomEditActive() || desired==RoomEditor.active(owner))return;
+                String reason=RoomEditor.setMode(owner,desired);
+                if(reason.isEmpty())owner.closeContainer();
+                else owner.displayClientMessage(Component.literal(reason),true);
+            }
+            else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("room_plan") && packet.value()==0){
+                if(RoomEditor.modeDenial(owner).isEmpty()){
+                    owner.closeContainer();
+                    RoomPlans.show(owner);
+                }
+            }
             else if(packet.verb().equals("slot")){
                 int index=packet.value()&255;Click click=new Click((packet.value()>>8)&3,(packet.value()&65536)!=0);
                 if(index>=0&&index<54){Consumer<Click> action=buttons.get(index);if(action!=null)action.accept(click);else if(entries.containsKey(index))take(entries.get(index),click);}
@@ -305,7 +328,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private List<Container> transferStores(List<Network.Target> targets){
         return hub!=null?targets.stream().map(Network.Target::inventory).toList():storageContainers();
     }
-    private MainInventory main(){return new MainInventory(owner,bag==null?-1:bag.playerSlot);}
+    private MainInventory main(){return new MainInventory(owner,bag!=null?bag.playerSlot:pocket!=null?pocket.tabletSlot():-1);}
     private void storage(){
         boolean mayView=pocket!=null?pocket.permits(BasePermissions.VIEW):hub==null||hub.permits(owner,BasePermissions.VIEW);
         List<Entry> values=new ArrayList<>();List<Network.Target> targets=mayView?targets():List.of();
@@ -321,7 +344,13 @@ public final class StoreMenu extends AbstractContainerMenu {
         // Unfiltered views retain physical slot order, including every real empty slot.
         // Search narrows the view without inventing slots or changing the source-slot identity.
         offset=StorageGrid.start(values.size(),offset/9,viewportRows);
-        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|(mayView?openingFlags:openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);
+        int roomFlags=0;
+        if(pocket!=null && pocket.localTablet()){
+            roomFlags=LOCAL_ROOM;
+            if(RoomEditor.active(owner))roomFlags|=EDIT_ACTIVE;
+            if(RoomEditor.modeDenial(owner).isEmpty())roomFlags|=EDIT_ALLOWED;
+        }
+        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|roomFlags|(mayView?openingFlags:openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);
         synchronizedInt(6,capacity);synchronizedInt(8,values.size());synchronizedInt(10,offset);synchronizedInt(12,occupied);
         int shown=StorageGrid.visible(values.size(),offset,viewportRows);
         for(int i=0;i<shown;i++){
@@ -344,6 +373,10 @@ public final class StoreMenu extends AbstractContainerMenu {
         decorateTransferReport();
     }
     private void pocketControls(boolean mayView, int chestCount) {
+        if(pocket.localTablet()) {
+            button(POCKET_ACTION_SLOT,ControlGlyph.EXIT,"Leave pocket",c->PocketService.recover(owner),"Return to your saved entry position.");
+            return;
+        }
         boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
         String upgradeHint = "Visit through the linked Void Cube and click Room upgrades in chat.";
         String upgradeAccess = "Room editing must be enabled. Requires Build, View, Deposit and Withdraw.";

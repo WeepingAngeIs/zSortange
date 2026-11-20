@@ -1,0 +1,56 @@
+name: Home Void room editor
+on:
+  push:
+    branches: [experiment/home-void-room-editor]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home-void-editor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Compile the mod and separate gameplay fixture
+        run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle -I fixtures/moon-console/init.gradle jar moonCameraJar durableAuditClasspath
+      - name: Exercise room controls, binding, chest rules and planner offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar=$(realpath build/libs/anya-storage-plus-*-roomeditor.1.jar)
+          cp_file="$PWD/build/durable-audit/check.args"
+          printf -- '-classpath\n"%s"\n' "$(cat build/durable-audit/classpath.txt)" > "$cp_file"
+          args=(--jdk "$JAVA_HOME" --classpath-file "$cp_file" --support-jar "$jar")
+          mkdir -p upload
+          record() { "$@" | tee -a upload/ROOM-EDITOR-CHECKS.txt; }
+          record python3 -B fixtures/tablet-lifecycle/run.py "${args[@]}" --packaged --room-controls
+          record python3 -B fixtures/room-editor/run_binding.py "${args[@]}"
+          record python3 -B fixtures/chest-expansion/run.py "${args[@]}" --packaged
+          record python3 -B fixtures/room-plan/run.py "${args[@]}"
+          record python3 -B fixtures/room-editor/check_exterior.py "$jar"
+          record python3 -B fixtures/room-editor/check_package.py "$jar" build/moon-fixture/moon-camera-fixture-*.jar
+          sha256sum "$jar" | cut -d' ' -f1 | tee -a upload/ROOM-EDITOR-CHECKS.txt
+          cp "$jar" docs/HOME_VOID_ROOM_EDITOR.md upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-roomeditor.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14

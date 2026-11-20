@@ -115,12 +115,16 @@ HOST = {
             public boolean backpack = true;
             public boolean creativeTablet;
             public boolean creativeTabletOpening() { return creativeTablet; }
-            public boolean tooltipsEnabled() { return true; }
+            public boolean tips = true, localRoom, editAllowed, editActive;
+            public boolean tooltipsEnabled() { return tips; }
             public boolean hasTabletOpeningRule() { return openingRule; }
             public boolean showsTabletIntro() { return openingHit; }
             public boolean remoteOpening() { return remote; }
             public boolean showsStorageCameo() { return cameo; }
             public boolean privateView() { return privateStorage; }
+            public boolean localRoomPanel() { return localRoom; }
+            public boolean roomEditAllowed() { return editAllowed; }
+            public boolean roomEditActive() { return editActive; }
             public int version = 1, rows = 5;
             public StoreMenu(int id) { containerId = id; }
             public boolean storageView() { return storage; }

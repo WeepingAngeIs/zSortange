@@ -51,7 +51,7 @@ def main(options):
             "-d", host, *materialize(scratch / "src"), HERE / "ScreenDispatchCheck.java",
         ], scratch)
         print("Testing production screen " + ("from supplied JAR" if options.packaged else "compiled from source"), flush=True)
-        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-classpath", classpath, "ScreenDispatchCheck"], scratch)
+        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-classpath", classpath, "ScreenDispatchCheck", *(["room-controls"] if options.room_controls else [])], scratch)
 
 
 if __name__ == "__main__":
@@ -60,4 +60,5 @@ if __name__ == "__main__":
     parser.add_argument("--classpath-file", required=True, type=Path)
     parser.add_argument("--support-jar", required=True, type=Path)
     parser.add_argument("--packaged", action="store_true", help="Test the supplied candidate JAR bytecode directly")
+    parser.add_argument("--room-controls", action="store_true", help="Exercise the room panel and personal tooltip controls only")
     main(parser.parse_args())

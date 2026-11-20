@@ -60,6 +60,7 @@ public final class MoonCamera {
     private enum Step { TITLE, JOIN, PLACED, GROUND_MODEL, GLOBE_MODEL, CLOSED, OPEN, SHUT, TABLET, EQUIP, AWAY, RESELECT, RIGHT, LEFT, TURN, PAUSE,
         RESUME, USE_TABLET, INTRO, GRID, TOOLTIP_ON, TOOLTIP_OFF, RETURN, CREATIVE_ITEM, CREATIVE_EQUIP, CREATIVE_USE, CREATIVE_INTRO, CREATIVE_GRID, CREATIVE_RETURN, RESTORE, FINISH, DONE }
     private static final boolean EXPRESSIONS="true".equals(System.getenv("GITHUB_ACTIONS")) && "1".equals(System.getenv("ANYA_EXPRESSION_REVIEW"));
+    private static final boolean EDITOR="true".equals(System.getenv("GITHUB_ACTIONS")) && "1".equals(System.getenv("ANYA_ROOM_EDITOR_REVIEW"));
     private static final int TABLET_SLOT = 1, CREATIVE_SLOT = 2;
     private static final ResourceLocation FACE = ResourceLocation.fromNamespaceAndPath("anyastorage", "cupid_face");
     private static final BlockPos CUBE = new BlockPos(0, 80, 0);
@@ -159,6 +160,7 @@ public final class MoonCamera {
     }
 
     @SubscribeEvent public static void frame(RenderFrameEvent.Post event) throws ReflectiveOperationException {
+        if (EDITOR) return;
         var mc = Minecraft.getInstance();
         if(EXPRESSIONS){ExpressionCamera.frame(mc);return;}
         boolean creativeEquip = step == Step.CREATIVE_EQUIP;
@@ -195,6 +197,7 @@ public final class MoonCamera {
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) throws Exception {
         if (!"true".equals(System.getenv("GITHUB_ACTIONS")) || step == Step.DONE) return;
         var mc = Minecraft.getInstance();
+        if(EDITOR && step==Step.JOIN){EditorCamera.tick(mc);return;}
         if(EXPRESSIONS && step==Step.JOIN){ExpressionCamera.tick(mc);return;}
         if (operation != null) {
             if (!operation.isDone()) return;

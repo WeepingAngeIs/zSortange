@@ -1,6 +1,6 @@
 # Anya Storage Plus field kit
 
-Experimental candidate `0.3.0-beta.7-twintails.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
+Experimental candidate `0.3.0-beta.7-roomeditor.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
 ## Use a backpack on the ground
 
@@ -27,6 +27,8 @@ Claims still apply. Inside a pocket, the visitor needs View to see a keepsake, D
 As an operator, run `/anya pocket enable`, then `/anya pocket status`. The setting is saved and takes effect once the command succeeds. Use `/anya pocket disable` to switch off storage and room editing. If a room is being prepared, wait for it to finish and retry the disable.
 
 To test entry, crouch-right-click the hub with your tablet, then crouch-right-click the Home Void Cube with the same item. Stand up and right-click the cube to visit. To enable editing separately, use `/anya storage settings set expansion.pocketEditing true`.
+
+Inside the room, right-click the air with its linked tablet. Click the **Edit Mode** wrench, place a plain supported block with right-click, then take it back with left-click. Reopen the tablet and click the wrench marked **ON** to finish. The **Room plan** button opens the layout planner. **Leave room** returns you to your saved entry point. A guest needs Visit and Build to edit. Their View, Deposit and Withdraw permissions govern the storage panel separately.
 
 ## Plan a corner of the pocket
 
