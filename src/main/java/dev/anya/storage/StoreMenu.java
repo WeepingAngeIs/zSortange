@@ -388,7 +388,8 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(entry.position==null) {AnyaStorage.tell(owner,"This item is inside your backpack.");return;}
         if(!(entry.inventory instanceof net.minecraft.world.level.block.entity.BlockEntity block)
                 ||block.getLevel()!=owner.serverLevel()){
-            AnyaStorage.tell(owner,"That chest is in your pocket. Find it during an authorized room visit.");return;
+            AnyaStorage.tell(owner,pocket!=null ? "That chest is in your pocket. Find it during an authorized room visit."
+                    : "That chest is in your linked base. Visit its dimension to mark the container.");return;
         }
         boolean found=FieldKit.canLocate(entry.inventory,entry.slot,entry.snapshot,
                 ()->stillValid(owner)&&permission(BasePermissions.VIEW),this::storageContainers,

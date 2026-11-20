@@ -171,6 +171,7 @@ public final class RootChecks {
     @SubscribeEvent public static void chat(ClientChatReceivedEvent.System event){
         String msg=event.getMessage().getString();
         if(!msg.startsWith("[Anya Storage]"))return;
+        CreativeAnywhereCheck.seenNotice(msg);
         if(msg.contains("Linked to pocket "))bindings++;
         if(step==Step.USE || step==Step.MENU || step==Step.CLOSE)notices.add(msg);
     }

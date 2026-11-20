@@ -33,6 +33,9 @@ final class CreativeAnywhereCheck {
     private static ItemStack aggregate, pocketTablet, standard;
     private static UUID pocketId;
     private static int previousShards;
+    private static long searchTime;
+    private static volatile String notice="";
+    static void seenNotice(String text){notice=text;}
     private static CompletableFuture<Boolean> task;
     private static void require(boolean ok,String why){if(!ok)throw new IllegalStateException("Creative Tablet: "+why);}
     private static void next(Step s){step=s;ticks=0;System.out.println("Creative camera "+s);}
@@ -138,17 +141,21 @@ final class CreativeAnywhereCheck {
                 require(m.creativeTabletOpening() && m.capacity()==216 && p.level().dimension()==Level.NETHER && !cold(p,CUBE),
                     "See only the owned 216-slot inventory, excluding the neighboring private crate");
                 previousShards=shards(p);
+                searchTime=p.serverLevel().getGameTime();
                 m.action(new Packets.Action(m.containerId,m.session(),m.revision(),"text","amethyst shard",0));
                 next(Step.SEARCH);
             }
             case SEARCH -> {
-                if(!(p.containerMenu instanceof StoreMenu m) || !m.getSlot(0).getItem().is(Items.AMETHYST_SHARD))return false;
-                m.action(new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",256));next(Step.TAKE);
+                if(p.serverLevel().getGameTime()<=searchTime+2 || !(p.containerMenu instanceof StoreMenu m) || !m.getSlot(0).getItem().is(Items.AMETHYST_SHARD))return false;
+                int before=m.revision();
+                m.action(new Packets.Action(m.containerId,m.session(),m.revision(),"slot","",256));
+                require(m.revision()!=before,"Withdrawal click must be processed on a fresh server tick");next(Step.TAKE);
             }
             case TAKE -> {
-                if(ticks<2)return false;
-                require(shards(p)==previousShards+1 && ((StorageEntity)p.getServer().overworld().getBlockEntity(CUBE)).getItem(215).getCount()==16,
-                    "One cross-dimension withdrawal from the real home chest");
+                if(ticks<8)return false;
+                int remaining=((StorageEntity)p.getServer().overworld().getBlockEntity(CUBE)).getItem(215).getCount();
+                require(shards(p)==previousShards+1 && remaining==16,
+                    "One cross-dimension withdrawal from the real home chest: home="+remaining+", player="+shards(p)+", previous="+previousShards+", last notice="+notice);
                 p.getInventory().setItem(23,p.getMainHandItem());p.setItemInHand(HAND,ItemStack.EMPTY);next(Step.DROP);
             }
             case DROP -> {
