@@ -1,0 +1,40 @@
+Anya Storage Plus pocketplan.2 playtest
+
+Setup
+[ ] Use the same candidate JAR on a disposable server and both test clients.
+    Use Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. Start from a copy of a
+    test save with an already linked pocket, a bound Remote, four starter
+    chests and four empty optional pads. Give each player one plain Labelled
+    Storage Chest. Start with the guest authorized to Visit only.
+[ ] On the test server, use -Danyastorage.pocketPrototype=true. Enable
+    pocketStorage and pocketEditing and set pocketContainers to at least 5.
+    On both clients use -Danyastorage.chestLayoutStill=true, leave tabletIntro
+    at its default and check that Master and Blocks volume are audible.
+
+Tablet, preview and upgrade
+[ ] From home, use the existing bound Remote within the hub radius. With
+    Tablet opening appearance chance at 100%, check the silver flower tablet,
+    two blinks and an inventory click as soon as the controls appear. At 0%,
+    verify immediate access. With both cameos off, open an Anya chest and a
+    backpack directly and verify immediate access. Restore the prior chance.
+[ ] While the owner is inside the pocket, the Visit-only guest looks at the
+    Void Cube from home and should see the public fallback. Swap positions.
+    With the guest inside to keep the room loaded, the owner sees four
+    chests from home. Look steadily, then away, to hear one quiet cue in each
+    direction. Looking alone leaves you at home with no access through the
+    preview. Right-click to visit and use the lodestone to return.
+[ ] On arrival, the owner opens chat and clicks Room upgrades. Check the four
+    pad statuses, the price of one plain chest, and the 54-slot gain. Opening
+    and marking must leave the held chest count unchanged. Check that a
+    second chest mark is refused, then cancel the owner's test plan. The
+    Visit-only guest must see no private pad status and keep their chest
+    after a denied attempt.
+[ ] From the home hub, grant the guest the existing Build, View, Deposit and
+    Withdraw rights. During a visit, both players mark the same vacant pad.
+    The owner applies first and spends one chest. The guest applies the stale
+    plan and keeps their chest. Verify the pad now says Occupied.
+[ ] With the guest still inside, return home as the owner. Check that the
+    framed preview shows the fifth chest on the chosen pad and the same
+    bound Remote shows 270 slots. Stash a test item in the added chest. After
+    a clean disposable restart, check the chest, its item and the Remote
+    binding again.

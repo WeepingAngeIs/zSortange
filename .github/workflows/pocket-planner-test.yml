@@ -1,8 +1,8 @@
-name: Build pocket planner test JAR
+name: Build pocketplan.2 test JAR
 
 on:
   push:
-    branches: [experiment/pocket-slot-upgrades]
+    branches: [experiment/pocketplan.2]
 
 permissions:
   contents: read
@@ -77,11 +77,13 @@ jobs:
           PY
           cp docs/FIELD_KIT.md upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
+          cp docs/POCKETPLAN.2-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/POCKETPLAN.2-PLAYTEST.txt upload/PLAYTEST.txt
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-pocket-planner-test
+          name: anya-storage-plus-pocketplan.2
           path: upload/
           if-no-files-found: error
           retention-days: 14

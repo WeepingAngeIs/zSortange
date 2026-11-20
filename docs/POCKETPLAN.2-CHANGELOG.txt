@@ -1,0 +1,11 @@
+Anya Storage Plus 0.3.0-beta.7-pocketplan.2
+Experimental test candidate for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+- Click Room upgrades in the pocket welcome or the existing chest-pad help to
+  open the planner. It shows the four pads and the price before you spend.
+- Apply adds one physical chest and 54 slots. It takes one plain Labelled
+  Storage Chest after the server rechecks your access and the target.
+- The framed preview draws the added chest from the verified room layout.
+  The existing local TV cues follow the preview.
+- Includes the fieldkit.3 silver Remote and its Remote-only Cupid intro.
+  Existing bindings, saved storage, and permissions use their current formats.
