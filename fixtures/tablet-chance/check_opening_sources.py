@@ -34,6 +34,8 @@ menu = source("StoreMenu.java")
 pockets = source("pocket/PocketService.java")
 client = source("Client.java")
 policy = source("ExpansionRules.java")
+bounds = source("pocket/RoomBounds.java")
+guide = source("pocket/ChestPadGuide.java")
 
 bound = body(item, "static StorageEntity bound(")
 ordered(bound, 'tag.contains("HubPos")', 'tag.getString("HubDimension")',
@@ -60,7 +62,21 @@ ordered(decision, "if (!mayView", "case REMOTE", "REMOTE_OPEN | TABLET_RULE",
         "policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0",
         "case CHEST -> policy.rollChestCameo", "case BACKPACK -> policy.backpackCameoEnabled",
         "case PLAIN -> 0")
-assert "mayView?openingFlags:0" in body(menu, "void storage()")
+storage = body(menu, "void storage()")
+assert "mayView?openingFlags:0" in storage
+ordered(storage, "pocket.permits(BasePermissions.VIEW)", "containers=!mayView?List.of()",
+        "pocket.containers()", "for(Container container:containers)", "capacity++",
+        "synchronizedInt(6,capacity)", "if (pocket != null) pocketControls(mayView, containers.size())")
+ordered(body(menu, "void pocketControls("), "mayView && (openingFlags & REMOTE_OPEN) != 0",
+        "if (showUpgrades)", "chestCount - RoomBounds.starterChestCount()",
+        "ControlGlyph.POCKET_EDIT", 'RoomBounds.PAD_X.size() + " upgrade pads occupied"',
+        "ControlGlyph.EXIT")
+assert "return STARTER_CHEST_X.size();" in body(bounds, "int starterChestCount(")
+ordered(body(client, "void drawPocketPadSummary("), "!menu.storageView()", "!menu.remoteOpening()",
+        "menu.privateView()", "!menu.controlSlot(slot)", "face.glyph() != ControlGlyph.POCKET_EDIT",
+        "lore.lines().get(0)", "graphics.drawString")
+assert 'commandLink("Room upgrades", ClickEvent.Action.RUN_COMMAND, PLAN)' in body(guide, "Component upgradesLink(")
+ordered(body(guide, "void offerUpgradesOnArrival("), "canOfferUpgrades(player, room)", "upgradesLink()")
 assert re.search(r"tabletOpeningChancePercent\s*=\s*24;", policy)
 assert re.search(r"chestCameoEnabled\s*=\s*false;", policy)
 assert re.search(r"chestCameoChancePercent\s*=\s*1;", policy)
@@ -80,3 +96,4 @@ ordered(body(client, "void render(GuiGraphics g"), "Inventory: deposit. Wheel: s
 print("PASS: bound Remote still uses existing dimension, radius, and access checks")
 print("PASS: Remote flags require View; 0% skips and 100% hits only the Remote policy")
 print("PASS: chest and backpack settings default off, use separate branches, and never gate input")
+print("PASS: check of authorized pocket Remote pad summary and gated Room upgrades link")

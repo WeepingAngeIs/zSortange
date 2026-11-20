@@ -1,0 +1,9 @@
+Anya Storage Plus 0.3.0-beta.7-pocketplan.3
+Experimental beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+- The bound pocket Remote now shows how many of the four upgrade pads
+  are occupied below the real slot total for players with View access.
+- The Upgrades tooltip points to the existing Room upgrades link in
+  pocket chat. An authorized builder can preview and apply a chest there.
+- Includes the silver Remote's adjustable Cupid opening at 24% by
+  default. Direct chest and backpack cameos default to off.

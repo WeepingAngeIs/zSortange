@@ -1,8 +1,8 @@
-name: Build pocketplan.2 test JAR
+name: Build pocketplan.3 test JAR
 
 on:
   push:
-    branches: [experiment/pocketplan.2]
+    branches: [experiment/pocketplan.3]
 
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
-      - name: Check existing bound Remote routes
+      - name: Check bound Remote routes and upgrade readout
         run: python3 -B fixtures/tablet-chance/check_opening_sources.py
       - name: Build the candidate JAR
         run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle clean jar durableAuditClasspath
@@ -71,19 +71,26 @@ jobs:
               assert mod["modId"] == "anyastorage" and mod["version"] == sys.argv[2]
               for name in ("RoomPlans", "ChestPadGuide", "PocketRoomLayout", "ChestLayoutProjection"):
                   assert f"dev/anya/storage/pocket/{name}.class" in jar.namelist()
+              for class_name, marker in (
+                  ("StoreMenu", b"upgrade pads occupied"),
+                  ("Client$Screen", b"drawPocketPadSummary"),
+                  ("pocket/ChestPadGuide", b"Room upgrades"),
+              ):
+                  assert marker in jar.read(f"dev/anya/storage/{class_name}.class")
+              print("PASS: candidate JAR includes the upgrade readout and planner link")
               for name in ("tablet_device", "tablet_guardian", "tablet_gaze_left"):
                   entry = f"assets/anyastorage/textures/gui/{name}.png"
                   assert jar.read(entry) == (Path("src/main/resources") / entry).read_bytes()
           PY
-          cp docs/FIELD_KIT.md upload/FIELD-KIT.md
+          sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/POCKETPLAN.2-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/POCKETPLAN.2-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/POCKETPLAN.3-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/POCKETPLAN.3-PLAYTEST.txt upload/PLAYTEST.txt
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-pocketplan.2
+          name: anya-storage-plus-pocketplan.3
           path: upload/
           if-no-files-found: error
           retention-days: 14
