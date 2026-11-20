@@ -16,9 +16,10 @@ import net.minecraft.server.level.ServerPlayer;
 
 final class RoomPlans {
     static final int LIMIT = 8;
+    static final String ONE_CHEST = "Add one chest pad at a time. Apply your plan or undo the chest mark before marking another pad.";
     private static final int LIFETIME = 20 * 60 * 5;
     private static final Map<UUID,Draft> drafts = new HashMap<>();
-    private static final String HELP = "Hold a plain furnishing, aim at a surface and use /anya pocket build plan add. Walk through the outlines. Use undo, cancel or apply. Stand within reach of all marked spots to apply.";
+    private static final String HELP = "Hold a plain furnishing, aim at a surface and use /anya pocket build plan add. Walk through the outlines. You can add one chest pad per plan. Use undo, cancel or apply. Stand within reach of all marked spots to apply.";
 
     static final class Draft {
         final LinkedHashMap<BlockPos,RoomEditor.Mark> marks = new LinkedHashMap<>();
@@ -45,6 +46,11 @@ final class RoomPlans {
         return root;
     }
 
+    static boolean canMark(Map<BlockPos, RoomEditor.Mark> marks, RoomEditor.Mark next) {
+        return !next.addsChest() || marks.values().stream()
+                .noneMatch(mark -> mark.addsChest() && !mark.pos().equals(next.pos()));
+    }
+
     private static int run(ServerPlayer player, String action) {
         UUID id = player.getUUID();
         try {
@@ -69,6 +75,7 @@ final class RoomPlans {
                 var mark = edit.mark();
                 if (draft.marks.size() >= LIMIT && !draft.marks.containsKey(mark.pos()))
                     throw new IOException("A plan holds eight spots. Apply it or undo a mark first.");
+                if (!canMark(draft.marks, mark)) throw new IOException(ONE_CHEST);
                 draft.marks.remove(mark.pos());
                 draft.marks.put(mark.pos(),mark);
                 draft.expires = player.serverLevel().getGameTime() + LIFETIME;
@@ -78,9 +85,11 @@ final class RoomPlans {
                 if (draft == null) throw new IOException("Your room plan is empty. " + HELP);
                 if (action.equals("apply")) {
                     int count = draft.marks.size();
+                    boolean addsChest = draft.marks.values().stream().anyMatch(RoomEditor.Mark::addsChest);
                     RoomEditor.apply(player,draft);
                     forget(player);
-                    AnyaStorage.tell(player,"Placed all " + count + " planned blocks.");
+                    AnyaStorage.tell(player,"Placed all " + count + " planned blocks."
+                            + (addsChest ? " Added 54 pocket slots." : ""));
                     return 1;
                 }
                 draft.marks.pollLastEntry();

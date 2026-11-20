@@ -204,8 +204,7 @@ public final class PocketPadObservation {
             return material;
         }
         if (!new LoadedPocketBlocks(room).fullPlot(pocket)) return -1;
-        var positions = new ArrayList<>(PocketService.chestPositions(pocket));
-        positions.addAll(PocketRoomLayout.pads(pocket));
+        var positions = PocketRoomLayout.positions(pocket);
         // An empty pad is private too. Supply the visitor and actual destination dimension to each claim hook.
         for (BlockPos pad : positions) if (!Safety.locationReason(player, room, pad).isEmpty()) return -1;
         // Addon hooks ran above. Discard earlier world references and recheck before reading the layout.

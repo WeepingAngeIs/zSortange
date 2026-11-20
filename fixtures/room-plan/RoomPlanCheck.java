@@ -6,6 +6,7 @@ import io.netty.buffer.Unpooled;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
@@ -30,6 +31,17 @@ public final class RoomPlanCheck {
         var hatch = Content.HATCH.get().defaultBlockState();
         require(RoomEditor.supported(shelf.getBlock()) && RoomEditor.supported(hatch.getBlock())
                 && !RoomEditor.supported(Blocks.HOPPER), "Approved furnishings");
+        var crate = Content.CRATE.get().defaultBlockState();
+        var firstPad = new RoomEditor.Mark(new BlockPos(4102, 65, 4110), crate, null, Blocks.STONE.defaultBlockState());
+        var lastPad = new RoomEditor.Mark(new BlockPos(4122, 65, 4110), crate, null, Blocks.STONE.defaultBlockState());
+        var furnishing = new RoomEditor.Mark(new BlockPos(4121, 65, 4102), shelf, null, Blocks.STONE.defaultBlockState());
+        require(RoomPlans.canMark(Map.of(), lastPad), "A player can start at any vacant pad");
+        var planWithChest = Map.of(firstPad.pos(), firstPad);
+        require(!RoomPlans.canMark(planWithChest, lastPad) && RoomPlans.canMark(planWithChest, firstPad),
+                "Block a second chest, but allow remarking the same pad");
+        require(RoomPlans.canMark(planWithChest, furnishing)
+                && RoomPlans.canMark(Map.of(furnishing.pos(), furnishing), lastPad),
+                "A plan may include one chest and ordinary furnishings");
         var wire = new RegistryFriendlyByteBuf(Unpooled.buffer(),registry);
         try {
             var outline = new RoomPlanPacket.Outline(new BlockPos(4121,65,4102),Block.getId(shelf));
@@ -86,6 +98,6 @@ public final class RoomPlanCheck {
         RoomEditor.stageMaterials(plan,main,List.of(first,failsOnce),states);
         require(!((String)commit.invoke(plan)).isEmpty() && first.isEmpty() && failsOnce.isEmpty()
                 && main.getItem(1).getCount()==1 && main.getItem(3).getCount()==1,"Failed second write did not roll back");
-        System.out.println("PASS room outline packet limits, commands, furniture registry, no-spend preview, exact materials, stale cell, permission callback, batch conservation, second-write rollback and replay");
+        System.out.println("PASS room outline packet limits, commands, one chest mark, furniture registry, no-spend preview, exact materials, stale cell, permission callback, batch conservation, second-write rollback and replay");
     }
 }

@@ -31,7 +31,8 @@ def production_frames(jdk):
 
     with tempfile.TemporaryDirectory() as classes:
         subprocess.run([executable("javac"), "--release", "21", "-d", classes,
-                        PROJECTION, FIXTURE / "ChestLayoutProbe.java"], check=True)
+                        PROJECTION, PROJECTION.with_name("RoomBounds.java"),
+                        FIXTURE / "ChestLayoutProbe.java"], check=True)
         probe = subprocess.run([executable("java"), "-cp", classes, "ChestLayoutProbe"],
                                check=True, capture_output=True, text=True)
     dimensions, *rows = probe.stdout.splitlines()

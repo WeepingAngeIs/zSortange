@@ -1,5 +1,7 @@
 package dev.anya.storage.pocket;
 
+import java.util.List;
+
 /** Projects the eight public, registered pad centres onto the illustrated face, in face texels. */
 public final class ChestLayoutProjection {
     public static final int FACE_SIZE = 256;
@@ -8,16 +10,7 @@ public final class ChestLayoutProjection {
     public static final int STAMP_WIDTH = 22;
     public static final int STAMP_HEIGHT = 20;
 
-    // Same wire order as PocketService.chestPositions followed by PocketRoomLayout.pads.
-    private static final int[] PAD_X = {6, 10, 14, 18, 6, 10, 22, 26};
-    private static final int[] PAD_Z = {6, 6, 6, 6, 14, 14, 14, 14};
-
     private ChestLayoutProjection() {}
-
-    // Increasing room X moves right/down. Increasing room Z moves left/down.
-    // The anchor is the centre of the symbol's footprint. Symbol size is fixed for legibility.
-    private static int stampLeft(int bit) { return 56 + 6 * PAD_X[bit] - 2 * PAD_Z[bit] - STAMP_WIDTH / 2; }
-    private static int stampTop(int bit) { return 96 + PAD_X[bit] + 3 * PAD_Z[bit] - STAMP_HEIGHT + 1; }
 
     /** A complete observation includes all four verified starter chests and up to four optional pads. */
     public static boolean validMask(int mask) {
@@ -32,8 +25,20 @@ public final class ChestLayoutProjection {
     /** Rear row to front row; within each row, increasing X is closer to the viewer. */
     public static void forEachChest(int mask, Stamp stamp) {
         if (!validMask(mask)) return;
-        for (int bit = 0; bit < PAD_X.length; bit++) {
-            if ((mask & (1 << bit)) != 0) stamp.draw(bit, stampLeft(bit), stampTop(bit));
+        forEachRow(mask, 0, RoomBounds.STARTER_CHEST_X, RoomBounds.STARTER_CHEST_Z, stamp);
+        forEachRow(mask, RoomBounds.STARTER_CHEST_X.size(), RoomBounds.PAD_X, RoomBounds.PAD_Z, stamp);
+    }
+
+    private static void forEachRow(int mask, int firstBit, List<Integer> roomXs, int roomZ, Stamp stamp) {
+        for (int i = 0; i < roomXs.size(); i++) {
+            int bit = firstBit + i;
+            if ((mask & (1 << bit)) == 0) continue;
+            int roomX = roomXs.get(i);
+            // Increasing room X moves right/down. Increasing room Z moves left/down.
+            // Anchor the fixed-size symbol to the chest's footprint on the illustrated floor.
+            int left = 56 + 6 * roomX - 2 * roomZ - STAMP_WIDTH / 2;
+            int top = 96 + roomX + 3 * roomZ - STAMP_HEIGHT + 1;
+            stamp.draw(bit, left, top);
         }
     }
 }

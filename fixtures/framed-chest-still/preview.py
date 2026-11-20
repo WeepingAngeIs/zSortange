@@ -29,7 +29,7 @@ def sample_commands(jdk):
     projection = ROOT / "src/main/java/dev/anya/storage/pocket/ChestLayoutProjection.java"
     with tempfile.TemporaryDirectory() as classes:
         subprocess.run([tool("javac"), "--release", "21", "-d", classes,
-                        projection, HERE / "FrameSample.java"], check=True)
+                        projection, projection.with_name("RoomBounds.java"), HERE / "FrameSample.java"], check=True)
         result = subprocess.run([tool("java"), "-cp", classes, "FrameSample"],
                                 check=True, capture_output=True, text=True)
     size, *placements = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]

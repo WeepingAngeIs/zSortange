@@ -147,7 +147,7 @@ public final class RoomEditor {
             String result = edit.commit();
             if (result.isEmpty()) {
                 result = !removal && edit.proposed.is(Content.CRATE.get())
-                        ? "Placed one Labelled Storage Chest. Right-click it to open its storage."
+                        ? "Added one Labelled Storage Chest and 54 pocket slots. Right-click the chest to open it."
                         : "Room edit complete; no stored chest contents moved.";
             }
             AnyaStorage.tell(p, result);
@@ -156,7 +156,9 @@ public final class RoomEditor {
         }
     }
 
-    record Mark(BlockPos pos, BlockState state, BlockHitResult face, BlockState support) {}
+    record Mark(BlockPos pos, BlockState state, BlockHitResult face, BlockState support) {
+        boolean addsChest() { return state.is(Content.CRATE.get()); }
+    }
 
     /** Marks came from individual server raycasts. Recheck sight to each marked face from the builder's current position. */
     private static boolean visibleFace(ServerPlayer player, Mark mark) {
@@ -170,6 +172,8 @@ public final class RoomEditor {
     }
 
     private static String batchDenial(ServerPlayer player, Access access, List<Mark> marks) throws IOException {
+        long chestAdds = marks.stream().filter(Mark::addsChest).count();
+        if (chestAdds > 1) return RoomPlans.ONE_CHEST;
         int required = BasePermissions.BUILD;
         for (Mark mark : marks) {
             String denied = permission(player, access.room(), mark.pos(), mark.state(), false);
@@ -178,6 +182,8 @@ public final class RoomEditor {
         }
         if (!access.current(player, required)) return "The pocket visit or your rights changed.";
         int chests = PocketRoomLayout.present(access.level(),access.room()).size();
+        if (chestAdds == 1 && !canAddChest(chests, ExpansionRules.get().pocketContainers))
+            return "The planned chest exceeds the room's chest limit.";
         for (Mark mark : marks) {
             if (!access.level().hasChunkAt(mark.pos()) || player.distanceToSqr(Vec3.atCenterOf(mark.pos())) > 36)
                 return "Stand within reach of all marked spots.";
@@ -185,8 +191,6 @@ public final class RoomEditor {
                     || player.serverLevel().getBlockEntity(mark.pos()) != null) return "A planned spot is occupied.";
             if (!unobstructed(player, mark.pos(), mark.state())) return "A player or entity is in a planned spot.";
             if (!visibleFace(player, mark)) return "Stand where you can see and reach the faces you marked.";
-            if (mark.state().is(Content.CRATE.get()) && !canAddChest(chests++, ExpansionRules.get().pocketContainers))
-                return "The planned chests exceed the room's chest limit.";
         }
         return "";
     }

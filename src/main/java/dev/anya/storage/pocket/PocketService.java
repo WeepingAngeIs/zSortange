@@ -173,7 +173,11 @@ public final class PocketService {
         }
         return out;
     }
-    public static List<BlockPos> chestPositions(PocketLedger.Pocket p){return List.of(new BlockPos(p.x()+6,65,p.z()+6),new BlockPos(p.x()+10,65,p.z()+6),new BlockPos(p.x()+14,65,p.z()+6),new BlockPos(p.x()+18,65,p.z()+6));}
+    public static List<BlockPos> chestPositions(PocketLedger.Pocket p){
+        return RoomBounds.STARTER_CHEST_X.stream()
+                .map(x -> new BlockPos(p.x() + x, RoomBounds.CHEST_Y, p.z() + RoomBounds.STARTER_CHEST_Z))
+                .toList();
+    }
     public static BlockPos exitPosition(PocketLedger.Pocket p){return new BlockPos(p.x()+16,65,p.z()+28);}
     private static boolean prepare(MinecraftServer server,PocketLedger.Pocket p)throws IOException {
         ServerLevel level=dimension(server);if(level==null)throw new IOException("Pocket dimension missing");

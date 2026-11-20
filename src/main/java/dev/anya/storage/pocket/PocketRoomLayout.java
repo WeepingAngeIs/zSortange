@@ -12,7 +12,15 @@ import java.util.function.Predicate;
 /** Bounded discovery of four original chests plus four optional pads. Never scans arbitrary machinery. */
 public final class PocketRoomLayout {
     public static List<BlockPos> pads(PocketLedger.Pocket r){
-        return RoomBounds.PAD_X.stream().map(x->new BlockPos(r.x()+x,65,r.z()+14)).toList();
+        return RoomBounds.PAD_X.stream()
+                .map(x -> new BlockPos(r.x() + x, RoomBounds.CHEST_Y, r.z() + RoomBounds.PAD_Z))
+                .toList();
+    }
+    /** The same stable order is used for discovery and the layout preview's occupancy bits. */
+    static List<BlockPos> positions(PocketLedger.Pocket room) {
+        var positions = new ArrayList<>(PocketService.chestPositions(room));
+        positions.addAll(pads(room));
+        return positions;
     }
     public static boolean registeredPosition(PocketLedger.Pocket r,BlockPos p){
         return PocketService.chestPositions(r).contains(p)||pads(r).contains(p);
@@ -25,7 +33,7 @@ public final class PocketRoomLayout {
             Predicate<BlockPos> empty, Function<BlockPos,BlockEntity> entityAt)throws IOException{
         if(r.stage()!=PocketLedger.Stage.READY)throw new IOException("Pocket is not ready");
         List<StorageEntity> found=new ArrayList<>();Set<UUID> identities=new HashSet<>();
-        List<BlockPos> positions=new ArrayList<>(PocketService.chestPositions(r));positions.addAll(pads(r));
+        var positions = positions(r);
         for(int i=0;i<positions.size();i++){
             BlockPos p=positions.get(i);
             if(!loaded.test(p))throw new IOException("Registered chest chunk is not loaded");
