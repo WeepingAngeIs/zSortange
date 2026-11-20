@@ -20,7 +20,7 @@ def materialize(root):
     extend("net.minecraft.world.item.ItemStack", """
         public String components = "bound hub";
         public static boolean matches(ItemStack a, ItemStack b) {
-            return a.components.equals(b.components);
+            return a.creative == b.creative && a.components.equals(b.components);
         }
     """)
     extend("net.minecraft.client.Minecraft", """

@@ -66,7 +66,11 @@ jobs:
         run: |
           mkdir -p build/moon-review/client
           printf 'onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\nrenderDistance:5\nsimulationDistance:5\n' > build/moon-review/client/options.txt
-          timeout 15m xvfb-run -a -s '-screen 0 1024x768x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > build/moon-review/launch.log 2>&1 || { tail -n 155 build/moon-review/launch.log; exit 1; }
+          timeout 15m xvfb-run -a -s '-screen 0 1024x768x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > build/moon-review/launch.log 2>&1 || {
+            grep -E 'Creative camera|Timed out|Timeout at|Caused by:|Creative Tablet:|AssertionError|IllegalStateException|Root checks' build/moon-review/launch.log | tail -n 80 || true
+            tail -n 25 build/moon-review/launch.log
+            exit 1
+          }
           test -s build/moon-review/client/camera.txt
           jar=$(realpath build/libs/anya-storage-plus-*-creativetablet.1.jar)
           grep -F "$(sha256sum "$jar" | cut -d' ' -f1)" build/moon-review/client/camera.txt

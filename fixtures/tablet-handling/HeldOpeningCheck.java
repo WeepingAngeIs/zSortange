@@ -70,7 +70,7 @@ public final class HeldOpeningCheck {
                 "An expired sample or changed hotbar slot must drop the grip and still open authorized storage");
     }
 
-    private static void handoff(int elapsed, boolean right, int id) {
+    private static void handoff(int elapsed, boolean right, int id, boolean creative) {
         LocalPlayer owner = new LocalPlayer();
         InteractionHand hand = right ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
         var grip = new TabletDevice.Grip(right, 0.25f, 0.07f, 0xb000d0,
@@ -81,11 +81,14 @@ public final class HeldOpeningCheck {
         long lastPaint = start + elapsed;
         float shown = lift.progress(lastPaint);
         check(shown > 0 && shown < 1, "Sample must be an actual partial raise");
-        var portrait = id == 1 ? TabletDevice.physicalFace(TabletIdle.Face.GLANCE, false) : null;
+        owner.getItemInHand(hand).creative = creative;
+        var portrait = id == 1 || creative ? TabletDevice.physicalFace(TabletIdle.Face.GLANCE, creative) : null;
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, shown, WIDTH, HEIGHT, owner,
                 owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint, portrait));
         int actions = PacketDistributor.sent.size();
-        var screen = open(id, owner);
+        var menu = new StoreMenu(id);
+        menu.creativeTablet = creative;
+        var screen = open(menu, owner);
         long firstMenuPaint = lastPaint + 23;
         var first = paint(screen, firstMenuPaint);
         same(withMotion(grip, shown, TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), shown)),
@@ -100,11 +103,11 @@ public final class HeldOpeningCheck {
         for (var frame : new GuiGraphics[]{first, next}) {
             check(frame.row < 0, "The blink replaced the carried face before the tablet settled");
             String suffix = portrait == null ? "dark" : "glance";
-            check(frame.atlasDraws == 1 && frame.atlasSprite.toString().equals("anyastorage:item/cupid_tablet_face_" + suffix),
+            check(frame.atlasDraws == 1 && frame.atlasSprite.toString().equals("anyastorage:item/" + (creative ? "creative" : "cupid") + "_tablet_face_" + suffix),
                     "The raise lost the exact physical face sampled in the hand");
         }
         var settled = paint(screen, firstMenuPaint + TabletLift.RISE_MS);
-        check(settled.row == 0 && settled.atlasDraws == 0 && settled.expressionColumn < 0,
+        check(settled.row == 0 && settled.pinkShell == creative && settled.atlasDraws == 0 && settled.expressionColumn < 0,
                 "The authorized opening should switch to Twin Tails once the raise settles");
         int[] starts = {0,260,310,390,440,610,660,760,810};
         int[] blinkRows = {0,1,2,1,0,1,2,1,0};
@@ -349,9 +352,10 @@ public final class HeldOpeningCheck {
     public static void main(String[] args) {
         System.setProperty("anyastorage.tabletIntro", "true");
         Util.timeSource = () -> clock * 1_000_000;
-        handoff(40, true, 1);          // Authorization while raising.
-        handoff(210, false, 2);        // Authorization during bounded hold.
-        handoff(343, true, 3);         // Authorization after the declined-use return started.
+        handoff(40, true, 1, false);          // Authorization while raising.
+        handoff(210, false, 2, false);        // Authorization during bounded hold.
+        handoff(343, true, 3, false);         // Authorization after the declined-use return started.
+        handoff(40, false, 6, true);   // A Creative offhand must carry its actual rose case into the menu.
         staleGrip(false, 4);
         staleGrip(true, 5);
         allPortraits();

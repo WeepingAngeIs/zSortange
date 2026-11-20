@@ -60,6 +60,9 @@ final class CreativeAnywhereCheck {
     }
     private static StorageEntity home(ServerPlayer p){return (StorageEntity)p.getServer().overworld().getBlockEntity(HUB);}
     private static boolean tick(ServerPlayer p){
+        if(ticks>0 && ticks%200==0)System.out.println("Creative camera waiting "+step+" "+ticks+" ticks, home cold="+cold(p,HUB)
+                +", storage cold="+cold(p,CUBE)+", tickets="+CreativeTabletAccess.ticketCount()+", session="+sessionPending(p)
+                +", capacity="+(p.containerMenu instanceof StoreMenu m?m.capacity():-1));
         if(++ticks>1800)throw new IllegalStateException("Timed out at Creative Tablet "+step);
         switch(step){
             case BIND -> {
@@ -67,6 +70,8 @@ final class CreativeAnywhereCheck {
                 level.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0,p.getServer());
                 // The reserve of 17 shards is in a different chunk from the hub.
                 require((HUB.getX()>>4)!=(CUBE.getX()>>4) && ((StorageEntity)level.getBlockEntity(CUBE)).getItem(215).getCount()==17,"Second storage chunk");
+                var privateCrate=(StorageEntity)level.getBlockEntity(CUBE.east(2));
+                privateCrate.owner=UUID.randomUUID();privateCrate.setItem(0,new ItemStack(Items.EMERALD,3));
                 var legacy=new ItemStack(Content.REMOTE.get());
                 var pocketRecord=(dev.anya.storage.pocket.PocketContent.EntranceEntity)level.getBlockEntity(ENTRANCE);
                 pocketId=pocketRecord.pocket;
@@ -129,8 +134,9 @@ final class CreativeAnywhereCheck {
                 next(Step.NETWORK);
             }
             case NETWORK -> {
-                if(!(p.containerMenu instanceof StoreMenu m) || m.capacity()<270)return false;
-                require(m.creativeTabletOpening() && p.level().dimension()==Level.NETHER && !cold(p,CUBE),"Creative cross-dimension, second-chunk view");
+                if(!(p.containerMenu instanceof StoreMenu m) || m.capacity()==0)return false;
+                require(m.creativeTabletOpening() && m.capacity()==216 && p.level().dimension()==Level.NETHER && !cold(p,CUBE),
+                    "See only the owned 216-slot inventory, excluding the neighboring private crate");
                 previousShards=shards(p);
                 m.action(new Packets.Action(m.containerId,m.session(),m.revision(),"text","amethyst shard",0));
                 next(Step.SEARCH);
@@ -150,7 +156,8 @@ final class CreativeAnywhereCheck {
                 p.setItemInHand(HAND,p.getInventory().removeItemNoUpdate(23));use(p);next(Step.CLOSED);
             }
             case CLOSED -> {
-                if(!(p.containerMenu instanceof StoreMenu m) || m.capacity()<270)return false;
+                if(!(p.containerMenu instanceof StoreMenu m) || m.capacity()==0)return false;
+                require(m.capacity()==216,"Private crate stayed hidden on reopening");
                 var h=home(p);h.owner=UUID.randomUUID();h.profileChanged();
                 next(Step.RESTORE);
             }

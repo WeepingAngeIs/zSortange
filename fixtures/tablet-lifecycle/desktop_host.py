@@ -6,7 +6,7 @@ inside the fixture's temporary JVM class path. No package is installed or delive
 
 HOST = {
     "dev.anya.storage.StorageItem": """public class StorageItem {
-        public static boolean isCreativeTablet(net.minecraft.world.item.ItemStack stack){return false;}
+        public static boolean isCreativeTablet(net.minecraft.world.item.ItemStack stack){return stack.creative;}
     }""",
     "net.minecraft.client.Minecraft": """
         public class Minecraft {
@@ -58,7 +58,7 @@ HOST = {
     """,
     "net.minecraft.world.item.ItemStack": """
         /** The handoff tests object identity only; no item or registry is initialized. */
-        public class ItemStack {}
+        public class ItemStack { public boolean creative; }
     """,
     "net.minecraft.world.entity.player.Inventory": """
         public class Inventory {
