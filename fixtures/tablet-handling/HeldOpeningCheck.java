@@ -59,7 +59,7 @@ public final class HeldOpeningCheck {
                 owner.getItemInHand(hand), hand, owner.getInventory().selected, lastPaint));
         if (swapSlot) owner.getInventory().selected++;
         var first = paint(open(id, owner), lastPaint + (swapSlot ? 15 : 401));
-        check(first.armPose == null && first.expressionColumn == 0,
+        check(first.armPose == null && first.row == 0,
                 "An expired sample or changed hotbar slot must drop the grip and still open authorized storage");
     }
 
@@ -116,9 +116,9 @@ public final class HeldOpeningCheck {
         check(routed.verb().equals("slot") && routed.value() == 0 && routed.menu() == id,
                 "Existing inventory slot and menu identity must be preserved");
 
-        var unrelated = paint(open(id + 10, owner), firstMenuPaint + 1100);
-        check(unrelated.armPose == null && unrelated.expressionColumn == 0 && unrelated.row < 0,
-                "An opening without a matching grip must keep its Cloud expressions");
+        var nextRemote = paint(open(id + 10, owner), firstMenuPaint + 1100);
+        check(nextRemote.armPose == null && nextRemote.expressionColumn < 0 && nextRemote.row == 0,
+                "An authorized Remote without a matching grip still uses Twin Tails and never replays the arm");
     }
 
     private static void allPortraits() {
@@ -160,22 +160,27 @@ public final class HeldOpeningCheck {
         check(TabletDevice.chooseVisit(0) == -1, "Missing both body sheets must use the classic glance");
         var owner = new LocalPlayer();
         var fallback = open(20, owner);
-        check(paint(fallback, 60_000).row == 0 && paint(fallback, 60_310).row == 2, "Legacy blink fallback");
+        check(paint(fallback, 60_000).row == 0 && paint(fallback, 60_310).row == 2, "Twin Tails without Cloud art");
         client.expressionArt = true;
         var reopened = open(21, owner);
         var face = paint(reopened, 62_000);
-        check(face.expressionColumn == 0, "Next opening ignored restored resources");
+        check(face.row == 0 && face.expressionColumn < 0, "Cloud art displaced the approved Remote portrait");
         reopened.init(client, 680, 380);
         var resized = paint(reopened, 62_445);
-        check(resized.expressionRow == face.expressionRow && resized.expressionColumn == 4,
+        check(resized.row == 0 && resized.expressionColumn < 0,
                 "Resize replayed the old appearance or restarted the gesture");
         var pending = open(22, owner);
         StoreMenu menu = (StoreMenu)owner.containerMenu;
         menu.storage = false;
         menu.version = 0;
         int before = client.artLookups;
-        check(paint(pending, 67_000).expressionColumn < 0 && client.artLookups == before,
+        var waiting = paint(pending, 67_000);
+        check(waiting.events.contains("inventory") && waiting.row < 0 && waiting.expressionColumn < 0
+                && !waiting.events.contains("case") && client.artLookups == before,
                 "Unconfirmed storage picked or displayed a face");
+        menu.storage = true;
+        menu.version = 1;
+        check(paint(pending, 67_100).row == 0, "Confirmed Remote hit must open after initial synchronization");
     }
 
     private static void expectImmediate(Client.Screen screen, StoreMenu menu, long now, boolean framed) {
@@ -197,7 +202,7 @@ public final class HeldOpeningCheck {
         var mc = Minecraft.getInstance();
         System.clearProperty("anyastorage.tabletIntro");
         var hit = open(30, owner);
-        check(paint(hit, 80_000).expressionColumn == 0 && paint(hit, 81_049).expressionColumn == 8,
+        check(paint(hit, 80_000).row == 0 && paint(hit, 80_310).row == 2 && paint(hit, 81_049).row == 0,
                 "Server hit must work without a JVM option and use the original clock");
         var ready = paint(hit, 81_050);
         check(ready.events.contains("inventory"), "Hit extended the existing reveal time");
@@ -209,7 +214,9 @@ public final class HeldOpeningCheck {
         missed.rows = 1;
         missed.version = 0;
         var screen = open(missed, owner);
-        check(paint(screen, 82_000).expressionColumn < 0, "Pending menu showed a portrait");
+        var pending = paint(screen, 82_000);
+        check(pending.events.contains("inventory") && pending.row < 0 && pending.expressionColumn < 0,
+                "Pending Remote miss covered the inventory");
         missed.storage = true;
         missed.version = 1;
         missed.rows = 5;
@@ -225,8 +232,7 @@ public final class HeldOpeningCheck {
 
         System.setProperty("anyastorage.tabletIntro", "true");
         var oldServer = new StoreMenu(32);
-        oldServer.openingRule = false;
-        oldServer.openingHit = false;
+        oldServer.remote = false; // Legacy server still supplies the old shared flags.
         expectImmediate(open(oldServer, owner), oldServer, 82_100, false);
         var missEvenWhenOptedIn = new StoreMenu(33);
         missEvenWhenOptedIn.openingHit = false;
@@ -238,6 +244,7 @@ public final class HeldOpeningCheck {
         System.clearProperty("anyastorage.tabletIntro");
         var settings = new StoreMenu(35);
         settings.storage = false;
+        settings.remote = false;
         settings.openingRule = false;
         var settingsScreen = open(settings, owner);
         var preferences = paint(settingsScreen, 82_400);
@@ -252,7 +259,28 @@ public final class HeldOpeningCheck {
         earlyClose.openingHit = false;
         open(earlyClose, owner); // Superseded before the first paint.
         var fresh = paint(open(36, owner), 83_020);
-        check(fresh.armPose == null && fresh.expressionColumn == 0, "Reopened hit inherited an unpainted miss's grip");
+        check(fresh.armPose == null && fresh.row == 0, "Reopened hit inherited an unpainted miss's grip");
+    }
+
+    private static void nonRemoteCannotClaimHeldVisuals() {
+        var owner = new LocalPlayer();
+        var grip = new TabletDevice.Grip(true, 0, 0, 0xb000d0);
+        for (boolean backpack : new boolean[]{false, true}) {
+            for (boolean cameo : new boolean[]{false, true}) {
+                var direct = new StoreMenu(44);
+                direct.remote = direct.openingRule = direct.openingHit = false;
+                direct.backpack = backpack;
+                direct.cameo = cameo;
+                TabletDevice.rememberHeld(new TabletDevice.Held(grip, .42f, WIDTH, HEIGHT, owner,
+                        owner.getMainHandItem(), InteractionHand.MAIN_HAND, owner.getInventory().selected, 90_000));
+                expectImmediate(open(direct, owner), direct, 90_010, false);
+                var authorized = paint(open(45, owner), 90_020);
+                check(authorized.row == 0 && authorized.armPose == null, "A direct menu replayed a prior held pose");
+            }
+        }
+        var denied = new StoreMenu(46);
+        denied.privateStorage = true;
+        expectImmediate(open(denied, owner), denied, 90_110, false);
     }
 
     public static void main(String[] args) {
@@ -265,9 +293,10 @@ public final class HeldOpeningCheck {
         staleGrip(true, 5);
         allPortraits();
         serverChance();
+        nonRemoteCannotClaimHeldVisuals();
         System.out.println("PASS: server hit works with default JVM arguments; miss, missing rule and opt-out reveal "
                 + "immediately, first ready slot dispatches exactly once, and resize/reopening cannot replay the decision");
         System.out.println("PASS: Twin Tails double blink and left glance, Cloud body tiles and tumble, "
-                + "first actionable slot at 1050 ms, continuous lift, distinct reopenings, resize and fallback");
+                + "first actionable slot at 1050 ms, continuous lift, immediate direct inventories, private and legacy isolation");
     }
 }

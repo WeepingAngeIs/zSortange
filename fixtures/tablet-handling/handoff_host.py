@@ -76,7 +76,6 @@ def materialize(root):
         public int expressionRow = -1, expressionColumn = -1;
         public final java.util.List<String> events = new java.util.ArrayList<>();
         public org.joml.Matrix4f casePose, armPose;
-        public void fill(int x, int y, int w, int h, int z, int color) { fills++; }
     """)
     sources["dev.anya.storage.appearance.TabletArmRenderer"] = """public class TabletArmRenderer {
         public static void draw(net.minecraft.client.gui.GuiGraphics g, net.minecraft.client.player.LocalPlayer p,

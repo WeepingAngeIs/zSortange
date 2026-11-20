@@ -20,7 +20,7 @@ public final class StorageItem extends Item {
         ItemStack stack=player.getItemInHand(hand);
         if(!level.isClientSide&&player instanceof ServerPlayer p){
             if(kind.equals("backpack")){int slot=hand==InteractionHand.MAIN_HAND?p.getInventory().selected:40;StoreMenu.bag(p,new BagInventory(p,slot),player.isShiftKeyDown());}
-            else {StorageEntity hub=bound(p,stack);if(hub!=null){if(!dev.anya.storage.pocket.PocketService.remote(p,stack,hub))StoreMenu.network(p,hub);}else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this remote. Use it within that hub's radius.");}
+            else {StorageEntity hub=bound(p,stack);if(hub!=null){if(!dev.anya.storage.pocket.PocketService.remote(p,stack,hub))StoreMenu.remote(p,hub);}else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this remote. Use it within that hub's radius.");}
         }
         return InteractionResultHolder.sidedSuccess(stack,level.isClientSide);
     }

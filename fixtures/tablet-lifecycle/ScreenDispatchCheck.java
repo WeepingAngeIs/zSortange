@@ -23,7 +23,7 @@ import java.util.UUID;
 public final class ScreenDispatchCheck {
     private static long millis;
     private static final int WIDTH = 480, HEIGHT = 320;
-    private static final int STALE = -3, STORAGE = -2, WAIT = -1;
+    private static final int STALE = -3, STORAGE = -2;
     private static final int OPEN = 0, HALF = 1, CLOSED = 2;
 
     private final Minecraft mc;
@@ -70,7 +70,9 @@ public final class ScreenDispatchCheck {
             return;
         }
         var layout = StorageGrid.layout(WIDTH, HEIGHT, menu.resultCount(), true);
-        if (tablet) layout = TabletDevice.fitMenu(layout, WIDTH, HEIGHT);
+        if (tablet && menu.remoteOpening() && !menu.privateView()) {
+            layout = TabletDevice.fitMenu(layout, WIDTH, HEIGHT);
+        }
         screen.mouseClicked(layout.left()+logicalX*layout.scale(), layout.top()+logicalY*layout.scale(), 0);
     }
 
@@ -106,8 +108,8 @@ public final class ScreenDispatchCheck {
 
     private static void defaultAndReveal() {
         var off = new ScreenDispatchCheck(1, false);
-        require(off.paint(0) == STORAGE, "Default opening skips intro");
-        off.requireSlotSent("Default opening");
+        require(off.paint(0) == STORAGE, "Explicit opt-out skips intro");
+        off.requireSlotSent("Explicit opt-out");
         var on = new ScreenDispatchCheck(2, true);
         require(on.paint(10) == OPEN, "Enabled opens at mascot");
         on.expectBlocked("Original opening");
@@ -129,13 +131,14 @@ public final class ScreenDispatchCheck {
 
     private static void closeEveryPhase() {
         int[] offsets = {-1,0,260,310,390,440,610,660,760,810,1050};
-        int[] frames = {WAIT,OPEN,HALF,CLOSED,HALF,OPEN,HALF,CLOSED,HALF,OPEN,STORAGE};
+        int[] frames = {STORAGE,OPEN,HALF,CLOSED,HALF,OPEN,HALF,CLOSED,HALF,OPEN,STORAGE};
         for (int phase = 0; phase < offsets.length; phase++) {
             var visit = new ScreenDispatchCheck(10 + phase, true);
             if (phase == 0) {
                 visit.menu.storage = false;
                 visit.menu.version = 0;
                 visit.menu.rows = 1;
+                visit.menu.remote = false;
             }
             visit.paint(0);
             require(visit.paint(Math.max(0, offsets[phase])) == frames[phase], "Close setup phase " + phase);
@@ -236,50 +239,28 @@ public final class ScreenDispatchCheck {
                 "Successor failed to clean itself exactly once");
     }
 
-    private void expectShell(TabletDevice.Bounds bounds, String scenario) {
-        require(latestPaint.shells == 1 && Math.abs(latestPaint.shellX - bounds.x()) < 0.001f
-                && Math.abs(latestPaint.shellY - bounds.y()) < 0.001f
-                && Math.abs(latestPaint.shellScale - bounds.scale()) < 0.001f, scenario);
-    }
+    private static void directCameosNeverBlock() {
+        for (boolean backpack : new boolean[]{false, true}) {
+            for (boolean cameo : new boolean[]{false, true}) {
+                var manual = new ScreenDispatchCheck(backpack ? 79 : 78, true);
+                manual.menu.remote = false;
+                manual.menu.openingRule = false;
+                manual.menu.openingHit = false;
+                manual.menu.backpack = backpack;
+                manual.menu.cameo = cameo;
+                String interaction = (backpack ? "Backpack" : "Chest") + " cameo " + cameo;
+                require(manual.paint(10) == STORAGE && manual.latestPaint.shells == 0, interaction);
+                manual.requireSlotSent(interaction);
+            }
+        }
+        var legacy = new ScreenDispatchCheck(80, true);
+        legacy.menu.remote = false; // Old servers sent only the two shared intro bits.
+        require(legacy.paint(10) == STORAGE && legacy.latestPaint.shells == 0, "Legacy server must open ordinary storage");
+        legacy.requireSlotSent("Legacy first frame");
 
-    private static void handToMenu() {
-        var held = new TabletDevice.Bounds(318f, 227f, 0.28f);
-        var centered = TabletDevice.openBounds(WIDTH, HEIGHT);
-        var opening = new ScreenDispatchCheck(78, true);
-        var player = opening.mc.player;
-        TabletDevice.rememberHeld(held, WIDTH, HEIGHT, player, player.getOffhandItem(), 2800);
-        require(opening.paint(3000) == OPEN, "Opening starts at user hand");
-        opening.expectShell(held, "First GUI draw matches previously held pose");
-        opening.paint(3095);
-        opening.expectShell(held.toward(centered, 0.5f), "Observed midpoint of handheld rise");
-        opening.paint(3190);
-        opening.expectShell(centered, "Settled precisely at 190 ms");
-        require(opening.paint(3310) == CLOSED, "First closed face on the same shell");
-        opening.expectShell(centered, "Same hardware for blink");
-        require(opening.paint(4050) == STORAGE, "Reveal after held origin");
-        opening.expectShell(centered, "Same single hardware layer on the existing menu");
-        opening.requireSlotSent("Painted slot after handoff");
-        var repeat = new ScreenDispatchCheck(opening.mc, 79, true);
-        repeat.paint(3100);
-        repeat.expectShell(centered, "Recently consumed hand pose cannot replay");
-        var stale = new ScreenDispatchCheck(opening.mc, 80, true);
-        TabletDevice.rememberHeld(held, WIDTH, HEIGHT, player, player.getMainHandItem(), 100);
-        stale.paint(501);
-        stale.expectShell(centered, "Old pose expires");
-        var wrong = new ScreenDispatchCheck(opening.mc, 81, true);
-        TabletDevice.rememberHeld(held, WIDTH, HEIGHT, player, new Object(), 500);
-        wrong.paint(501);
-        wrong.expectShell(centered, "Another held object does not match");
-        var resized = new ScreenDispatchCheck(opening.mc, 82, true);
-        TabletDevice.rememberHeld(held, WIDTH, HEIGHT, player, player.getMainHandItem(), 600);
-        resized.paint(600);
-        resized.screen.init(resized.mc, 270, 198);
-        resized.paint(620);
-        resized.expectShell(TabletDevice.openBounds(270, 198), "Mid-rise resize drops old origin");
-        resized.screen.init(resized.mc, WIDTH, HEIGHT);
-        resized.paint(640);
-        resized.expectShell(centered, "Restoring dimensions cannot replay the old pose");
-        TabletDevice.forgetHeld();
+        var denied = new ScreenDispatchCheck(81, true);
+        denied.menu.privateStorage = true; // Reject even inconsistent/stale authored flags.
+        require(denied.paint(10) == STORAGE && denied.latestPaint.shells == 0, "Private view must skip the Remote intro");
     }
 
     public static void main(String[] args) {
@@ -290,10 +271,9 @@ public final class ScreenDispatchCheck {
         replacement(true);
         overlaysAndOwnerChanges();
         cleanupAndCloseBindings();
-        handToMenu();
+        directCameosNeverBlock();
         System.out.println("PASS: actual client screen routes default/opt-in, first painted slot/search, "
-                + "scaled resize, Escape in WAIT/all nine blink phases/after reveal and eleven independent reopens; "
-                + "replacement/overlay/disconnect, close bindings and owned appearance cleanup; one-use "
-                + "hand-to-menu transform, 190 ms settle and identical single shell on reveal");
+                + "scaled resize, Escape before synchronization/all nine blink phases/after reveal, "
+                + "replacement/overlay/disconnect, owned appearance cleanup and immediate direct storage");
     }
 }

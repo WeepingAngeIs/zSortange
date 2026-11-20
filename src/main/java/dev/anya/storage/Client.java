@@ -60,8 +60,11 @@ public final class Client {
         private final GuardianBlink tabletIntro;
         private final TabletBootScreen tabletBoot = new TabletBootScreen();
         private final net.minecraft.world.entity.player.Player openingPlayer;
+        private final boolean tabletPresentation;
         private boolean openingClassified, tabletCoversView;
-        private boolean framedStorage, retired, closeRequested, cleaned;
+        private boolean retired, closeRequested, cleaned;
+        private static final int STORAGE_CAMEO_MS = 650;
+        private long cameoStarted = Long.MIN_VALUE;
         private EditBox input;
         private int debounce,ticks,pendingRow=-1,pendingRows=5,lastViewport=-20;
         private String sent="";
@@ -73,9 +76,8 @@ public final class Client {
         public Screen(StoreMenu menu,Inventory inventory,Component title){
             super(menu,inventory,title);
             openingPlayer = inventory.player;
-            tabletCoversView = TabletDevice.enabled();
-            openingClassified = !tabletCoversView;
-            tabletIntro = new GuardianBlink(tabletCoversView);
+            tabletPresentation = TabletDevice.enabled();
+            tabletIntro = new GuardianBlink(tabletPresentation);
         }
         private void retire() {
             retired = true;
@@ -94,38 +96,49 @@ public final class Client {
             return minecraft.screen == this;
         }
         private void classifyOpening() {
-            if (openingClassified) return;
-            boolean storage = menu.storageView();
-            // Storage readiness and the opening roll arrive together in the same page flags word.
-            // A non-storage page is known once its initial revision and viewport have synchronized.
-            if (!storage && (menu.revision() == 0 || menu.visibleRows() <= 1)) return;
+            // The server sends readiness, permissions and the opening decision in one word.
+            // Until it arrives, never cover or hold back the ordinary inventory.
+            if (openingClassified || !menu.storageView()) return;
             openingClassified = true;
-            framedStorage = storage && menu.hasTabletOpeningRule();
-            if (!framedStorage || !menu.showsTabletIntro()) {
+            tabletCoversView = showTabletFrame() && menu.showsTabletIntro();
+            if (!menu.privateView() && !menu.remoteOpening() && menu.showsStorageCameo())
+                cameoStarted = net.minecraft.Util.getMillis();
+        }
+        private boolean showTabletFrame() {
+            return tabletPresentation && menu.storageView() && !menu.privateView() && menu.remoteOpening();
+        }
+        private boolean updateTabletCover() {
+            classifyOpening();
+            if (tabletCoversView && !showTabletFrame()) {
                 tabletIntro.dismiss();
                 tabletCoversView = false;
             }
+            return tabletCoversView;
         }
         private boolean drawTabletIntro(GuiGraphics graphics) {
-            classifyOpening();
-            if (!tabletCoversView) return false;
+            if (!updateTabletCover()) return false;
             long now = net.minecraft.Util.getMillis();
-            tabletIntro.present(now, menu.storageView(), openingClassified);
+            tabletIntro.present(now, true, true);
             tabletCoversView = tabletIntro.coversInput();
             if (tabletCoversView) tabletBoot.draw(graphics, width, height, tabletIntro, openingPlayer, now);
             return tabletCoversView;
         }
         private boolean blockTabletInput() {
-            if (!activeScreen()) return true;
-            classifyOpening();
-            if (!tabletCoversView) return false;
-            if (!menu.storageView()) tabletIntro.dismiss();
-            // This frame still covers the controls, even when an input dismisses the next frame.
-            return true;
+            return !activeScreen() || updateTabletCover();
+        }
+        private void drawStorageCameo(GuiGraphics graphics) {
+            if (cameoStarted == Long.MIN_VALUE) return;
+            if (!menu.storageView() || menu.privateView() || menu.remoteOpening() || !menu.showsStorageCameo()
+                    || net.minecraft.Util.getMillis() - cameoStarted >= STORAGE_CAMEO_MS) {
+                cameoStarted = Long.MIN_VALUE;
+                return;
+            }
+            // This is the decorative card to the left of the grid, away from every inventory target.
+            TabletDevice.drawCameo(graphics, 22, 79);
         }
         private void reflow(){
             layout=dev.anya.storage.ui.StorageGrid.layout(width,height,menu.resultCount(),menu.storageView());
-            if (framedStorage) layout = TabletDevice.fitMenu(layout, width, height);
+            if (showTabletFrame()) layout = TabletDevice.fitMenu(layout, width, height);
         }
         @Override protected void init(){
             super.init();reflow();String previous=input==null?sent:input.getValue();
@@ -294,7 +307,7 @@ public final class Client {
             boolean fixture = openingPlayer == null && minecraft.player == null && !cleaned && Boolean.getBoolean("anyastorage.clientSmoke");
             if (!fixture && (!activeScreen() || drawTabletIntro(g))) return;
             reflow();int x=(int)layout.x(mx),y=(int)layout.y(my);int[] colors=palette();
-            if (framedStorage) {
+            if (showTabletFrame()) {
                 g.fill(0,0,width,height,-900,0x990c1017);
                 tabletBoot.drawSettled(g,width,height,openingPlayer);
             } else g.fill(0,0,width,height,0x990c1017);
@@ -349,6 +362,7 @@ public final class Client {
             }
             g.drawString(font,menu.accessView()?"Choose a member to edit rights.":remaining!=0?"Amber = items left in your pack":"Left: stack / Right: one",104,layout.height()-19,0xffc6c6c8,false);
             g.drawString(font,menu.accessView()?"Changes apply immediately.":"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
+            drawStorageCameo(g);
             g.pose().popPose();
             if(menu.accessView()&&x>=12&&x<90&&y>=129&&y<145&&!menu.getSlot(27).getItem().isEmpty()){
                 controlTooltip(g,menu.getSlot(27).getItem(),mx,my);

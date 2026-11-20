@@ -59,21 +59,25 @@ def check_menu(jdk, app):
                                    text=True, timeout=45)
     # javap lists a two-space signature line, followed by indented bytecode for its method.
     sections = re.split(r"(?m)(?=^  \S)", full)
-    invokes = [s for s in sections if "// Method rollTabletOpening:" in s]
-    assert len(invokes) == 1 and invokes[0].lstrip().startswith("private dev.anya.storage.StoreMenu(")
-    assert invokes[0].count("// Method rollTabletOpening:") == 1
-    assert "final int tabletOpeningFlags;" in full
-    writes = [s for s in sections if re.search(r"putfield[^\n]+// Field tabletOpeningFlags:I", s)]
+    assert "final int openingFlags;" in full
+    writes = [s for s in sections if re.search(r"putfield[^\n]+// Field openingFlags:I", s)]
     assert len(writes) == 1 and "StoreMenu(int, net.minecraft.world.entity.player.Inventory, int);" in writes[0]
+    planned = [s for s in sections if "// Method openingFlags:" in s]
+    for entry in ("bag", "openNetwork", "container", "openPocket"):
+        entry_points = [s for s in planned if re.match(r"\s+(?:public|private) static void "+entry+r"\(", s)]
+        assert len(entry_points) == 1 and entry_points[0].count("// Method openingFlags:") == 1, entry
+    assert len(planned) == 4
     storage = next(s for s in sections if s.strip().startswith("private void storage();"))
-    assert re.search(r"getfield[^\n]+// Field tabletOpeningFlags:I\s+\d+: ior", storage)
-    chooser = next(s for s in sections if s.strip().startswith("private static int rollTabletOpening("))
-    assert chooser.index("isStorage:") < chooser.index("ireturn") < chooser.index("Options.rollTabletOpening:")
-    assert "bipush        64" in chooser and "bipush        32" in chooser
-    for name, bit in (("hasTabletOpeningRule", 64), ("showsTabletIntro", 32)):
+    assert "Field openingFlags:I" in storage and "// Method openingFlags:" not in storage
+    chooser = next(s for s in sections if s.strip().startswith("private static int openingFlags("))
+    assert chooser.index("ireturn") < chooser.index("Options.rollTabletOpening:")
+    assert chooser.count("Options.rollTabletOpening:") == chooser.count("Options.rollChestCameo:") == 1
+    assert "Options.backpackCameoEnabled:Z" in chooser
+    for name, bit in (("hasTabletOpeningRule", 64), ("showsTabletIntro", 32),
+                      ("remoteOpening", 128), ("showsStorageCameo", 256)):
         reader = next(s for s in sections if s.strip().startswith("public boolean " + name + "();"))
-        assert "iconst_4" in reader and re.search(rf"bipush\s+{bit}\s", reader) and "iand" in reader
-    print("PASS: compiled server constructor is the sole roll site; final result is carried in the storage flag word across refresh/navigation")
+        assert "iconst_4" in reader and re.search(rf"(?:bi|si)push\s+{bit}\s", reader) and "iand" in reader
+    print("PASS: four authorized opening paths select flags once; refresh reuses the immutable result and each client flag has its own bit")
 
 
 def run(options):

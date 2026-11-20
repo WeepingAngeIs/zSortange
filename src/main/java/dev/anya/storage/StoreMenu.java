@@ -28,12 +28,13 @@ public final class StoreMenu extends AbstractContainerMenu {
     private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES, ACCESS, ACTIVITY, FIELD_KIT, KEEP_RULES;
         boolean isStorage() { return this == NETWORK || this == BAG || this == CHEST; }
     }
+    private enum Opening { PLAIN, REMOTE, CHEST, BACKPACK }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
     private final ContainerData sync=new SimpleContainerData(18);
-    private static final int TABLET_INTRO = 32, TABLET_RULE = 64;
-    private final int tabletOpeningFlags;
+    private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256;
+    private final int openingFlags;
     private final Map<Integer,Consumer<Click>> buttons=new HashMap<>();
     private final Map<Integer,Entry> entries=new HashMap<>();
     private final ItemStack[] playerSeen=new ItemStack[36];
@@ -64,38 +65,69 @@ public final class StoreMenu extends AbstractContainerMenu {
     public StoreMenu(int id,Inventory inventory){
         this(id,inventory,0); // The client receives the server's decision with its first storage flags.
     }
-    private StoreMenu(int id,Inventory inventory,int tabletOpeningFlags){
+    private StoreMenu(int id,Inventory inventory,int openingFlags){
         super(Content.MENU.get(),id);
-        this.tabletOpeningFlags=tabletOpeningFlags;
+        this.openingFlags=openingFlags;
         for(int row=0;row<6;row++)for(int col=0;col<9;col++)addSlot(locked(display,row*9+col,125+col*18,34+row*18));
         for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(locked(inventory,9+row*9+col,125+col*18,155+row*18));
         for(int col=0;col<9;col++)addSlot(locked(inventory,col,125+col*18,213));
         addDataSlots(sync);
     }
-    private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos){
-        this(id,inventory,rollTabletOpening(page));this.owner=owner;this.page=page;this.bag=bag;this.hub=hub;this.chest=chest;this.routePos=routePos;
+    private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos,int flags){
+        this(id,inventory,flags);this.owner=owner;this.page=page;this.bag=bag;this.hub=hub;this.chest=chest;this.routePos=routePos;
         if(owner.hasPermissions(2))draft=Config.copy(Config.get());
         int session=ThreadLocalRandom.current().nextInt();sync.set(0,session&65535);sync.set(1,session>>>16);bump();
         if(chest!=null)chest.openViewer();render();
     }
-    private static int rollTabletOpening(Page openingPage) {
-        if (!openingPage.isStorage()) return 0;
-        return TABLET_RULE | (ExpansionRules.get().rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
+    private static int openingFlags(Opening opening, boolean mayView) {
+        if (!mayView || opening == Opening.PLAIN) return 0;
+        var policy = ExpansionRules.get();
+        return switch (opening) {
+            case REMOTE -> REMOTE_OPEN | TABLET_RULE
+                    | (policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
+            case CHEST -> policy.rollChestCameo(ThreadLocalRandom.current()) ? STORAGE_CAMEO : 0;
+            case BACKPACK -> policy.backpackCameoEnabled ? STORAGE_CAMEO : 0;
+            case PLAIN -> 0;
+        };
     }
     private static Slot locked(Container container,int index,int x,int y){return new Slot(container,index,x,y){public boolean mayPlace(ItemStack s){return false;}public boolean mayPickup(Player p){return false;}};}
     private static void open(ServerPlayer p,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos route){
-        p.openMenu(new SimpleMenuProvider((id,inv,ignored)->new StoreMenu(id,inv,p,page,bag,hub,chest,route),bag==null?Component.literal("Anya Storage"):bag.stack.getHoverName()));
+        open(p,page,bag,hub,chest,route,0);
     }
-    static StoreMenu bagMenu(int id,ServerPlayer p,BagInventory bag){return new StoreMenu(id,p.getInventory(),p,Page.BAG,bag,null,null,null);}
+    private static void open(ServerPlayer p,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos route,int flags){
+        p.openMenu(new SimpleMenuProvider((id,inv,ignored)->new StoreMenu(id,inv,p,page,bag,hub,chest,route,flags),bag==null?Component.literal("Anya Storage"):bag.stack.getHoverName()));
+    }
+    static StoreMenu bagMenu(int id,ServerPlayer p,BagInventory bag){return new StoreMenu(id,p.getInventory(),p,Page.BAG,bag,null,null,null,0);}
     public static void settings(ServerPlayer p){open(p,p.hasPermissions(2)?Page.ADMIN:Page.PREFS,null,null,null,null);}
     public static void preferences(ServerPlayer p){open(p,Page.PREFS,null,null,null,null);}
-    public static void bag(ServerPlayer p,BagInventory bag,boolean upgrades){open(p,upgrades?Page.UPGRADES:Page.BAG,bag,null,null,null);}
-    public static void network(ServerPlayer p,StorageEntity hub){String reason=Network.hubReason(p,hub);if(reason.isEmpty())open(p,Page.NETWORK,null,hub,null,null);else AnyaStorage.tell(p,reason);}
-    public static void container(ServerPlayer p,StorageEntity chest){if(chest.pocketId!=null){dev.anya.storage.pocket.PocketService.openChest(p,chest);return;}if(Safety.reason(p,chest,null).isEmpty())open(p,Page.CHEST,null,null,chest,null);}
+    public static void bag(ServerPlayer p,BagInventory bag,boolean upgrades){
+        open(p,upgrades?Page.UPGRADES:Page.BAG,bag,null,null,null,openingFlags(Opening.BACKPACK,!upgrades&&bag.valid()));
+    }
+    public static void network(ServerPlayer p,StorageEntity hub){openNetwork(p,hub,Opening.PLAIN);}
+    public static void remote(ServerPlayer p,StorageEntity hub){openNetwork(p,hub,Opening.REMOTE);}
+    private static void openNetwork(ServerPlayer p,StorageEntity hub,Opening opening){
+        String reason=Network.hubReason(p,hub);
+        if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return;}
+        open(p,Page.NETWORK,null,hub,null,null,openingFlags(opening,hub.permits(p,BasePermissions.VIEW)));
+    }
+    public static void container(ServerPlayer p,StorageEntity chest){
+        if(chest.pocketId!=null){dev.anya.storage.pocket.PocketService.openChest(p,chest);return;}
+        if(Safety.reason(p,chest,null).isEmpty())open(p,Page.CHEST,null,null,chest,null,openingFlags(Opening.CHEST,true));
+    }
     public static void pocket(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
+        openPocket(p,view,Opening.PLAIN);
+    }
+    public static void pocketRemote(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
+        openPocket(p,view,Opening.REMOTE);
+    }
+    public static void pocketChest(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
+        openPocket(p,view,Opening.CHEST);
+    }
+    private static void openPocket(ServerPlayer p,dev.anya.storage.pocket.PocketView view,Opening opening){
         if(!view.valid())return;
+        int flags=openingFlags(opening,view.permits(BasePermissions.VIEW));
         p.openMenu(new SimpleMenuProvider((id,inv,ignored)->{
-            StoreMenu menu=new StoreMenu(id,inv,p,Page.CHEST,null,null,null,null);menu.pocket=view;menu.render();menu.bump();return menu;
+            StoreMenu menu=new StoreMenu(id,inv,p,Page.CHEST,null,null,null,null,flags);menu.pocket=view;menu.render();menu.bump();return menu;
         },Component.literal("Experimental pocket storage")));
     }
     public boolean hasPocket(UUID id){return pocket!=null&&pocket.id().equals(id);}
@@ -116,6 +148,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     public boolean storageView(){return (sync.get(4)&1)!=0;}
     public boolean hasTabletOpeningRule(){return (sync.get(4)&TABLET_RULE)!=0;}
     public boolean showsTabletIntro(){return (sync.get(4)&TABLET_INTRO)!=0;}
+    public boolean remoteOpening(){return (sync.get(4)&REMOTE_OPEN)!=0;}
+    public boolean showsStorageCameo(){return (sync.get(4)&STORAGE_CAMEO)!=0;}
     public boolean backpackView(){return (sync.get(4)&2)!=0;}
     public boolean accessView(){return (sync.get(4)&16)!=0;}
     public boolean privateView(){return (sync.get(4)&4)!=0;}
@@ -234,7 +268,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         // Unfiltered views retain physical slot order, including every real empty slot.
         // Search narrows the view without inventing slots or changing the source-slot identity.
         offset=StorageGrid.start(values.size(),offset/9,viewportRows);
-        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|tabletOpeningFlags);sync.set(5,viewportRows);
+        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|(mayView?openingFlags:0));sync.set(5,viewportRows);
         synchronizedInt(6,capacity);synchronizedInt(8,values.size());synchronizedInt(10,offset);synchronizedInt(12,occupied);
         int shown=StorageGrid.visible(values.size(),offset,viewportRows);
         for(int i=0;i<shown;i++){
@@ -790,14 +824,29 @@ public final class StoreMenu extends AbstractContainerMenu {
         Field[] fields=ExpansionRules.Options.class.getFields();int start=offset;offset=Math.min(offset,Math.max(0,((fields.length-1)/45)*45));
         for(int i=0;i<45&&offset+i<fields.length;i++){
             Field f=fields[offset+i];Object value;try{value=f.get(draft.expansion);}catch(IllegalAccessException e){throw new IllegalStateException(e);}
-            if (f.getName().equals("tabletOpeningChancePercent")) {
-                button(i,ControlGlyph.MODELS,"Tablet opening appearance chance: "+value+"%",c->{
-                    int percent=number(c,draft.expansion.tabletOpeningChancePercent,1);
+            String key=f.getName();
+            boolean tabletChance=key.equals("tabletOpeningChancePercent");
+            if (tabletChance || key.equals("chestCameoChancePercent")) {
+                String title=tabletChance?"Tablet opening appearance chance":"Chest Cupid cameo chance";
+                button(i,ControlGlyph.MODELS,title+": "+value+"%",c->{
+                    int previous=tabletChance?draft.expansion.tabletOpeningChancePercent:draft.expansion.chestCameoChancePercent;
+                    int percent=number(c,previous,1);
                     if(percent<0||percent>100)throw new IllegalArgumentException("Enter a whole percentage from 0 to 100.");
-                    draft.expansion.tabletOpeningChancePercent=percent;
-                },"0% skips Cupid; 100% shows her on each storage opening.",
+                    if(tabletChance)draft.expansion.tabletOpeningChancePercent=percent;
+                    else draft.expansion.chestCameoChancePercent=percent;
+                },tabletChance?"Only authorized Remote opens. 0% skips the intro.":"Direct Anya chests only, with Chest Cupid cameo enabled.",
                         "Left +1%, right -1%. Shift-click sets the typed percentage.",
                         "Back, then Review changes and Apply server settings to save.");
+                continue;
+            }
+            boolean chestCameo=key.equals("chestCameoEnabled");
+            if (chestCameo || key.equals("backpackCameoEnabled")) {
+                String title=chestCameo?"Chest Cupid cameo":"Backpack Cupid cameo";
+                button(i,ControlGlyph.MODELS,Boolean.TRUE.equals(value)?State.ON:State.OFF,title+": "+(Boolean.TRUE.equals(value)?"On":"Off"),c->{
+                    if(chestCameo)draft.expansion.chestCameoEnabled=!draft.expansion.chestCameoEnabled;
+                    else draft.expansion.backpackCameoEnabled=!draft.expansion.backpackCameoEnabled;
+                },chestCameo?"Uses the separate Chest Cupid cameo chance.":"Shows briefly on each backpack inventory open.",
+                        "Cupid appears beside the inventory. Controls work immediately.");
                 continue;
             }
             button(i,ControlGlyph.setting(f.getName()),value instanceof Boolean enabled?(enabled?State.ON:State.OFF):State.NORMAL,f.getName()+": "+value,c->{

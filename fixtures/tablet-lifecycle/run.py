@@ -38,6 +38,7 @@ def main(options):
             invoke(options.jdk, "javac", [
                 "--release", "21", "-proc:none", "-encoding", "UTF-8", "-d", compiled,
                 "-classpath", os.pathsep.join((support, libraries)), JAVA / "Client.java",
+                JAVA / "StoreMenu.java", JAVA / "Config.java", JAVA / "ExpansionRules.java",
                 JAVA / "appearance/GuardianBlink.java", JAVA / "appearance/TabletDevice.java",
                 JAVA / "appearance/TabletBootScreen.java",
             ], scratch)

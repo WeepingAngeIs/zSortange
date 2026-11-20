@@ -1,0 +1,82 @@
+"""Check the trusted opening routes and presentation boundaries without Java."""
+
+from pathlib import Path
+import re
+
+
+ROOT = Path(__file__).resolve().parents[2]
+JAVA = ROOT / "src/main/java/dev/anya/storage"
+
+
+def source(path):
+    return (JAVA / path).read_text(encoding="utf-8")
+
+
+def body(text, signature):
+    start = text.index("{", text.index(signature)) + 1
+    depth = 1
+    for end in range(start, len(text)):
+        depth += (text[end] == "{") - (text[end] == "}")
+        if depth == 0:
+            return text[start:end]
+    raise AssertionError(f"Unclosed method {signature}")
+
+
+def ordered(text, *tokens):
+    position = -1
+    for token in tokens:
+        position = text.index(token, position + 1)
+
+
+item = source("StorageItem.java")
+network = source("Network.java")
+menu = source("StoreMenu.java")
+pockets = source("pocket/PocketService.java")
+client = source("Client.java")
+policy = source("ExpansionRules.java")
+
+bound = body(item, "static StorageEntity bound(")
+ordered(bound, 'tag.contains("HubPos")', 'tag.getString("HubDimension")',
+        "tag.getLong(\"HubPos\")", "hasChunkAt(pos)", "Network.hubReason(p,hub)")
+assert "hub.radius()*hub.radius()" in body(network, "boolean inRange(")
+ordered(body(network, "String hubReason("), "inRange(p,hub)", "Safety.reason(p,hub,null)")
+ordered(body(item, "InteractionResultHolder<ItemStack> use("), "StorageEntity hub=bound(p,stack)",
+        "if(hub!=null)", "if(!dev.anya.storage.pocket.PocketService.remote(p,stack,hub))", "StoreMenu.remote(p,hub)")
+ordered(body(menu, "void openNetwork("), "Network.hubReason(p,hub)", "if(!reason.isEmpty())",
+        "hub.permits(p,BasePermissions.VIEW)")
+ordered(body(pockets, "void arrive("), "authorize(p,pocket,pending.kind(),true,0)",
+        "if(!denied.isEmpty())", "pending.kind()==PocketLeases.Kind.REMOTE", "StoreMenu.pocketRemote")
+ordered(body(pockets, "void openChest("), "if(!physicalAllowed(p,chest))", "StoreMenu.pocketChest")
+ordered(body(menu, "void openPocket("), "if(!view.valid())return;", "view.permits(BasePermissions.VIEW)", "p.openMenu")
+assert "Opening.PLAIN" in body(menu, "void network(")
+assert "Opening.REMOTE" in body(menu, "void remote(")
+assert "Opening.REMOTE" in body(menu, "void pocketRemote(")
+assert "Opening.CHEST" in body(menu, "void pocketChest(")
+assert "Opening.BACKPACK,!upgrades&&bag.valid()" in body(menu, "void bag(")
+ordered(body(menu, "void container("), "Safety.reason(p,chest,null).isEmpty()", "Opening.CHEST")
+
+decision = body(menu, "int openingFlags(")
+ordered(decision, "if (!mayView", "case REMOTE", "REMOTE_OPEN | TABLET_RULE",
+        "policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0",
+        "case CHEST -> policy.rollChestCameo", "case BACKPACK -> policy.backpackCameoEnabled",
+        "case PLAIN -> 0")
+assert "mayView?openingFlags:0" in body(menu, "void storage()")
+assert re.search(r"tabletOpeningChancePercent\s*=\s*24;", policy)
+assert re.search(r"chestCameoEnabled\s*=\s*false;", policy)
+assert re.search(r"chestCameoChancePercent\s*=\s*1;", policy)
+assert re.search(r"backpackCameoEnabled\s*=\s*false;", policy)
+assert "random.nextInt(100) < tabletOpeningChancePercent" in body(policy, "boolean rollTabletOpening(")
+assert "chestCameoEnabled && random.nextInt(100) < chestCameoChancePercent" in body(policy, "boolean rollChestCameo(")
+
+assert "tabletCoversView =" not in body(client, "public Screen(StoreMenu menu")
+ordered(body(client, "void classifyOpening("), "if (openingClassified || !menu.storageView()) return;",
+        "showTabletFrame() && menu.showsTabletIntro()",
+        "!menu.privateView() && !menu.remoteOpening() && menu.showsStorageCameo()")
+assert "menu.hasTabletOpeningRule()" not in client
+assert "!menu.privateView() && menu.remoteOpening()" in body(client, "boolean showTabletFrame(")
+assert "Cameo" not in body(client, "boolean blockTabletInput(")
+ordered(body(client, "void render(GuiGraphics g"), "Inventory: deposit. Wheel: scroll.", "drawStorageCameo(g)", "g.pose().popPose()")
+
+print("PASS: bound Remote still uses existing dimension, radius, and access checks")
+print("PASS: Remote flags require View; 0% skips and 100% hits only the Remote policy")
+print("PASS: chest and backpack settings default off, use separate branches, and never gate input")

@@ -1,20 +1,23 @@
-# Tablet opening chance
+# Cupid settings
 
-In `tabletintro.6`, the server makes one roll when a player opens an Anya backpack, network, chest or pocket storage menu. The default is **24%** for Cupid's opening animation and **76%** for direct inventory access. On a miss the first ready storage frame accepts input. On a hit the existing 1.05-second expression plays. Holding the Remote quietly still uses the separate idle-visit timer.
+The server rolls **Tablet opening appearance chance** when a bound Remote successfully opens storage the player may view. The default is **24%**. A hit plays Cupid's 1.05-second opening. A miss opens storage as soon as it is ready. Holding the Remote quietly uses a separate timer for the face on its screen.
+
+Opening a supported Anya Storage Plus chest or backpack directly opens its inventory immediately. The optional cameos are brief portraits beside the inventory and leave the controls usable. Vanilla and other mods' containers use their ordinary behavior.
 
 ## Change it for the server
 
-As an operator, open `/anya storage` and select **Elemental, cosmetics, image and pocket policy**. Enter a whole-number percentage in the input box, then Shift-click **Tablet opening appearance chance**. Choose **Back**, **Review changes**, then **Apply server settings**. Changing just this value takes effect for subsequent openings without restarting or reloading recipes. A menu already open keeps its original roll.
+As an operator, open `/anya storage` and select **Elemental, cosmetics, image and pocket policy**. Click a toggle to change it. To set a percentage, type a whole number in the input box and Shift-click the setting. Choose **Back**, **Review changes**, then **Apply server settings**. Cupid-only changes take effect on subsequent openings without a restart or a recipe reload.
 
-| Value | Effect on eligible openings |
-| --- | --- |
-| `0` | Always go directly to storage. |
-| `24` | Roll a 24% chance on each opening. |
-| `100` | Always select the opening animation. |
+| Setting | Config key in `expansion` | Default and effect |
+| --- | --- | --- |
+| Tablet opening appearance chance | `tabletOpeningChancePercent` | **24%** for an authorized Remote open. Set `0` for immediate access or `100` for the intro on every eligible use. |
+| Chest Cupid cameo | `chestCameoEnabled` | **Off**. Enable to allow a cameo on a direct Anya chest open. |
+| Chest Cupid cameo chance | `chestCameoChancePercent` | **1%** per eligible direct chest open when its toggle is on. Accepts `0`–`100`. |
+| Backpack Cupid cameo | `backpackCameoEnabled` | **Off**. Enable for a cameo on a supported backpack inventory open. |
 
-Pack configuration uses the existing `config/anya-storage-plus.json` file. The integer field is `tabletOpeningChancePercent` inside its `expansion` object. Existing files without that field inherit 24. For an offline file edit, change this field inside the existing object, preserve the other settings and start the server with the edited file.
+The existing `config/anya-storage-plus.json` still uses schema 2. Your saved tablet percentage now applies to authorized Remote opens. Older configs inherit both cameo toggles off and a 1% chest chance when the new keys are absent. Loading an older config does not rewrite it. For an offline edit, put the fields in the existing `expansion` object and preserve the other settings.
 
-Use matching builds on server and clients for the server-selected opening behavior. With default launch arguments, the Remote appears as the first-person tablet, and the server percentage controls how often a storage opening shows a portrait. A client can disable both tablet visuals with `-Danyastorage.tabletIntro=false`.
+Use matching builds on server and clients. The first-person Remote uses the silver tablet with default launch arguments. A client can disable the held tablet and its opening presentation with `-Danyastorage.tabletIntro=false`.
 
 ## Unyielding / Configtopia integration
 

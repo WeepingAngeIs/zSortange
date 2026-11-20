@@ -24,6 +24,8 @@ public final class Config {
     public static final List<String> UPGRADE_IDS = List.of("pickup", "feeding", "refill", "crafting", "smelting", "compacting", "resupply");
     public static final List<String> CATEGORIES = List.of("any", "food", "ores", "materials", "blocks", "equipment", "farming", "mob_drops", "redstone", "misc");
     public static final List<String> SYMBOLS = List.of("heart", "star", "square", "circle", "diamond", "leaf", "gear");
+    private static final List<String> CUPID_SETTINGS = List.of(
+            "tabletOpeningChancePercent", "chestCameoEnabled", "chestCameoChancePercent", "backpackCameoEnabled");
 
     public static final class Tier {
         public String id, name, predecessor, material;
@@ -91,16 +93,31 @@ public final class Config {
         JsonObject object=JsonParser.parseString(Files.readString(file)).getAsJsonObject();
         Set<String> fields=JSON.toJsonTree(new Data()).getAsJsonObject().keySet();
         for(String key:object.keySet()) if(!fields.contains(key)) throw new IOException("Unknown config key: "+key);
-        // Gson's tree reader would truncate a fractional number, or wrap an oversized one, to an int.
-        if (object.get("expansion") instanceof JsonObject expansion && expansion.has("tabletOpeningChancePercent")) {
-            JsonElement value = expansion.get("tabletOpeningChancePercent");
-            require(value instanceof JsonPrimitive number && number.isNumber(), "Tablet opening chance must be a whole percentage");
-            try { value.getAsBigDecimal().intValueExact(); }
-            catch (ArithmeticException | NumberFormatException e) { throw new IOException("Tablet opening chance must be a whole percentage from 0 to 100", e); }
+        if (object.get("expansion") instanceof JsonObject expansion) {
+            checkWholePercent(expansion, "tabletOpeningChancePercent", "Tablet opening chance");
+            checkWholePercent(expansion, "chestCameoChancePercent", "Chest cameo chance");
+            checkBoolean(expansion, "chestCameoEnabled");
+            checkBoolean(expansion, "backpackCameoEnabled");
         }
         Data data=JSON.fromJson(object,Data.class);
         validate(data,true);
         return data;
+    }
+    private static void checkWholePercent(JsonObject expansion, String key, String label) throws IOException {
+        JsonElement value = expansion.get(key);
+        if (value == null) return;
+        // Gson's tree reader can truncate fractions or wrap oversized values when reading an int.
+        if (!(value instanceof JsonPrimitive number && number.isNumber()))
+            throw new IOException(label + " must be a whole percentage from 0 to 100");
+        try { number.getAsBigDecimal().intValueExact(); }
+        catch (ArithmeticException | NumberFormatException e) {
+            throw new IOException(label + " must be a whole percentage from 0 to 100", e);
+        }
+    }
+    private static void checkBoolean(JsonObject expansion, String key) throws IOException {
+        JsonElement value = expansion.get(key);
+        if (value != null && !(value instanceof JsonPrimitive flag && flag.isBoolean()))
+            throw new IOException(key + " must be true or false");
     }
     public static void init() {
         path=FMLPaths.CONFIGDIR.get().resolve("anya-storage-plus.json").toAbsolutePath();
@@ -112,7 +129,7 @@ public final class Config {
         } catch(Exception e) { throw new IllegalStateException("Cannot load storage config; original file has not been reset",e); }
     }
     public static void validate(Data d) {validate(d,false);}
-    static void validateDraft(Data draft) { validate(draft, onlyTabletChanceChanged(get(), draft)); }
+    static void validateDraft(Data draft) { validate(draft, onlyCupidSettingsChanged(get(), draft)); }
     private static void validate(Data d,boolean dormantLoad) {
         require(d!=null && d.schema==2 && d.revision>=0,"Unsupported schema or revision");
         ExpansionRules.validate(d.expansion,dormantLoad);
@@ -192,11 +209,15 @@ public final class Config {
         if(expectedRevision!=live.revision) { AnyaStorage.tell(actor,"Another admin saved first. Reopen settings."); return false; }
         return true;
     }
-    private static boolean onlyTabletChanceChanged(Data before, Data after) {
-        if (after.expansion == null || after.expansion.tabletOpeningChancePercent == before.expansion.tabletOpeningChancePercent) return false;
+    private static boolean onlyCupidSettingsChanged(Data before, Data after) {
+        if (after.expansion == null) return false;
         JsonObject expected = JSON.toJsonTree(before).getAsJsonObject();
-        expected.getAsJsonObject("expansion").addProperty("tabletOpeningChancePercent", after.expansion.tabletOpeningChancePercent);
-        return expected.equals(JSON.toJsonTree(after));
+        JsonObject actual = JSON.toJsonTree(after).getAsJsonObject();
+        JsonObject previousExpansion = expected.getAsJsonObject("expansion");
+        JsonObject nextExpansion = actual.getAsJsonObject("expansion");
+        if (previousExpansion.equals(nextExpansion)) return false;
+        for (String key : CUPID_SETTINGS) previousExpansion.add(key, nextExpansion.get(key));
+        return expected.equals(actual);
     }
     public static synchronized boolean save(ServerPlayer actor,Data draft) {
         if (!canSave(actor, draft.revision)) return false;
@@ -205,9 +226,9 @@ public final class Config {
     /** Both entry points hold the Config lock and have already checked permission, revision and reload state. */
     private static boolean applyDraft(ServerPlayer actor, Data draft) {
         Data before=copy(live), next=copy(draft);
-        boolean justChance = onlyTabletChanceChanged(before, next);
+        boolean justCupidSettings = onlyCupidSettingsChanged(before, next);
         try {
-            validate(next, justChance); // A lone chance edit leaves every existing dormant pocket gate as loaded.
+            validate(next, justCupidSettings); // A visual-only edit leaves dormant pocket settings as loaded.
             for(Tier t:next.tiers) {
                 Tier old=before.tier(t.id);
                 if(t.enabled&&!t.id.equals("starter")&&(old==null||!old.enabled||!old.material.equals(t.material)))
@@ -217,7 +238,7 @@ public final class Config {
             persist(next); live=next;
         } catch(Exception e) { AnyaStorage.tell(actor,"Not saved: "+e.getMessage()); return false; }
         if(before.audit||next.audit) AnyaStorage.LOG.info("Storage config revision {} by {} [{}]",next.revision,actor.getGameProfile().getName(),actor.getUUID());
-        if (justChance) {
+        if (justCupidSettings) {
             lastStatus="Applied revision "+next.revision;
             AnyaStorage.tell(actor,lastStatus);
             return true;
@@ -258,12 +279,24 @@ public final class Config {
         List<String> lines=new ArrayList<>();
         JsonObject a=JSON.toJsonTree(before).getAsJsonObject(), b=JSON.toJsonTree(after).getAsJsonObject();
         for(String key:a.keySet()) if(!a.get(key).equals(b.get(key))) {
-            if(key.equals("expansion") && onlyTabletChanceChanged(before,after))
-                lines.add("Tablet opening appearance chance: "+before.expansion.tabletOpeningChancePercent+"% to "+after.expansion.tabletOpeningChancePercent+"%");
-            else lines.add(key+": changed");
+            if (key.equals("expansion") && after.expansion != null) {
+                describeCupidChanges(lines, before.expansion, after.expansion);
+                if (onlyCupidSettingsChanged(before, after)) continue;
+            }
+            lines.add(key+": changed");
         }
         if(after.maxRadius<before.maxRadius) lines.add("Range reduction hides distant storage; it does not delete items.");
         lines.add("Existing backpacks retain their saved capacity, even after tier changes.");
         return lines;
+    }
+    private static void describeCupidChanges(List<String> lines, ExpansionRules.Options before, ExpansionRules.Options after) {
+        if (before.tabletOpeningChancePercent != after.tabletOpeningChancePercent)
+            lines.add("Tablet opening appearance chance: "+before.tabletOpeningChancePercent+"% to "+after.tabletOpeningChancePercent+"%");
+        if (before.chestCameoEnabled != after.chestCameoEnabled)
+            lines.add("Chest Cupid cameo " + (after.chestCameoEnabled ? "enabled" : "disabled"));
+        if (before.chestCameoChancePercent != after.chestCameoChancePercent)
+            lines.add("Chest Cupid cameo chance: "+before.chestCameoChancePercent+"% to "+after.chestCameoChancePercent+"%");
+        if (before.backpackCameoEnabled != after.backpackCameoEnabled)
+            lines.add("Backpack Cupid cameo " + (after.backpackCameoEnabled ? "enabled" : "disabled"));
     }
 }

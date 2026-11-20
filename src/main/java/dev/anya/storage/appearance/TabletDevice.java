@@ -22,7 +22,6 @@ public final class TabletDevice {
     private static final ResourceLocation TUMBLE = gui("tablet_tumble");
     private static final Portrait[] TUMBLE_CELLS = row(TUMBLE, 0, 1);
     private static boolean lastVisitTumbled;
-    private static final Rows OPENINGS = new Rows(0, OPENING_ROWS);
     private static final Rows VISITS = new Rows(OPENING_ROWS, IDLE_ROWS);
     private static final Portrait[][] CELLS = expressionSheet();
     private static final ResourceLocation ORIGINAL = gui("tablet_guardian");
@@ -83,7 +82,6 @@ public final class TabletDevice {
         }
     }
 
-    static int chooseOpening() { return OPENINGS.next(); }
     static int chooseVisit() {
         return chooseVisit(ThreadLocalRandom.current().nextInt(8));
     }
@@ -136,6 +134,17 @@ public final class TabletDevice {
                 b.y + (SCREEN_Y + (SCREEN_H - grid.height()) / 2f) * b.scale);
     }
     public static void drawDark(GuiGraphics graphics, Bounds bounds) { draw(graphics, bounds, null); }
+    public static void drawCameo(GuiGraphics graphics, int x, int y) {
+        var pose = graphics.pose();
+        pose.pushPose();
+        try {
+            pose.translate(x, y, 350);
+            pose.scale(.3125f, .3125f, 1);
+            blitPortrait(graphics, OPEN);
+        } finally {
+            pose.popPose();
+        }
+    }
     static void drawHandling(GuiGraphics g, int width, int height, LocalPlayer armOwner, Grip grip,
                              float progress, Portrait portrait) {
         if (armOwner != null && !armOwner.isInvisible()) {
@@ -171,10 +180,13 @@ public final class TabletDevice {
             float zoom = SCREEN_W / (float) CELL_W;
             pose.translate(SCREEN_X, SCREEN_Y + (SCREEN_H - CELL_H * zoom) / 2f, 0);
             pose.scale(zoom, zoom, 1);
-            g.blit(portrait.image(), 0, 0, portrait.u(), portrait.v(), CELL_W, CELL_H,
-                    portrait.atlasWidth(), portrait.atlasHeight());
+            blitPortrait(g, portrait);
         }
         pose.popPose();
+    }
+    private static void blitPortrait(GuiGraphics graphics, Portrait portrait) {
+        graphics.blit(portrait.image(), 0, 0, portrait.u(), portrait.v(), CELL_W, CELL_H,
+                portrait.atlasWidth(), portrait.atlasHeight());
     }
     private TabletDevice() {}
 }

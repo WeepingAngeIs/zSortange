@@ -202,7 +202,7 @@ public final class PocketService {
     }
     private static void arrive(Pending pending,PocketLedger.Pocket pocket)throws IOException {
         ServerPlayer p=pending.player();String denied=authorize(p,pocket,pending.kind(),true,0);if(!denied.isEmpty())throw new IOException(denied);
-        if(pending.kind()==PocketLeases.Kind.REMOTE){StoreMenu.pocket(p,new PocketView(p,pocket,PocketLeases.Kind.REMOTE));return;}
+        if(pending.kind()==PocketLeases.Kind.REMOTE){StoreMenu.pocketRemote(p,new PocketView(p,pocket,PocketLeases.Kind.REMOTE));return;}
         var back=new PocketLedger.ReturnPoint(p.getUUID(),pocket.id(),p.level().dimension().location().toString(),p.getX(),p.getY(),p.getZ(),p.getYRot(),p.getXRot());
         ledger.reserveReturn(back); // durable record is committed BEFORE any teleport
         ServerLevel target=dimension(p.getServer());Vec3 point=new Vec3(pocket.x()+16.5,65,pocket.z()+24.5);
@@ -314,7 +314,7 @@ public final class PocketService {
         try{var r=ledger(p.getServer()).get(chest.pocketId);var l=LEASES.get(p.getUUID());return r!=null&&l!=null&&l.kind()==PocketLeases.Kind.VISIT&&l.pocket().equals(r.id())&&l.epoch()==r.epoch()&&authorize(p,r,l.kind(),false,0).isEmpty()&&PocketRoomLayout.registeredPosition(r,chest.getBlockPos())&&p.distanceToSqr(Vec3.atCenterOf(chest.getBlockPos()))<=64;}catch(IOException e){return false;}
     }
     public static void openChest(ServerPlayer p,StorageEntity chest){
-        try{if(!physicalAllowed(p,chest))throw new IOException("Pocket chest access denied");var r=ledger.get(chest.pocketId);StoreMenu.pocket(p,new PocketView(p,r,PocketLeases.Kind.VISIT,chest));}catch(Exception e){error(p,e);}
+        try{if(!physicalAllowed(p,chest))throw new IOException("Pocket chest access denied");var r=ledger.get(chest.pocketId);StoreMenu.pocketChest(p,new PocketView(p,r,PocketLeases.Kind.VISIT,chest));}catch(Exception e){error(p,e);}
     }
     public static void stop(MinecraftServer server){
         for(Ticket t:TICKETS){ServerLevel l=server.getLevel(t.dimension());if(l!=null)l.getChunkSource().removeRegionTicket(TICKET,t.chunk(),2,t.pocket());}

@@ -84,14 +84,19 @@ HOST = {
     "dev.anya.storage.StoreMenu": """
         public class StoreMenu extends net.minecraft.world.inventory.AbstractContainerMenu {
             public boolean storage = true;
-            public boolean openingRule = true, openingHit = true;
+            public boolean openingRule = true, openingHit = true, remote = true;
+            public boolean cameo, privateStorage;
+            public boolean backpack = true;
             public boolean hasTabletOpeningRule() { return openingRule; }
             public boolean showsTabletIntro() { return openingHit; }
+            public boolean remoteOpening() { return remote; }
+            public boolean showsStorageCameo() { return cameo; }
+            public boolean privateView() { return privateStorage; }
             public int version = 1, rows = 5;
             public StoreMenu(int id) { containerId = id; }
             public boolean storageView() { return storage; }
             public boolean accessView() { return false; }
-            public boolean backpackView() { return true; }
+            public boolean backpackView() { return backpack; }
             public int revision() { return version; }
             public int session() { return 71; }
             public int visibleRows() { return rows; }
@@ -129,6 +134,7 @@ HOST = {
             public float shellX, shellY, shellScale;
             private final com.mojang.blaze3d.vertex.PoseStack pose = new com.mojang.blaze3d.vertex.PoseStack();
             public com.mojang.blaze3d.vertex.PoseStack pose() { return pose; }
+            public void fill(int x,int y,int right,int bottom,int z,int color) { fills++; }
             public void fill(int x,int y,int right,int bottom,int color) {
                 fills++;
                 // The existing menu panel is 382 logical px wide. End before GPU text/slot drawing.

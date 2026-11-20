@@ -12,7 +12,6 @@ public final class TabletBootScreen {
     private boolean armDetached;
     private long started = Long.MIN_VALUE;
     private int initialWidth, initialHeight;
-    private int openingRow = -2;
 
     private void prepare(int width, int height, Player player, long now) {
         if (started == Long.MIN_VALUE) {
@@ -30,11 +29,7 @@ public final class TabletBootScreen {
         float elapsed = Math.clamp((now - started) / (float) TabletLift.RISE_MS, 0f, 1f);
         float dim = origin == null ? 1f : TabletHandlingPose.eased(elapsed);
         graphics.fill(0, 0, width, height, -900, (Math.round(153 * dim) << 24) | 0x000c1017);
-        if (openingRow == -2 && blink.column() >= 0) {
-            // Continue the blue Twin Tails portrait when raising a recently painted Remote.
-            openingRow = origin == null ? TabletDevice.chooseOpening() : -1;
-        }
-        drawDevice(graphics, width, height, player, TabletDevice.opening(openingRow, blink),
+        drawDevice(graphics, width, height, player, TabletDevice.opening(-1, blink),
                 origin == null ? 1f : Math.min(1f, origin.progress() + elapsed));
     }
 
