@@ -1,0 +1,17 @@
+Cupid Tablet and Remote playtest for 0.3.0-beta.7-physicaltablet.1
+
+[ ] In a disposable client, find the Cupid Tablet alongside the heart Remote
+    in the Anya Storage creative tab. Check the silver model in the hotbar,
+    both hands, third person, while paused, and as a dropped item or in a
+    frame. Look for the baked blink and glance during the idle loop.
+[ ] Use an existing bound Remote. Check that it still opens the same storage
+    immediately. Craft the tablet with ordinary materials, crouch-right-click
+    the hub to bind it, then use it within hub range.
+[ ] Check the tablet's first-person blink and idle. Force the intro chance to
+    100%, Esc out during the intro, and verify the tablet is still held.
+    At 0%, storage should open without the intro. Restore the previous setting.
+[ ] Check that the Home Void Cube reports the disabled pocket gate. With both
+    gates enabled in the disposable setup, crouch-right-click the cube with
+    either hub-bound item to link it. Uncrouch and right-click the cube to
+    visit. From home, verify each item opens the same pocket slots and pad
+    count. A guest without View access must see neither.

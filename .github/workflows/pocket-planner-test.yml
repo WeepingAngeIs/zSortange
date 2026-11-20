@@ -1,8 +1,8 @@
-name: Build pocketplan.3 test JAR
+name: Build physical Cupid Tablet test JAR
 
 on:
   push:
-    branches: [experiment/pocketplan.3]
+    branches: [experiment/physical-cupid-tablet]
 
 permissions:
   contents: read
@@ -27,11 +27,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
-      - name: Check bound Remote routes and upgrade readout
+      - name: Check the separate Remote and Cupid Tablet paths
         run: python3 -B fixtures/tablet-chance/check_opening_sources.py
       - name: Build the candidate JAR
         run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle clean jar durableAuditClasspath
-      - name: Check the packaged Remote behavior and chest planner
+      - name: Check packaged tablet behavior and chest planner
         shell: bash
         run: |
           set -euo pipefail
@@ -44,6 +44,7 @@ jobs:
           args=(--jdk "$JAVA_HOME" --classpath-file "$classpath_file" --support-jar "$jar")
           python3 -B fixtures/tablet-chance/check_server.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
+          python3 -B fixtures/tablet-handling/run_use.py "${args[@]}" --packaged
 
           # Registry bootstrap reads the vanilla language and version resources.
           client_jar="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
@@ -61,6 +62,7 @@ jobs:
           cp "build/libs/$jar" upload/
           python3 - "$jar" "$version" <<'PY'
           from pathlib import Path
+          import json
           import sys
           import tomllib
           from zipfile import ZipFile
@@ -81,16 +83,31 @@ jobs:
               for name in ("tablet_device", "tablet_guardian", "tablet_gaze_left"):
                   entry = f"assets/anyastorage/textures/gui/{name}.png"
                   assert jar.read(entry) == (Path("src/main/resources") / entry).read_bytes()
+
+              assets = "assets/anyastorage/"
+              model = json.loads(jar.read(assets + "models/item/cupid_tablet.json"))
+              assert len(model["elements"]) == 1 and len(model["elements"][0]["faces"]) == 6
+              for name in ("cupid_tablet_face.png", "cupid_tablet_face.png.mcmeta", "cupid_tablet_case.png"):
+                  entry = assets + "textures/item/" + name
+                  assert jar.read(entry) == (Path("src/main/resources") / entry).read_bytes()
+              assert assets + "models/item/remote.json" in jar.namelist()
+              lang = json.loads(jar.read(assets + "lang/en_us.json"))
+              assert lang["item.anyastorage.cupid_tablet"] == "Cupid Tablet"
+              recipe = json.loads(jar.read("data/anyastorage/recipe/cupid_tablet.json"))
+              assert recipe["result"]["id"] == "anyastorage:cupid_tablet"
+              assert recipe["neoforge:conditions"] == [{"type":"anyastorage:recipe_group","group":"terminals"}]
+              assert all(ingredient.get("item") != "anyastorage:remote" for ingredient in recipe["key"].values())
+              print("PASS: both terminal item models, tablet animation and independent recipe packaged")
           PY
           sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/POCKETPLAN.3-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/POCKETPLAN.3-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/PHYSICALTABLET.1-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/PHYSICALTABLET.1-PLAYTEST.txt upload/PLAYTEST.txt
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-pocketplan.3
+          name: anya-storage-plus-physicaltablet.1
           path: upload/
           if-no-files-found: error
           retention-days: 14

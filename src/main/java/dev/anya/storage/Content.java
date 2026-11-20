@@ -42,6 +42,8 @@ public final class Content {
             () -> BlockEntityType.Builder.of(dev.anya.storage.furniture.FurnitureEntity::new, SHELF.get(), HATCH.get()).build(null));
     public static final DeferredItem<StorageItem> BACKPACK=ITEMS.register("backpack",()->new StorageItem("backpack",new Item.Properties().stacksTo(1)));
     public static final DeferredItem<StorageItem> REMOTE=ITEMS.register("remote",()->new StorageItem("remote",new Item.Properties().stacksTo(1)));
+    public static final DeferredItem<StorageItem> CUPID_TABLET = ITEMS.register("cupid_tablet",
+            () -> new StorageItem("remote", new Item.Properties().stacksTo(1)));
     public static final DeferredItem<dev.anya.storage.guide.GuideItem> GUIDE=ITEMS.register("ancient_technology",()->new dev.anya.storage.guide.GuideItem(new Item.Properties().stacksTo(1)));
     public static final DeferredItem<Item> CORE=ITEMS.registerSimpleItem("storage_core");
     public static final DeferredItem<Item> DRAGON_TOKEN=ITEMS.registerSimpleItem("dragon_victory_token");

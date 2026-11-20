@@ -1,5 +1,6 @@
 package dev.anya.storage;
 
+import dev.anya.storage.pocket.PocketService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -14,26 +15,35 @@ import java.util.List;
 public final class StorageItem extends Item {
     public final String kind;
     public StorageItem(String kind,Properties properties){super(properties);this.kind=kind;}
+    public static boolean isTerminal(ItemStack stack) {
+        return stack.is(Content.REMOTE.get()) || stack.is(Content.CUPID_TABLET.get());
+    }
     @Override public boolean canFitInsideContainerItems(){return !kind.equals("backpack");}
     @Override public Component getName(ItemStack stack){if(kind.equals("backpack")){String tier=BagInventory.data(stack).getString("TierName");return Component.literal((tier.isBlank()?"Starter":tier)+" Backpack");}return super.getName(stack);}
     @Override public InteractionResultHolder<ItemStack> use(Level level,Player player,InteractionHand hand){
         ItemStack stack=player.getItemInHand(hand);
         if(!level.isClientSide&&player instanceof ServerPlayer p){
             if(kind.equals("backpack")){int slot=hand==InteractionHand.MAIN_HAND?p.getInventory().selected:40;StoreMenu.bag(p,new BagInventory(p,slot),player.isShiftKeyDown());}
-            else {StorageEntity hub=bound(p,stack);if(hub!=null){if(!dev.anya.storage.pocket.PocketService.remote(p,stack,hub))StoreMenu.remote(p,hub);}else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this remote. Use it within that hub's radius.");}
+            else {
+                StorageEntity hub=bound(p,stack);
+                if(hub!=null){
+                    if(!PocketService.remote(p,stack,hub)) StoreMenu.remote(p,hub,stack.is(Content.CUPID_TABLET.get()));
+                }else AnyaStorage.tell(p,"Sneak-right-click a permitted hub to bind this item. Use it within that hub's radius.");
+            }
         }
         return InteractionResultHolder.sidedSuccess(stack,level.isClientSide);
     }
     @Override public InteractionResult useOn(UseOnContext context){
-        if(!kind.equals("remote")||!context.getPlayer().isShiftKeyDown())return InteractionResult.PASS;
+        var player = context.getPlayer();
+        if(!isTerminal(context.getItemInHand())||player==null||!player.isShiftKeyDown())return InteractionResult.PASS;
         if(context.getLevel().isClientSide)return InteractionResult.SUCCESS;
-        if(!(context.getPlayer() instanceof ServerPlayer p))return InteractionResult.PASS;
+        if(!(player instanceof ServerPlayer p))return InteractionResult.PASS;
         var be=context.getLevel().getBlockEntity(context.getClickedPos());
-        if(be instanceof dev.anya.storage.pocket.PocketContent.EntranceEntity entrance){dev.anya.storage.pocket.PocketService.link(p,entrance,context.getItemInHand());return InteractionResult.CONSUME;}
+        if(be instanceof dev.anya.storage.pocket.PocketContent.EntranceEntity entrance){PocketService.link(p,entrance,context.getItemInHand());return InteractionResult.CONSUME;}
         if(be instanceof StorageEntity hub&&hub.kind().equals("hub")){
             String reason=Safety.reason(p,hub,null);if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return InteractionResult.FAIL;}
             CompoundTag tag=BagInventory.data(context.getItemInHand());tag.putString("HubDimension",p.level().dimension().location().toString());tag.putLong("HubPos",hub.getBlockPos().asLong());tag.remove("PocketId");BagInventory.data(context.getItemInHand(),tag);
-            AnyaStorage.tell(p,"Remote bound to "+hub.baseName+"; radius "+hub.radius()+" blocks.");return InteractionResult.CONSUME;
+            AnyaStorage.tell(p,"Bound to "+hub.baseName+". Hub radius is "+hub.radius()+" blocks.");return InteractionResult.CONSUME;
         }
         StorageEntity hub=bound(p,context.getItemInHand());
         if(hub!=null&&hub.ownedBy(p)&&Network.supported(be)&&Network.within(hub.getBlockPos(),context.getClickedPos(),hub.radius())&&Safety.reason(p,be,hub).isEmpty()){
@@ -58,6 +68,11 @@ public final class StorageItem extends Item {
     }
     @Override public void appendHoverText(ItemStack stack,TooltipContext context,List<Component> lines,TooltipFlag flag){
         if(kind.equals("backpack")){CompoundTag tag=BagInventory.data(stack);lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use: upgrades"));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Accessories back slot supported when installed. Wardrobe remains available."));}
-        else {lines.add(Component.literal("Sneak-use on hub: bind | Use: open base storage"));lines.add(Component.literal("Sneak-use on a chest: routing (owner only)"));}
+        else {
+            lines.add(Component.literal("Sneak-use on a hub to bind. Use in air to open storage."));
+            lines.add(Component.literal("Sneak-use on a Home Void Cube to link pocket storage."));
+            lines.add(Component.literal("Right-click a linked cube to visit with permission."));
+            lines.add(Component.literal("Owners can sneak-use on a chest to edit its routing."));
+        }
     }
 }

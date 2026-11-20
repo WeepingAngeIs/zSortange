@@ -25,7 +25,7 @@ public final class ServerChanceCheck {
         var policy = Config.get().expansion;
         require(policy.rollTabletOpening(new Percentiles()) == tabletAlwaysAppears
                 && policy.tabletOpeningChancePercent == (tabletAlwaysAppears ? 100 : 0),
-                "The saved Remote percentage disagrees with the forced or skipped opening");
+                "The saved Cupid Tablet percentage disagrees with the forced or skipped opening");
         require(policy.rollChestCameo(new Percentiles()) == chestAlwaysAppears
                 && policy.chestCameoEnabled == chestAlwaysAppears
                 && (!chestAlwaysAppears || policy.chestCameoChancePercent == 100),

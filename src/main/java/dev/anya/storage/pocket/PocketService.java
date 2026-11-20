@@ -24,7 +24,7 @@ public final class PocketService {
     private static final TicketType<UUID> TICKET=TicketType.create("anyastorage_pocket_lease",UUID::compareTo,80);
     private static final PocketLeases LEASES=new PocketLeases();
     private record Ticket(ResourceKey<Level> dimension,ChunkPos chunk,UUID pocket){}
-    private record Pending(ServerPlayer player,UUID pocket,PocketLeases.Kind kind){}
+    private record Pending(ServerPlayer player,UUID pocket,PocketLeases.Kind kind,boolean tablet){}
     private record Placement(BlockPos pos,BlockState state){}
     private static final class Preparation {List<Placement> blocks;int cursor;boolean began;}
     private static final Map<UUID,Pending> PENDING=new LinkedHashMap<>();
@@ -55,6 +55,10 @@ public final class PocketService {
     private static ServerLevel level(MinecraftServer server,String id){return server.getLevel(ResourceKey.create(Registries.DIMENSION,ResourceLocation.parse(id)));}
     static boolean present(ServerPlayer p){return p.getServer()!=null&&(p.getServer().getPlayerList().getPlayer(p.getUUID())==p||(Boolean.getBoolean("anyastorage.pocketTests")&&p instanceof FakePlayer));}
     public static String status(){return "Experimental pocket gate="+enabled()+"; active pockets="+LEASES.active().size()+"; leases="+LEASES.snapshot().size()+"; Anya-owned ticket requests="+TICKETS.size()+"; last preparation writes="+lastPreparedBlocks+" (not total engine chunks)";}
+    private static String disabledHint() {
+        return "Pocket access is gated OFF. On a test server, start with -Danyastorage.pocketPrototype=true"
+                + " and enable Pocket storage in /anya storage.";
+    }
     private static void error(ServerPlayer p,Exception e){AnyaStorage.tell(p,e.getMessage()==null?"Pocket action denied":e.getMessage());AnyaStorage.LOG.warn("Pocket action stopped for {}: {}",p.getUUID(),e.toString());}
     public static StorageEntity home(ServerPlayer p,PocketLedger.Pocket pocket){
         var a=pocket.anchor();ServerLevel home=level(p.getServer(),a.dimension());BlockPos pos=BlockPos.of(a.hub());
@@ -85,9 +89,9 @@ public final class PocketService {
     }
     public static void link(ServerPlayer p,PocketContent.EntranceEntity entrance,ItemStack remote){
         try{
-            if(!enabled())throw new IOException("Pocket prototype remains gated OFF; beta.3 storage is unchanged");
+            if(!enabled())throw new IOException(disabledHint());
             if(inPocket(p.level())||p.isSpectator()||!p.isAlive()||entrance.getLevel()!=p.level()||p.distanceToSqr(Vec3.atCenterOf(entrance.getBlockPos()))>64)throw new IOException("Invalid entrance interaction");
-            StorageEntity hub=StorageItem.bound(p,remote);if(hub==null)throw new IOException("Bind this remote to a loaded ordinary home hub first");
+            StorageEntity hub=StorageItem.bound(p,remote);if(hub==null)throw new IOException("Bind your Remote or Cupid Tablet to a loaded home hub first.");
             if(!Objects.equals(hub.owner,p.getUUID())||!Objects.equals(entrance.owner,p.getUUID()))throw new IOException("The same player must own the hub and entrance");
             String denied=Safety.locationReason(p,p.serverLevel(),entrance.getBlockPos());if(!denied.isEmpty())throw new IOException(denied);
             PocketLedger l=ledger(p.getServer());PocketLedger.Pocket pocket;
@@ -98,7 +102,7 @@ public final class PocketService {
                 entrance.pocket=pocket.id();entrance.setChanged();
             }else{pocket=l.get(entrance.pocket);if(pocket==null||home(p,pocket)!=hub)throw new IOException("Copied or moved entrance refused; owner reanchor required");}
             var data=BagInventory.data(remote);data.putUUID("PocketId",pocket.id());BagInventory.data(remote,data);
-            AnyaStorage.tell(p,"Remote linked to pocket "+pocket.id()+". Look at any face for the chest layout when the room is loaded. Right-click to Visit. Use the remote for storage within the hub radius.");
+            AnyaStorage.tell(p,"Linked to pocket "+pocket.id()+". Stand up and right-click the cube to visit. Use the bound item in air to open storage within the hub radius.");
         }catch(Exception e){error(p,e);}
     }
     public static void reanchor(ServerPlayer p,UUID id,PocketContent.EntranceEntity entrance,ItemStack remote){
@@ -124,21 +128,21 @@ public final class PocketService {
     }
     public static void enter(ServerPlayer p,PocketContent.EntranceEntity entrance){
         try{
-            if(!enabled())throw new IOException("Pocket access is experimental and gated OFF; this is not the existing UwU inventory cube");
-            if(entrance.pocket==null)throw new IOException("Sneak-use a home-hub-bound remote on this entrance first");
+            if(!enabled())throw new IOException(disabledHint());
+            if(entrance.pocket==null)throw new IOException("Bind a Remote or Cupid Tablet to the home hub, then sneak-use it on this Home Void Cube.");
             var l=ledger(p.getServer());var r=l.get(entrance.pocket);
             if(r==null||entrance.getLevel()!=p.level()||r.anchor().entrance()!=entrance.getBlockPos().asLong())throw new IOException("Unrecognized entrance identity");
             if(l.returning(p.getUUID())!=null){recover(p);return;}
             if(p.isPassenger()||p.isVehicle())throw new IOException("Dismount and leave passengers outside before entering");
-            start(p,r,PocketLeases.Kind.VISIT);
+            start(p,r,PocketLeases.Kind.VISIT,false);
         }catch(Exception e){error(p,e);}
     }
     /** Returns true when a pocket-bound remote was handled (including denials), never falls back to a different inventory. */
     public static boolean remote(ServerPlayer p,ItemStack stack,StorageEntity hub){
         var tag=BagInventory.data(stack);if(!tag.hasUUID("PocketId"))return false;
-        try{var r=ledger(p.getServer()).get(tag.getUUID("PocketId"));if(r==null||home(p,r)!=hub)throw new IOException("Pocket remote binding is stale");start(p,r,PocketLeases.Kind.REMOTE);}catch(Exception e){error(p,e);}return true;
+        try{var r=ledger(p.getServer()).get(tag.getUUID("PocketId"));if(r==null||home(p,r)!=hub)throw new IOException("Pocket remote binding is stale");start(p,r,PocketLeases.Kind.REMOTE,stack.is(Content.CUPID_TABLET.get()));}catch(Exception e){error(p,e);}return true;
     }
-    private static void start(ServerPlayer p,PocketLedger.Pocket r,PocketLeases.Kind kind)throws IOException {
+    private static void start(ServerPlayer p,PocketLedger.Pocket r,PocketLeases.Kind kind,boolean tablet)throws IOException {
         if(PENDING.containsKey(p.getUUID())||LEASES.get(p.getUUID())!=null)throw new IOException("A pocket operation is already active");
         String denied=authorize(p,r,kind,true,0);if(!denied.isEmpty())throw new IOException(denied);
         if(dimension(p.getServer())==null)throw new IOException("Pocket dimension is missing; restart a disposable world with the matching data pack");
@@ -146,7 +150,7 @@ public final class PocketService {
         if(kind==PocketLeases.Kind.REMOTE&&r.stage()!=PocketLedger.Stage.READY)throw new IOException("Visit once to prepare the pocket before opening remote storage");
         p.closeContainer(); // Close an older view before creating the new lease.
         if(!LEASES.acquire(p.getUUID(),r.id(),kind,r.epoch(),clock,ExpansionRules.get().activePocketLimit,16,80,ExpansionRules.get().pocketSessionTicks))throw new IOException("Active-pocket or player budget reached");
-        PENDING.put(p.getUUID(),new Pending(p,r.id(),kind));syncTickets(p.getServer());
+        PENDING.put(p.getUUID(),new Pending(p,r.id(),kind,tablet));syncTickets(p.getServer());
         AnyaStorage.tell(p,"Preparing bounded pocket access. The destination is leased only for active users; the preview is not a live view.");
     }
     private static Set<Ticket> pocketTickets(PocketLedger.Pocket p){
@@ -206,7 +210,7 @@ public final class PocketService {
     }
     private static void arrive(Pending pending,PocketLedger.Pocket pocket)throws IOException {
         ServerPlayer p=pending.player();String denied=authorize(p,pocket,pending.kind(),true,0);if(!denied.isEmpty())throw new IOException(denied);
-        if(pending.kind()==PocketLeases.Kind.REMOTE){StoreMenu.pocketRemote(p,new PocketView(p,pocket,PocketLeases.Kind.REMOTE));return;}
+        if(pending.kind()==PocketLeases.Kind.REMOTE){StoreMenu.pocketRemote(p,new PocketView(p,pocket,PocketLeases.Kind.REMOTE),pending.tablet());return;}
         var back=new PocketLedger.ReturnPoint(p.getUUID(),pocket.id(),p.level().dimension().location().toString(),p.getX(),p.getY(),p.getZ(),p.getYRot(),p.getXRot());
         ledger.reserveReturn(back); // durable record is committed BEFORE any teleport
         ServerLevel target=dimension(p.getServer());Vec3 point=new Vec3(pocket.x()+16.5,65,pocket.z()+24.5);

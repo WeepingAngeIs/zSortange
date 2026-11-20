@@ -11,7 +11,7 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Shared hardware, aperture and placement for the first-person Remote and its storage screen. */
+/** Shared hardware, aperture and placement for the held Cupid Tablet and its storage screen. */
 public final class TabletDevice {
     public static final int WIDTH = TabletHandlingPose.WIDTH, HEIGHT = TabletHandlingPose.HEIGHT;
     private static final int SCREEN_X = 16, SCREEN_Y = 20, SCREEN_W = 400, SCREEN_H = 268;

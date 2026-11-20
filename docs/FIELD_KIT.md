@@ -1,6 +1,6 @@
 # Anya Storage Plus field kit
 
-Experimental pocket planner candidate `0.3.0-beta.7-pocketplan.3` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
+Experimental candidate `0.3.0-beta.7-physicaltablet.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
 ## Place a keepsake shelf
 
@@ -29,7 +29,7 @@ A plan holds eight spots, with room for one optional Labelled Storage Chest per 
 
 During a visit, open chat and click **Room upgrades** in the welcome message. You can bring the link back by right-clicking the floor while holding a plain Labelled Storage Chest. The planner shows the four pads and the cost. To build, aim at a vacant pad and use **Mark pad** to add an outline for free. **Apply plan** spends one chest and adds 54 physical slots. Press Enter to confirm the suggested action. The server rechecks reach, permissions and the chest limit at placement. The framed preview draws the added chest from the room's verified layout when the room is loaded and the viewer has permission.
 
-The bound pocket Remote shows the real slot total and how many of the four upgrade pads are occupied. Hover over **Upgrades** to see how to find **Room upgrades** during a visit.
+The bound pocket Remote and Cupid Tablet show the real slot total and how many of the four upgrade pads are occupied. Hover over **Upgrades** to see how to find **Room upgrades** during a visit.
 
 ## Pack, find and put things away
 
@@ -41,10 +41,12 @@ Open storage and select **Field kit and storage information** in the action colu
 - **Undo a dump.** Within one minute, Shift-click **Dump** or choose **Undo last dump** in Field kit. For a nearby dump made with a key or command, use `/anya dump undo`. Undo needs the same storage and current View and Withdraw permission. Anya can trace deposits into its own backpacks and storage blocks. External containers can receive a dump but are excluded from undo. Changed stacks and space in your inventory can reduce how many items return.
 - **Partial deposits.** After a manual or bulk deposit in the menu, check the report and the briefly highlighted inventory slots to see what stayed with you.
 
-## Cupid on the blue tablet
+## Cupid Tablet and Remote
 
-Hold the Remote in first person to see the tilted silver tablet. Its glass rests dark. During a quiet visit, Cupid can glance to the left for half a second before the screen goes dark again. The longer idles still include her full-body poses, wave and rare boots-first tumble.
+The Cupid Tablet is a separate item in the Anya Storage creative tab. It also has a survival recipe when hub recipes are enabled. The existing heart Remote keeps its binding and opens the ordinary storage interface.
 
-The server rolls the 24% default portrait chance only for an authorized Remote open. On a hit, Twin Tails Cupid blinks twice, then the storage controls appear on the frame the animation ends. A miss opens storage as soon as its contents are ready. Direct Anya chests and backpacks open normally. Their independent cameo toggles default off. An enabled chest cameo has its own 1% default chance, and either cameo leaves the inventory usable while it shows.
+Hold the tablet in first person to see the tilted silver frame. Its glass rests dark. During a quiet visit, Cupid can glance to the left for half a second before the screen goes dark again. The longer idles still include her full-body poses, wave and rare boots-first tumble.
 
-Operators can adjust the Cupid settings under `/anya storage` → **Elemental, cosmetics, image and pocket policy**, review the changes and apply. The first-person model and its opening presentation are enabled by default. A client can disable both with `-Danyastorage.tabletIntro=false`. [Settings and existing configs](TABLET_OPENING_CHANCE.md)
+The server rolls the 24% default portrait chance for an authorized Cupid Tablet open. On a hit, Twin Tails Cupid blinks twice, then the storage controls appear on the frame the animation ends. A miss opens storage as soon as its contents are ready. Direct Anya chests and backpacks open normally. Their independent cameo toggles default off. An enabled chest cameo has its own 1% default chance, and either cameo leaves the inventory usable while it shows.
+
+Operators can adjust the Cupid settings under `/anya storage` → **Elemental, cosmetics, image and pocket policy**, review the changes and apply. The detailed first-person render and opening presentation are enabled by default. A client can use the ordinary item render and open the inventory immediately with `-Danyastorage.tabletIntro=false`. [Settings and existing configs](TABLET_OPENING_CHANCE.md)

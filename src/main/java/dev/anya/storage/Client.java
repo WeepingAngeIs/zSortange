@@ -105,7 +105,8 @@ public final class Client {
                 cameoStarted = net.minecraft.Util.getMillis();
         }
         private boolean showTabletFrame() {
-            return tabletPresentation && menu.storageView() && !menu.privateView() && menu.remoteOpening();
+            return tabletPresentation && menu.storageView() && !menu.privateView()
+                    && menu.remoteOpening() && menu.hasTabletOpeningRule();
         }
         private boolean updateTabletCover() {
             classifyOpening();

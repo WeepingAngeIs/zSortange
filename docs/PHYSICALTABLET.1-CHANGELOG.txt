@@ -1,0 +1,11 @@
+Anya Storage Plus 0.3.0-beta.7-physicaltablet.1
+Experimental beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+- The silver Cupid Tablet is a craftable item with its own animated model.
+  Find it in the Anya Storage creative tab. Its detailed first-person
+  lift, idles and Cupid intro use the existing artwork.
+- The heart Remote keeps its item ID, recipe and existing binding. Use it
+  for immediate access to the ordinary storage interface.
+- Both items can bind to a hub or Home Void Cube and open the same storage.
+  The adjustable 24% intro applies to eligible Cupid Tablet opens.
+- A disabled Home Void Cube now explains the test server's two pocket gates.

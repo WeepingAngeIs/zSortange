@@ -20,7 +20,7 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.RenderHandEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 
-/** Substitutes the local player's first-person Remote after vanilla selects the hand. */
+/** Adds the detailed first-person grip and face to the selected Cupid Tablet. */
 @EventBusSubscriber(modid = AnyaStorage.ID, value = Dist.CLIENT)
 public final class HeldTablet {
     private static final TabletIdle IDLE = new TabletIdle(TabletDevice::chooseVisit);
@@ -43,13 +43,13 @@ public final class HeldTablet {
             reset();
             return null;
         }
-        // A second Remote keeps its ordinary item appearance. Only one tablet receives the idle glance.
+        // Only one tablet receives the detailed first-person pose. A second one uses its baked model.
         InteractionHand hand = InteractionHand.MAIN_HAND;
         ItemStack stack = player.getMainHandItem();
-        if (!stack.is(Content.REMOTE.get())) {
+        if (!stack.is(Content.CUPID_TABLET.get())) {
             hand = InteractionHand.OFF_HAND;
             stack = player.getOffhandItem();
-            if (!stack.is(Content.REMOTE.get())) {
+            if (!stack.is(Content.CUPID_TABLET.get())) {
                 reset();
                 return null;
             }

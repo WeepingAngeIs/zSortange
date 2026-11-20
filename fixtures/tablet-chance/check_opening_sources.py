@@ -29,10 +29,13 @@ def ordered(text, *tokens):
 
 
 item = source("StorageItem.java")
+content = source("Content.java")
 network = source("Network.java")
 menu = source("StoreMenu.java")
 pockets = source("pocket/PocketService.java")
+events = source("pocket/PocketEvents.java")
 client = source("Client.java")
+held_tablet = source("appearance/HeldTablet.java")
 policy = source("ExpansionRules.java")
 bounds = source("pocket/RoomBounds.java")
 guide = source("pocket/ChestPadGuide.java")
@@ -42,23 +45,35 @@ ordered(bound, 'tag.contains("HubPos")', 'tag.getString("HubDimension")',
         "tag.getLong(\"HubPos\")", "hasChunkAt(pos)", "Network.hubReason(p,hub)")
 assert "hub.radius()*hub.radius()" in body(network, "boolean inRange(")
 ordered(body(network, "String hubReason("), "inRange(p,hub)", "Safety.reason(p,hub,null)")
+assert re.search(r'\bREMOTE\s*=\s*ITEMS.register\("remote"', content)
+assert re.search(r'\bCUPID_TABLET\s*=\s*ITEMS.register\("cupid_tablet"', content)
+terminal = body(item, "boolean isTerminal(")
+assert "Content.REMOTE.get()" in terminal and "Content.CUPID_TABLET.get()" in terminal
+assert "isTerminal(context.getItemInHand())" in body(item, "InteractionResult useOn(")
+assert "StorageItem.isTerminal(e.getItemStack())" in body(events, "void useBlock(")
 ordered(body(item, "InteractionResultHolder<ItemStack> use("), "StorageEntity hub=bound(p,stack)",
-        "if(hub!=null)", "if(!dev.anya.storage.pocket.PocketService.remote(p,stack,hub))", "StoreMenu.remote(p,hub)")
+        "if(hub!=null)", "if(!PocketService.remote(p,stack,hub))",
+        "StoreMenu.remote(p,hub,stack.is(Content.CUPID_TABLET.get()))")
 ordered(body(menu, "void openNetwork("), "Network.hubReason(p,hub)", "if(!reason.isEmpty())",
         "hub.permits(p,BasePermissions.VIEW)")
+ordered(body(pockets, "boolean remote("), 'tag.hasUUID("PocketId")', "home(p,r)!=hub",
+        "PocketLeases.Kind.REMOTE", "stack.is(Content.CUPID_TABLET.get())")
+assert "new Pending(p,r.id(),kind,tablet)" in body(pockets, "void start(")
 ordered(body(pockets, "void arrive("), "authorize(p,pocket,pending.kind(),true,0)",
-        "if(!denied.isEmpty())", "pending.kind()==PocketLeases.Kind.REMOTE", "StoreMenu.pocketRemote")
+        "if(!denied.isEmpty())", "pending.kind()==PocketLeases.Kind.REMOTE", "StoreMenu.pocketRemote",
+        "pending.tablet()")
 ordered(body(pockets, "void openChest("), "if(!physicalAllowed(p,chest))", "StoreMenu.pocketChest")
 ordered(body(menu, "void openPocket("), "if(!view.valid())return;", "view.permits(BasePermissions.VIEW)", "p.openMenu")
 assert "Opening.PLAIN" in body(menu, "void network(")
-assert "Opening.REMOTE" in body(menu, "void remote(")
-assert "Opening.REMOTE" in body(menu, "void pocketRemote(")
+for entry in ("remote", "pocketRemote"):
+    assert re.search(r"tablet\s*\?\s*Opening.TABLET\s*:\s*Opening.REMOTE", body(menu, f"void {entry}("))
 assert "Opening.CHEST" in body(menu, "void pocketChest(")
 assert "Opening.BACKPACK,!upgrades&&bag.valid()" in body(menu, "void bag(")
 ordered(body(menu, "void container("), "Safety.reason(p,chest,null).isEmpty()", "Opening.CHEST")
 
 decision = body(menu, "int openingFlags(")
-ordered(decision, "if (!mayView", "case REMOTE", "REMOTE_OPEN | TABLET_RULE",
+assert re.search(r"case REMOTE\s*->\s*REMOTE_OPEN\s*;", decision)
+ordered(decision, "if (!mayView", "case TABLET", "REMOTE_OPEN | TABLET_RULE",
         "policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0",
         "case CHEST -> policy.rollChestCameo", "case BACKPACK -> policy.backpackCameoEnabled",
         "case PLAIN -> 0")
@@ -88,12 +103,14 @@ assert "tabletCoversView =" not in body(client, "public Screen(StoreMenu menu")
 ordered(body(client, "void classifyOpening("), "if (openingClassified || !menu.storageView()) return;",
         "showTabletFrame() && menu.showsTabletIntro()",
         "!menu.privateView() && !menu.remoteOpening() && menu.showsStorageCameo()")
-assert "menu.hasTabletOpeningRule()" not in client
-assert "!menu.privateView() && menu.remoteOpening()" in body(client, "boolean showTabletFrame(")
+frame = body(client, "boolean showTabletFrame(")
+assert all(flag in frame for flag in ("!menu.privateView()", "menu.remoteOpening()", "menu.hasTabletOpeningRule()"))
+observe = body(held_tablet, "Held observe(")
+assert observe.count("stack.is(Content.CUPID_TABLET.get())") == 2 and "Content.REMOTE.get()" not in observe
 assert "Cameo" not in body(client, "boolean blockTabletInput(")
 ordered(body(client, "void render(GuiGraphics g"), "Inventory: deposit. Wheel: scroll.", "drawStorageCameo(g)", "g.pose().popPose()")
 
-print("PASS: bound Remote still uses existing dimension, radius, and access checks")
-print("PASS: Remote flags require View; 0% skips and 100% hits only the Remote policy")
+print("PASS: both terminals use existing binding, dimension, radius, and access checks")
+print("PASS: terminal flags require View, and only the Cupid Tablet rolls for the intro")
 print("PASS: chest and backpack settings default off, use separate branches, and never gate input")
-print("PASS: check of authorized pocket Remote pad summary and gated Room upgrades link")
+print("PASS: both authorized pocket terminals show the pad summary and gated Room upgrades link")

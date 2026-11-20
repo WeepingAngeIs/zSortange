@@ -70,7 +70,7 @@ public final class ScreenDispatchCheck {
             return;
         }
         var layout = StorageGrid.layout(WIDTH, HEIGHT, menu.resultCount(), true);
-        if (tablet && menu.remoteOpening() && !menu.privateView()) {
+        if (tablet && menu.remoteOpening() && menu.hasTabletOpeningRule() && !menu.privateView()) {
             layout = TabletDevice.fitMenu(layout, WIDTH, HEIGHT);
         }
         screen.mouseClicked(layout.left()+logicalX*layout.scale(), layout.top()+logicalY*layout.scale(), 0);
@@ -258,9 +258,15 @@ public final class ScreenDispatchCheck {
         require(legacy.paint(10) == STORAGE && legacy.latestPaint.shells == 0, "Legacy server must open ordinary storage");
         legacy.requireSlotSent("Legacy first frame");
 
+        var heartRemote = new ScreenDispatchCheck(82, true);
+        heartRemote.menu.openingRule = false;
+        require(heartRemote.paint(10) == STORAGE && heartRemote.latestPaint.shells == 0,
+                "The heart Remote must open ordinary storage even with a stale intro bit");
+        heartRemote.requireSlotSent("Heart Remote first frame");
+
         var denied = new ScreenDispatchCheck(81, true);
         denied.menu.privateStorage = true; // Reject even inconsistent/stale authored flags.
-        require(denied.paint(10) == STORAGE && denied.latestPaint.shells == 0, "Private view must skip the Remote intro");
+        require(denied.paint(10) == STORAGE && denied.latestPaint.shells == 0, "Private view must skip the Cupid Tablet intro");
     }
 
     public static void main(String[] args) {

@@ -30,6 +30,8 @@ HOST = {
     "dev.anya.storage.Content": """public class Content {
         public static final net.neoforged.neoforge.registries.DeferredItem<StorageItem> REMOTE =
             new net.neoforged.neoforge.registries.DeferredItem<>(new StorageItem());
+        public static final net.neoforged.neoforge.registries.DeferredItem<StorageItem> CUPID_TABLET =
+            new net.neoforged.neoforge.registries.DeferredItem<>(new StorageItem());
     }""",
     "net.minecraft.world.entity.Entity": "public class Entity {}",
     "net.minecraft.world.entity.HumanoidArm": "public enum HumanoidArm { LEFT, RIGHT }",
@@ -50,6 +52,8 @@ HOST = {
         public net.minecraft.world.item.ItemStack getMainHandItem(){return main;}
         public net.minecraft.world.item.ItemStack getOffhandItem(){return off;}
         public net.minecraft.world.entity.HumanoidArm getMainArm(){return arm;}
+        public boolean sneak;
+        public boolean isShiftKeyDown(){return sneak;}
         public boolean isAlive(){return true;} public boolean isSpectator(){return false;}
         public boolean isScoping(){return false;} public boolean isUsingItem(){return using;}
     }""",
@@ -65,13 +69,35 @@ HOST = {
         public int guiWidth(){return 640;} public int guiHeight(){return 360;}
     }""",
     "dev.anya.storage.appearance.TabletDevice": """public class TabletDevice {
-        public static final int WIDTH=432,HEIGHT=304;
-        public record Bounds(float x,float y,float scale){}
-        public static int dark,peek; public static Bounds last; public static Object lastStack;
-        public static void drawDark(net.minecraft.client.gui.GuiGraphics g,Bounds b){dark++;}
-        public static void drawIdle(net.minecraft.client.gui.GuiGraphics g,Bounds b){peek++;}
-        public static void rememberHeld(Bounds b,int w,int h,Object p,Object stack,long t){last=b;lastStack=stack;}
-        public static void forgetHeld(){last=null;lastStack=null;}
+        public record Grip(boolean right, float swing, float equip, int light) {}
+        public record Portrait(int row, int column) {}
+        public record Held(Grip grip, float progress, int width, int height,
+                net.minecraft.client.player.LocalPlayer player, net.minecraft.world.item.ItemStack stack,
+                net.minecraft.world.InteractionHand hand, int slot, long time) {}
+        public static Held saved;
+        public static Grip painted;
+        public static Portrait face;
+        public static int visits, draws, peeks;
+        public static float progress;
+        public static boolean enabled() {
+            return Boolean.parseBoolean(System.getProperty("anyastorage.tabletIntro", "true"));
+        }
+        public static boolean rightSide(net.minecraft.client.player.LocalPlayer player, net.minecraft.world.InteractionHand hand) {
+            return (player.getMainArm() == net.minecraft.world.entity.HumanoidArm.RIGHT)
+                    == (hand == net.minecraft.world.InteractionHand.MAIN_HAND);
+        }
+        public static void forgetHeld() { saved = null; }
+        public static void rememberHeld(Held held) { saved = held; }
+        public static int chooseVisit() { visits++; return 4; }
+        public static Portrait visit(int row, int column) { return column < 0 ? null : new Portrait(row, column); }
+        public static void drawHandling(net.minecraft.client.gui.GuiGraphics graphics, int width, int height,
+                net.minecraft.client.player.LocalPlayer player, Grip grip, float value, Portrait portrait) {
+            draws++;
+            if (portrait != null) peeks++;
+            painted = grip;
+            progress = value;
+            face = portrait;
+        }
     }""",
 }
 
@@ -99,7 +125,8 @@ def run(options):
             compiled.mkdir()
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-d", compiled,
                    "-classpath", os.pathsep.join([app,libraries]), *[SRC / (name + ".java") for name in
-                   ("HeldTablet","TabletIdle","TabletDevice","GuardianBlink")]], scratch)
+                   ("HeldTablet","TabletIdle","TabletLift","TabletHandlingPose","TabletArmRenderer",
+                    "TabletDevice","GuardianBlink")]], scratch)
             app = os.pathsep.join([compiled.as_posix(), app])
         cp = os.pathsep.join([host.as_posix(), app, libraries])
         invoke(options.jdk, "javac", ["--release","21","-proc:none","-d",host,"-classpath",cp,

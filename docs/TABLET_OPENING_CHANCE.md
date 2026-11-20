@@ -1,6 +1,6 @@
 # Cupid settings
 
-The server rolls **Tablet opening appearance chance** when a bound Remote successfully opens storage the player may view. The default is **24%**. A hit plays Cupid's 1.05-second opening. A miss opens storage as soon as it is ready. Holding the Remote quietly uses a separate timer for the face on its screen.
+The server rolls **Tablet opening appearance chance** when a bound Cupid Tablet successfully opens storage the player may view. The default is **24%**. A hit plays Cupid's 1.05-second opening. A miss opens storage as soon as it is ready. Holding the tablet quietly uses a separate timer for the face on its screen. The heart Remote opens storage immediately.
 
 Opening a supported Anya Storage Plus chest or backpack directly opens its inventory immediately. The optional cameos are brief portraits beside the inventory and leave the controls usable. Vanilla and other mods' containers use their ordinary behavior.
 
@@ -10,14 +10,14 @@ As an operator, open `/anya storage` and select **Elemental, cosmetics, image an
 
 | Setting | Config key in `expansion` | Default and effect |
 | --- | --- | --- |
-| Tablet opening appearance chance | `tabletOpeningChancePercent` | **24%** for an authorized Remote open. Set `0` for immediate access or `100` for the intro on every eligible use. |
+| Tablet opening appearance chance | `tabletOpeningChancePercent` | **24%** for an authorized Cupid Tablet open. Set `0` for immediate access or `100` for the intro on every eligible use. |
 | Chest Cupid cameo | `chestCameoEnabled` | **Off**. Enable to allow a cameo on a direct Anya chest open. |
 | Chest Cupid cameo chance | `chestCameoChancePercent` | **1%** per eligible direct chest open when its toggle is on. Accepts `0`–`100`. |
 | Backpack Cupid cameo | `backpackCameoEnabled` | **Off**. Enable for a cameo on a supported backpack inventory open. |
 
-The existing `config/anya-storage-plus.json` still uses schema 2. Your saved tablet percentage now applies to authorized Remote opens. Older configs inherit both cameo toggles off and a 1% chest chance when the new keys are absent. Loading an older config does not rewrite it. For an offline edit, put the fields in the existing `expansion` object and preserve the other settings.
+The existing `config/anya-storage-plus.json` still uses schema 2. Your saved tablet percentage applies to authorized Cupid Tablet opens. Older configs inherit both cameo toggles off and a 1% chest chance when the new keys are absent. Loading an older config does not rewrite it. For an offline edit, put the fields in the existing `expansion` object and preserve the other settings.
 
-Use matching builds on server and clients. The first-person Remote uses the silver tablet with default launch arguments. A client can disable the held tablet and its opening presentation with `-Danyastorage.tabletIntro=false`.
+Use matching builds on server and clients. The Cupid Tablet has its own item model. A client can use the ordinary item render and open the inventory immediately with `-Danyastorage.tabletIntro=false`.
 
 ## Unyielding / Configtopia integration
 

@@ -59,13 +59,21 @@ public final class HeldUseCheck {
         CLIENT.camera = CLIENT.player;
         CLIENT.player.main = new ItemStack(Content.REMOTE.get());
         CLIENT.player.off = new ItemStack(Content.REMOTE.get());
+        HeldTablet.beginFrame(new RenderFrameEvent.Pre(null));
+        var remote = new RenderHandEvent(MAIN, null, null, 15728880, 0, 0, 0, 0, CLIENT.player.main);
+        HeldTablet.hand(remote);
+        HeldTablet.hud(new RenderGuiEvent.Post(new GuiGraphics(), null));
+        check(!remote.isCanceled() && TabletDevice.draws == 0 && TabletDevice.saved == null,
+                "The heart Remote must keep its native rendering");
+        CLIENT.player.main = new ItemStack(Content.CUPID_TABLET.get());
+        CLIENT.player.off = new ItemStack(Content.CUPID_TABLET.get());
         if (args.length != 0) {
             HeldTablet.beginFrame(new RenderFrameEvent.Pre(null));
             var render = new RenderHandEvent(MAIN, null, null, 15728880, 0, 0, 0, 0, CLIENT.player.main);
             HeldTablet.hand(render);
             HeldTablet.hud(new RenderGuiEvent.Post(new GuiGraphics(), null));
             check(!render.isCanceled() && TabletDevice.draws == 0 && TabletDevice.saved == null,
-                    "The opt-out must leave the ordinary held Remote in place");
+                    "The opt-out must keep the held Cupid Tablet's native rendering");
             return;
         }
         check(paint(0) == 0, "Initially resting");
@@ -95,8 +103,8 @@ public final class HeldUseCheck {
         release();
         input(850, MAIN, true);
         check(paint(905) > 0, "Third use starts");
-        CLIENT.player.main = new ItemStack(Content.REMOTE.get());
-        check(paint(910) == 0, "Replacement Remote cannot inherit the old lift");
+        CLIENT.player.main = new ItemStack(Content.CUPID_TABLET.get());
+        check(paint(910) == 0, "Replacement Cupid Tablet cannot inherit the old lift");
         release();
         input(930, MAIN, true);
         check(paint(980) > 0, "Replacement can initiate its own lift");
@@ -112,7 +120,7 @@ public final class HeldUseCheck {
                 "The same visit advances to the viewer-facing beat");
         input(visiting + 410, MAIN, true);
         check(paint(visiting + 411) > 0 && TabletDevice.face == null,
-                "Using the Remote during a visit immediately starts the lift and clears the face");
+                "Using the Cupid Tablet during a visit immediately starts the lift and clears the face");
         check(paint(visiting + 470) > 0 && TabletDevice.face == null, "A visit was queued over normal use");
         HeldTablet.screenOpening(new ScreenEvent.Opening(null, unrelated));
         CLIENT.screen = unrelated;

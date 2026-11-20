@@ -64,6 +64,7 @@ for index,name in enumerate(items):
     png(f'assets/{MOD}/textures/item/{name}.png',16,16,pixels)
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{MOD}:item/{name}'}})
 lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
+lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
 lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
 lang.update({'subtitles.anyastorage.frame_on':'Pocket window powers on','subtitles.anyastorage.frame_off':'Pocket window powers down'})
 lang.update({f'block.{MOD}.hub':'Anya Storage Hub',f'block.{MOD}.chest':'Labelled Storage Chest',f'block.{MOD}.uwu_cube':'UwU Storage Cube',f'key.{MOD}.quick':'QuickStack matching items',f'key.{MOD}.dump':'Dump broader matching items',f'key.{MOD}.undo_dump':'Undo last nearby dump',f'key.{MOD}.bag':'Open first backpack',f'key.categories.{MOD}':'Anya Storage'})
@@ -74,6 +75,9 @@ shaped('backpack','backpacks',['LSL','LCL','LGL'],{'L':'minecraft:leather','S':'
 shaped('hub','hubs',['IEI','ACA','IRI'],{'I':'minecraft:iron_block','E':'minecraft:ender_pearl','A':'minecraft:amethyst_shard','C':'minecraft:comparator','R':'minecraft:redstone_block'})
 shaped('chest','containers',['IPI','PCP','IPI'],{'I':'minecraft:iron_ingot','P':'#minecraft:planks','C':'minecraft:chest'})
 shaped('remote','terminals',[' B ',' A ',' E '],{'B':'minecraft:stone_button','A':'minecraft:amethyst_shard','E':'minecraft:ender_pearl'})
+shaped('cupid_tablet','terminals',['IGI','ARA','IEI'],{
+    'I':'minecraft:iron_ingot','G':'minecraft:glass_pane','A':'minecraft:amethyst_shard',
+    'R':'minecraft:redstone','E':'minecraft:ender_pearl'})
 shaped('storage_core','endgame',['DDD','DND','DDD'],{'D':'minecraft:diamond_block','N':'minecraft:netherite_block'})
 for u,ingredient in [('pickup','hopper'),('feeding','golden_carrot'),('refill','dropper'),('crafting','crafting_table'),('smelting','furnace'),('compacting','piston'),('resupply','iron_pickaxe')]:
     shaped(u+'_upgrade','upgrade.'+u,['PIP','IRI','PIP'],{'P':'minecraft:paper','I':'minecraft:'+ingredient,'R':'minecraft:redstone'})

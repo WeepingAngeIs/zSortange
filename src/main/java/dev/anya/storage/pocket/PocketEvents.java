@@ -83,7 +83,7 @@ public final class PocketEvents {
             else if(e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND&&e.getItemStack().is(Content.CRATE.get().asItem()))ChestPadGuide.show(p);
         }else if(be instanceof PocketContent.EntranceEntity entrance){
             e.setCanceled(true);e.setCancellationResult(InteractionResult.SUCCESS);
-            if(p.isShiftKeyDown()&&e.getItemStack().is(Content.REMOTE.get()))PocketService.link(p,entrance,e.getItemStack());else PocketService.enter(p,entrance);
+            if(p.isShiftKeyDown()&&StorageItem.isTerminal(e.getItemStack()))PocketService.link(p,entrance,e.getItemStack());else PocketService.enter(p,entrance);
         }
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void useItem(PlayerInteractEvent.RightClickItem e){

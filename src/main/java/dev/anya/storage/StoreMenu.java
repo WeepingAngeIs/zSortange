@@ -30,7 +30,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES, ACCESS, ACTIVITY, FIELD_KIT, KEEP_RULES;
         boolean isStorage() { return this == NETWORK || this == BAG || this == CHEST; }
     }
-    private enum Opening { PLAIN, REMOTE, CHEST, BACKPACK }
+    private enum Opening { PLAIN, REMOTE, TABLET, CHEST, BACKPACK }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54);
@@ -86,7 +86,8 @@ public final class StoreMenu extends AbstractContainerMenu {
         if (!mayView || opening == Opening.PLAIN) return 0;
         var policy = ExpansionRules.get();
         return switch (opening) {
-            case REMOTE -> REMOTE_OPEN | TABLET_RULE
+            case REMOTE -> REMOTE_OPEN;
+            case TABLET -> REMOTE_OPEN | TABLET_RULE
                     | (policy.rollTabletOpening(ThreadLocalRandom.current()) ? TABLET_INTRO : 0);
             case CHEST -> policy.rollChestCameo(ThreadLocalRandom.current()) ? STORAGE_CAMEO : 0;
             case BACKPACK -> policy.backpackCameoEnabled ? STORAGE_CAMEO : 0;
@@ -107,7 +108,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         open(p,upgrades?Page.UPGRADES:Page.BAG,bag,null,null,null,openingFlags(Opening.BACKPACK,!upgrades&&bag.valid()));
     }
     public static void network(ServerPlayer p,StorageEntity hub){openNetwork(p,hub,Opening.PLAIN);}
-    public static void remote(ServerPlayer p,StorageEntity hub){openNetwork(p,hub,Opening.REMOTE);}
+    public static void remote(ServerPlayer p,StorageEntity hub,boolean tablet){
+        openNetwork(p,hub,tablet ? Opening.TABLET : Opening.REMOTE);
+    }
     private static void openNetwork(ServerPlayer p,StorageEntity hub,Opening opening){
         String reason=Network.hubReason(p,hub);
         if(!reason.isEmpty()){AnyaStorage.tell(p,reason);return;}
@@ -120,8 +123,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     public static void pocket(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
         openPocket(p,view,Opening.PLAIN);
     }
-    public static void pocketRemote(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
-        openPocket(p,view,Opening.REMOTE);
+    public static void pocketRemote(ServerPlayer p,dev.anya.storage.pocket.PocketView view,boolean tablet){
+        openPocket(p,view,tablet ? Opening.TABLET : Opening.REMOTE);
     }
     public static void pocketChest(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
         openPocket(p,view,Opening.CHEST);

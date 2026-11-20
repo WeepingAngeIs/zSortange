@@ -88,7 +88,7 @@ public final class HeldOpeningCheck {
         same(TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT, right, grip.swing(), grip.equip(), continued),
                 next.casePose, "Continue the existing raise without another anticipation delay");
         check(first.row == 0 && next.row == 0 && first.expressionColumn < 0 && next.expressionColumn < 0,
-                "The held Remote must open on the approved Twin Tails portrait");
+                "The held Cupid Tablet must open on the approved Twin Tails portrait");
         int[] starts = {0,260,310,390,440,610,660,760,810};
         int[] blinkRows = {0,1,2,1,0,1,2,1,0};
         var client = Minecraft.getInstance();
@@ -118,7 +118,7 @@ public final class HeldOpeningCheck {
 
         var nextRemote = paint(open(id + 10, owner), firstMenuPaint + 1100);
         check(nextRemote.armPose == null && nextRemote.expressionColumn < 0 && nextRemote.row == 0,
-                "An authorized Remote without a matching grip still uses Twin Tails and never replays the arm");
+                "An authorized Cupid Tablet without a matching grip still uses Twin Tails and never replays the arm");
     }
 
     private static void allPortraits() {
@@ -164,7 +164,7 @@ public final class HeldOpeningCheck {
         client.expressionArt = true;
         var reopened = open(21, owner);
         var face = paint(reopened, 62_000);
-        check(face.row == 0 && face.expressionColumn < 0, "Cloud art displaced the approved Remote portrait");
+        check(face.row == 0 && face.expressionColumn < 0, "Cloud art displaced the approved opening portrait");
         reopened.init(client, 680, 380);
         var resized = paint(reopened, 62_445);
         check(resized.row == 0 && resized.expressionColumn < 0,
@@ -180,7 +180,7 @@ public final class HeldOpeningCheck {
                 "Unconfirmed storage picked or displayed a face");
         menu.storage = true;
         menu.version = 1;
-        check(paint(pending, 67_100).row == 0, "Confirmed Remote hit must open after initial synchronization");
+        check(paint(pending, 67_100).row == 0, "Confirmed Cupid Tablet hit must open after synchronization");
     }
 
     private static void expectImmediate(Client.Screen screen, StoreMenu menu, long now, boolean framed) {
@@ -216,7 +216,7 @@ public final class HeldOpeningCheck {
         var screen = open(missed, owner);
         var pending = paint(screen, 82_000);
         check(pending.events.contains("inventory") && pending.row < 0 && pending.expressionColumn < 0,
-                "Pending Remote miss covered the inventory");
+                "Pending Cupid Tablet miss covered the inventory");
         missed.storage = true;
         missed.version = 1;
         missed.rows = 5;
@@ -234,6 +234,9 @@ public final class HeldOpeningCheck {
         var oldServer = new StoreMenu(32);
         oldServer.remote = false; // Legacy server still supplies the old shared flags.
         expectImmediate(open(oldServer, owner), oldServer, 82_100, false);
+        var heartRemote = new StoreMenu(37);
+        heartRemote.openingRule = false;
+        expectImmediate(open(heartRemote, owner), heartRemote, 82_150, false);
         var missEvenWhenOptedIn = new StoreMenu(33);
         missEvenWhenOptedIn.openingHit = false;
         expectImmediate(open(missEvenWhenOptedIn, owner), missEvenWhenOptedIn, 82_200, true);
@@ -294,7 +297,7 @@ public final class HeldOpeningCheck {
         allPortraits();
         serverChance();
         nonRemoteCannotClaimHeldVisuals();
-        System.out.println("PASS: server hit works with default JVM arguments; miss, missing rule and opt-out reveal "
+        System.out.println("PASS: server hit works with default JVM arguments; heart Remote, miss and opt-out reveal "
                 + "immediately, first ready slot dispatches exactly once, and resize/reopening cannot replay the decision");
         System.out.println("PASS: Twin Tails double blink and left glance, Cloud body tiles and tumble, "
                 + "first actionable slot at 1050 ms, continuous lift, immediate direct inventories, private and legacy isolation");
