@@ -1,0 +1,14 @@
+// Separate experimental module. No production sources or assets are included.
+sourceSets.create('durableProbe')
+neoForge.addModdingDependenciesTo(sourceSets.getByName('durableProbe'))
+dependencies { durableProbeCompileOnly sourceSets.main.output }
+tasks.register('durableProbeJar', Jar) {
+ dependsOn tasks.named('durableProbeClasses')
+ from sourceSets.getByName('durableProbe').output
+ archiveBaseName = 'anya-durable-preparation-experiment'
+ destinationDirectory = layout.buildDirectory.dir('durable')
+}
+if(project.hasProperty('durableProbe')) {
+ dependencies { packagedLauncherRuntimeOnly files(tasks.named('durableProbeJar')) }
+ tasks.named('exportAcceptanceLaunches') { dependsOn 'durableProbeJar' }
+}

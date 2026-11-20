@@ -1,0 +1,5 @@
+allprojects { p ->
+    p.afterEvaluate {
+        p.apply from: p.rootProject.file('allocation.gradle')
+    }
+}

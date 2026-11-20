@@ -1,0 +1,17 @@
+// Test-only runtime intervention; never included in the playable jar.
+sourceSets.create('ticketExperiment')
+neoForge.addModdingDependenciesTo(sourceSets.getByName('ticketExperiment'))
+dependencies {
+    ticketExperimentCompileOnly sourceSets.main.output
+    acceptanceCompileOnly sourceSets.getByName('ticketExperiment').output
+}
+tasks.register('ticketExperimentJar', Jar) {
+    dependsOn tasks.named('ticketExperimentClasses')
+    from sourceSets.getByName('ticketExperiment').output
+    archiveBaseName = 'anya-remote-ticket-experiment'
+    destinationDirectory = layout.buildDirectory.dir('ticket-experiment')
+}
+if (project.hasProperty('ticketExperiment')) {
+    dependencies { packagedLauncherRuntimeOnly files(tasks.named('ticketExperimentJar')) }
+    tasks.named('exportAcceptanceLaunches') { dependsOn 'ticketExperimentJar' }
+}

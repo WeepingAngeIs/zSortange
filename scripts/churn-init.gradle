@@ -1,0 +1,57 @@
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.apply from:p.file('durable.gradle')
+ p.sourceSets.create('minimalProbe')
+ p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('minimalProbe'))
+ p.dependencies.add('minimalProbeCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('minimalProbeCompileOnly',p.sourceSets.getByName('durableProbe').output)
+ p.tasks.register('minimalProbeJar',Jar) {
+  dependsOn p.tasks.named('minimalProbeClasses'),p.tasks.named('durableProbeClasses')
+  from(p.sourceSets.getByName('durableProbe').output){exclude 'dev/anya/storage/durable/unload/**';exclude 'dev/anya/storage/durable/mixin/UnloadAuditMixin.class';exclude 'anya_durable.mixins.json';exclude 'META-INF/neoforge.mods.toml'}
+  from p.sourceSets.getByName('minimalProbe').output
+  archiveBaseName='anya-minimal-ownership-experiment';destinationDirectory=p.layout.buildDirectory.dir('minimal')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ p.sourceSets.create('budgetProbe');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('budgetProbe'))
+ for(n in ['main','durableProbe','minimalProbe'])p.dependencies.add('budgetProbeCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('budgetProbeJar',Jar){
+  dependsOn p.tasks.named('budgetProbeClasses'),p.tasks.named('minimalProbeJar')
+  from({p.zipTree(p.tasks.named('minimalProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/neoforge.mods.toml';exclude 'META-INF/MANIFEST.MF';exclude 'dev/anya/storage/minimal/DirtyCycles.class'}
+  from p.sourceSets.getByName('budgetProbe').output
+  archiveBaseName='anya-unload-save-budget-experiment';destinationDirectory=p.layout.buildDirectory.dir('budget')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ p.sourceSets.create('pressureProbe');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('pressureProbe'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe'])p.dependencies.add('pressureProbeCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('pressureProbeJar',Jar){
+  dependsOn p.tasks.named('pressureProbeClasses'),p.tasks.named('budgetProbeJar')
+  from({p.zipTree(p.tasks.named('budgetProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/neoforge.mods.toml';exclude 'META-INF/MANIFEST.MF'}
+  from p.sourceSets.getByName('pressureProbe').output
+  archiveBaseName='anya-admission-backpressure-experiment';destinationDirectory=p.layout.buildDirectory.dir('pressure')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ p.sourceSets.create('repairProbe');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('repairProbe'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe','pressureProbe'])p.dependencies.add('repairProbeCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('repairProbeJar',Jar){
+  dependsOn p.tasks.named('repairProbeClasses'),p.tasks.named('pressureProbeJar')
+  from({p.zipTree(p.tasks.named('pressureProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/neoforge.mods.toml';exclude 'META-INF/MANIFEST.MF'}
+  from p.sourceSets.getByName('repairProbe').output
+  archiveBaseName='anya-failed-write-repair-experiment';destinationDirectory=p.layout.buildDirectory.dir('repair')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ if(p.hasProperty('repairClient')) {
+  p.sourceSets.acceptance.java.srcDir(p.file('src/repairClient/java'))
+  for(n in ['durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe'])p.dependencies.add('acceptanceCompileOnly',p.sourceSets.getByName(n).output)
+ }
+ if(p.hasProperty('repairProbe')){p.dependencies.add('packagedLauncherRuntimeOnly',p.files(p.tasks.named('repairProbeJar')));p.tasks.named('exportAcceptanceLaunches'){dependsOn 'repairProbeJar'}}
+ p.sourceSets.create('churnProbe');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('churnProbe'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe'])p.dependencies.add('churnProbeCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('churnProbeJar',Jar){
+  dependsOn p.tasks.named('churnProbeClasses'),p.tasks.named('repairProbeJar')
+  from({p.zipTree(p.tasks.named('repairProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/neoforge.mods.toml';exclude 'META-INF/MANIFEST.MF'}
+  from p.sourceSets.getByName('churnProbe').output
+  archiveBaseName='anya-bounded-repair-churn-fixture';destinationDirectory=p.layout.buildDirectory.dir('churn')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+
+}

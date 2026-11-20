@@ -1,0 +1,25 @@
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.apply from:p.file('durable.gradle')
+ p.sourceSets.create('minimalProbe')
+ p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('minimalProbe'))
+ p.dependencies.add('minimalProbeCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('minimalProbeCompileOnly',p.sourceSets.getByName('durableProbe').output)
+ p.tasks.register('minimalProbeJar', Jar) {
+  dependsOn p.tasks.named('minimalProbeClasses'),p.tasks.named('durableProbeClasses')
+  from(p.sourceSets.getByName('durableProbe').output) {
+   exclude 'dev/anya/storage/durable/unload/**'
+   exclude 'dev/anya/storage/durable/mixin/UnloadAuditMixin.class'
+   exclude 'anya_durable.mixins.json'
+   exclude 'META-INF/neoforge.mods.toml'
+  }
+  from p.sourceSets.getByName('minimalProbe').output
+  archiveBaseName='anya-minimal-ownership-experiment'
+  destinationDirectory=p.layout.buildDirectory.dir('minimal')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ if(p.hasProperty('minimalProbe')) {
+  p.dependencies.add('packagedLauncherRuntimeOnly',p.files(p.tasks.named('minimalProbeJar')))
+  p.tasks.named('exportAcceptanceLaunches') {dependsOn 'minimalProbeJar'}
+ }
+}

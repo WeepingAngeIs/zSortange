@@ -1,0 +1,13 @@
+// Standalone observation source set. Neither playable nor candidate binaries change.
+sourceSets.create('allocationProbe')
+neoForge.addModdingDependenciesTo(sourceSets.getByName('allocationProbe'))
+dependencies {
+    allocationProbeCompileOnly sourceSets.main.output
+    allocationProbeCompileOnly sourceSets.getByName('ticketExperiment').output
+}
+tasks.register('allocationProbeJar', Jar) {
+    dependsOn tasks.named('allocationProbeClasses')
+    from sourceSets.getByName('allocationProbe').output
+    archiveBaseName = 'anya-allocation-observer'
+    destinationDirectory = layout.buildDirectory.dir('allocation')
+}

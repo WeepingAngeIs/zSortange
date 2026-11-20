@@ -1,0 +1,58 @@
+apply from: new File(gradle.startParameter.currentDir, 'scripts/operator-init.gradle')
+
+gradle.beforeProject { p -> p.afterEvaluate {
+    def fixtureSource = p.sourceSets.create('visualPrivacy')
+    fixtureSource.java.srcDir p.file('fixtures/visual-privacy/java')
+    fixtureSource.resources.srcDir p.file('fixtures/visual-privacy/resources')
+    p.neoForge.addModdingDependenciesTo(fixtureSource)
+    p.dependencies.add(fixtureSource.compileOnlyConfigurationName, p.sourceSets.main.output)
+    def fixture = p.tasks.register('visualPrivacyJar', Jar) {
+        dependsOn fixtureSource.classesTaskName
+        from fixtureSource.output
+        archiveBaseName = 'anya-hosted-visual-privacy'
+        destinationDirectory = p.layout.buildDirectory.dir('visual-privacy')
+        preserveFileTimestamps = false
+        reproducibleFileOrder = true
+    }
+
+    // Real packaged mods, discovered from classpath in ModDev launches.
+    // CE, Iris, Cloth and Sodium are independently verified and staged in mods/.
+    def runtime = p.sourceSets.create('visualPrivacyRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    def safety = p.provider { p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile }
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(safety).builtBy('operatorProbeJar'))
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(p.tasks.named('jar')))
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(fixture))
+    def base = p.file('build/visual-privacy')
+    def roles = ['Alpha', 'Beta']
+    roles.each { role ->
+        p.neoForge.runs.create("visualPrivacy${role}") {
+            client()
+            sourceSet = runtime
+            loadedMods = []
+            gameDirectory = new File(base, "client-${role}")
+            systemProperty 'anya.role', role
+            systemProperty 'anya.control', new File(base, 'control').absolutePath
+            systemProperty 'anya.runtimeManifest', new File(base, 'control/inputs.json').absolutePath
+            if (p.hasProperty('stillFrameTrial')) systemProperty 'anyastorage.stillFramePeek', 'true'
+            for (key in ['anyastorage.pocketPrototype', 'anya.nonblockingPrepare', 'anya.minimalOwnership',
+                         'anya.serializationBudget', 'anya.backpressure', 'anya.repairJournal']) {
+                systemProperty key, 'true'
+            }
+            programArguments.addAll '--username', role, '--width', '960', '--height', '640'
+            jvmArguments.addAll '-Xmx1000m', '-Xms256m'
+        }
+    }
+    p.tasks.register('exportVisualPrivacy') {
+        dependsOn 'jar', 'operatorProbeJar', fixture, roles.collect { "createVisualPrivacy${it}LaunchScript" }
+        doLast {
+            def expected = [p.tasks.jar.archiveFile.get().asFile, safety.get(), fixture.get().archiveFile.get().asFile]
+            if (!runtime.runtimeClasspath.files.containsAll(expected)) throw new GradleException('Missing packaged visual fixture input')
+            def launches = roles.collectEntries { role ->
+                def task = p.tasks.named("createVisualPrivacy${role}LaunchScript").get()
+                [(role): [command: ['bash', task.launchScript.get().asFile.absolutePath], cwd: new File(base, "client-${role}").absolutePath]]
+            }
+            new File(base, 'launches.json').text = groovy.json.JsonOutput.toJson(launches)
+        }
+    }
+}}

@@ -1,0 +1,18 @@
+{
+  "chest_open": {
+    "subtitle": "subtitles.anyastorage.chest_open",
+    "sounds": ["anyastorage:chest/open"]
+  },
+  "chest_close": {
+    "subtitle": "subtitles.anyastorage.chest_close",
+    "sounds": ["anyastorage:chest/close"]
+  },
+  "frame_on": {
+    "subtitle": "subtitles.anyastorage.frame_on",
+    "sounds": ["anyastorage:frame/on"]
+  },
+  "frame_off": {
+    "subtitle": "subtitles.anyastorage.frame_off",
+    "sounds": ["anyastorage:frame/off"]
+  }
+}

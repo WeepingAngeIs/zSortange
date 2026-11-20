@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "target_observation": "Stella supplied exact separate test-profile inventory, 2026-11-17 09:39-09:44 UTC; not a new local profile inspection",
+  "minecraft": "1.21.1",
+  "neoforge": "21.1.249",
+  "java_major": 21,
+  "anya_source": "e55f4c9188097e393e237f677894a7342f88b16c",
+  "anya_sha256": "5e920929800ac56b0a5640c4992622b9f01d6638e63be4b176c4767c5383ba11",
+  "safety_sha256": "e11ed33cfb44e53bb059dbbb0449f94a87a02fa0f7d6de3ec38477a35f840c57",
+  "ce": {
+    "repository": "UpperMoon0/ImmersivePortals",
+    "source": "ad2e7ee5d73e4ff78bd0befade4f797265e65939",
+    "source_version": "6.1.4",
+    "execution_approved": false,
+    "status": "REQUIRES_SPECIFIC_APPROVAL_BEFORE_BUILD_OR_EXECUTION",
+    "reason": "Independent third-party community fork; user requested explicit source/action approval. No CE binary installed, loaded or built by this fixture."
+  },
+  "artifacts": [
+    {"project":"sodium","project_id":"AANobbMI","version_id":"uMOpc5uV","version":"mc1.21.1-0.8.13-neoforge","mod_id":"sodium","mod_version":"0.8.13+mc1.21.1","filename":"sodium-neoforge-0.8.13+mc1.21.1.jar","bytes":1292934,"sha256":"575d187b15328d7bddd8a9b1bee64333c22c14735f5780ec49eac0cd5503c08d","publisher_page":"https://modrinth.com/mod/sodium/version/uMOpc5uV","source_repositories":["https://github.com/CaffeineMC/sodium","https://github.com/CaffeineMC/sodium-fabric"]},
+    {"project":"iris","project_id":"YL57xq9U","version_id":"KduFYu4t","version":"1.8.14-beta.1+1.21.1-neoforge","mod_id":"iris","mod_version":"1.8.14-beta.1+mc1.21.1","filename":"iris-neoforge-1.8.14-beta.1+mc1.21.1.jar","bytes":2540723,"sha256":"60d5f8bf52f25e9986440f4a4270a6bd986d9cff994510e1108ac1547063b314","publisher_page":"https://modrinth.com/mod/iris/version/KduFYu4t","source_repositories":["https://github.com/IrisShaders/Iris"]},
+    {"project":"cloth-config","project_id":"9s6osm5g","version_id":"izKINKFg","version":"15.0.140+neoforge","mod_id":"cloth_config","mod_version":"15.0.140","filename":"cloth-config-15.0.140-neoforge.jar","bytes":1163890,"sha256":"65e722e0d98431a07c45f8bdd8d529a217cc8c175fde1740248bd5c1b4f3c0d4","publisher_page":"https://modrinth.com/mod/cloth-config/version/izKINKFg","source_repositories":["https://github.com/shedaniel/ClothConfig","https://github.com/shedaniel/cloth-config"]}
+  ],
+  "expected_nested": {
+    "net.caffeinemc.sodium-neoforge-0.8.13+mc1.21.1-mod.jar":{"bytes":1226309,"sha256":"d71acbffafd3d177add7624710114d8570cdd70d5553a2b5c8ab371852c59ce3"}
+  },
+  "renderer_candidates_not_resolution": {
+    "sodium_fabric_renderer_api_v1":"3.4.1+9125b6dc19",
+    "iris_fabric_renderer_api_v1":"3.4.0+acb05a3919"
+  },
+  "profile_options": {"renderDistance":6,"simulationDistance":5,"maxFps":70,"enableVsync":false,"fullscreen":false,"graphicsMode":1,"mipmapLevels":4},
+  "iris_options": {"enableShaders":false,"shaderPack":"ComplementaryReimagined_r5.9.3.zip","colorSpace":"SRGB","maxShadowRenderDistance":0,"allowUnknownShaders":false},
+  "shader_zip_not_downloaded_or_executed":{"bytes":553397,"sha256":"fed6c879e732cf7fc7bc6570ebb1def43235aa7e96f62859fbdbdbfa0b484b38","preset":"unknown"},
+  "scope":"Three verified publisher renderer/config artifacts plus unchanged Anya/safety and a diagnostic fixture; NOT all 367 profile mods, renderer extensions, full FFA, shaderpack or target GPU."
+}

@@ -1,0 +1,1 @@
+{"required":true,"minVersion":"0.8","package":"dev.anya.storage.equalwork.mixin","compatibilityLevel":"JAVA_21","mixins":["FullTickMixin","CallbackObserveMixin","BudgetObserveMixin","FixtureTimeMixin","JournalTimeMixin","RegionTimeMixin"],"injectors":{"defaultRequire":1}}

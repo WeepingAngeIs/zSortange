@@ -1,0 +1,42 @@
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.apply from:p.file('durable.gradle')
+ p.sourceSets.create('minimalProbe')
+ p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('minimalProbe'))
+ p.dependencies.add('minimalProbeCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('minimalProbeCompileOnly',p.sourceSets.getByName('durableProbe').output)
+ p.tasks.register('minimalProbeJar', Jar) {
+  dependsOn p.tasks.named('minimalProbeClasses'),p.tasks.named('durableProbeClasses')
+  from(p.sourceSets.getByName('durableProbe').output) {
+   exclude 'dev/anya/storage/durable/unload/**'
+   exclude 'dev/anya/storage/durable/mixin/UnloadAuditMixin.class'
+   exclude 'anya_durable.mixins.json'
+   exclude 'META-INF/neoforge.mods.toml'
+  }
+  from p.sourceSets.getByName('minimalProbe').output
+  archiveBaseName='anya-minimal-ownership-experiment'
+  destinationDirectory=p.layout.buildDirectory.dir('minimal')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ p.sourceSets.create('budgetProbe')
+ p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('budgetProbe'))
+ p.dependencies.add('budgetProbeCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('budgetProbeCompileOnly',p.sourceSets.getByName('durableProbe').output)
+ p.dependencies.add('budgetProbeCompileOnly',p.sourceSets.getByName('minimalProbe').output)
+ p.tasks.register('budgetProbeJar', Jar) {
+  dependsOn p.tasks.named('budgetProbeClasses'),p.tasks.named('minimalProbeJar')
+  from({ p.zipTree(p.tasks.named('minimalProbeJar').get().archiveFile.get().asFile) }) {
+   exclude 'META-INF/neoforge.mods.toml'
+   exclude 'META-INF/MANIFEST.MF'
+   exclude 'dev/anya/storage/minimal/DirtyCycles.class'
+  }
+  from p.sourceSets.getByName('budgetProbe').output
+  archiveBaseName='anya-unload-save-budget-experiment'
+  destinationDirectory=p.layout.buildDirectory.dir('budget')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+ if(p.hasProperty('budgetProbe')) {
+  p.dependencies.add('packagedLauncherRuntimeOnly',p.files(p.tasks.named('budgetProbeJar')))
+  p.tasks.named('exportAcceptanceLaunches') {dependsOn 'budgetProbeJar'}
+ }
+}

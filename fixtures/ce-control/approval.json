@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "scope": "User-approved build and execution of this exact CE source, only in bounded disposable GitHub infrastructure for a minimal renderer control",
+  "repository": "UpperMoon0/ImmersivePortals",
+  "commit": "ad2e7ee5d73e4ff78bd0befade4f797265e65939",
+  "source_version": "6.1.4",
+  "approval": "User explicitly relayed approval of the exact source/version/action/risk request. No approval is inferred for additional unrecognized executable sources.",
+  "runtime_allowlist": ["minecraft", "neoforge", "sodium", "iris", "cloth_config", "anyastorage", "anyadurableprobe", "anyacecontrol", "fabric_api_base", "fabric_block_view_api_v2", "fabric_renderer_api_v1", "fabric_rendering_data_attachment_v1", "imm_ptl", "immersive_portals_core", "q_misc_util"],
+  "forbidden_actions": ["user profile access", "live worlds", "installation", "production adapter", "upstream verification harness", "Sable runtime", "Aeronautics runtime", "unreviewed runtime dependency", "Sodium downgrade", "Iris removal"],
+  "compile_only_boundary": "Optional integration jars are read by javac as classfile data only. Annotation processing, tests and upstream run tasks are disabled. No compile-time integration jar is staged as a runtime mod.",
+  "preserved_baseline": {"commit":"ff63be191c69746e5ca40f11b61ff87f96a55f2a","run":44083635001}
+}

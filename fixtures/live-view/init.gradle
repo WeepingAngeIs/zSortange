@@ -1,0 +1,93 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/operator-init.gradle')
+gradle.beforeProject { p -> p.afterEvaluate {
+ p.sourceSets.create('liveView');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveView)
+ p.dependencies.add('liveViewCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('liveViewCompileOnly',p.files(p.provider{p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile}).builtBy('operatorProbeJar'))
+ p.dependencies.add('liveViewCompileOnly',p.files('build/ce-control/approved-ce.jar'))
+ p.tasks.register('liveViewJar',Jar){dependsOn 'liveViewClasses','operatorProbeJar';from p.sourceSets.liveView.output;archiveBaseName='anya-live-view-experiment';destinationDirectory=p.layout.buildDirectory.dir('live-view');preserveFileTimestamps=false;reproducibleFileOrder=true}
+ // Exercise the exact compiled policy in a dedicated server using the packaged art.2
+ // mod. CE and the experiment's mixins are compile inputs only in these checks.
+ def position = p.hasProperty('positionPrivacy')
+ def kind = position ? 'position' : 'chest'
+ def title = kind.capitalize()
+ def restart = position && p.hasProperty('positionRestart')
+ def sourceName = "live${title}Check"
+ def tests = p.sourceSets.create(sourceName)
+ tests.java.srcDir p.file("fixtures/live-view/${kind}-check/java")
+ tests.resources.srcDir p.file("fixtures/live-view/${kind}-check/resources")
+ p.neoForge.addModdingDependenciesTo(tests)
+ p.dependencies.add(tests.compileOnlyConfigurationName, p.sourceSets.main.output)
+ p.dependencies.add(tests.compileOnlyConfigurationName, p.sourceSets.liveView.output)
+ def checkJar = p.tasks.register("${sourceName}Jar", Jar) {
+  dependsOn tests.classesTaskName, 'liveViewJar', 'processResources'
+  from tests.output
+  from(p.sourceSets.liveView.output) {
+   include 'dev/anya/storage/liveview/PocketChestPrivacy.class'
+   include 'dev/anya/storage/liveview/PocketChestPrivacy$*.class'
+   if (position) {
+    include 'dev/anya/storage/liveview/PositionTerrainPolicy.class'
+    include 'dev/anya/storage/liveview/PositionTerrainPolicy$*.class'
+    include 'dev/anya/storage/liveview/PositionDeliveryLedger.class'
+    include 'dev/anya/storage/liveview/PositionDeliveryLedger$*.class'
+   }
+  }
+  archiveBaseName = "anya-hosted-${kind}-check"
+  destinationDirectory = p.layout.buildDirectory.dir('live-view/check-runtime')
+ }
+ def runtime = p.sourceSets.create("${sourceName}Runtime")
+ p.neoForge.addModdingDependenciesTo(runtime)
+ p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(p.tasks.named('jar')))
+ p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(checkJar))
+ def evidenceDir = p.file('build/live-view/evidence')
+ def runName = "${kind}Privacy${restart ? 'Restart' : 'Check'}"
+ p.neoForge.runs.create(runName) {
+  server()
+  programArgument '--nogui'
+  sourceSet = runtime
+  loadedMods = []
+  gameDirectory = p.file("build/live-view/${kind}-privacy-game")
+  systemProperty "anya.${kind}PrivacyEvidence", new File(evidenceDir, "${kind}-privacy.json").absolutePath
+  systemProperty 'anya.expectedAdapter', p.tasks.named('liveViewJar').get().archiveFile.get().asFile.absolutePath
+  if (position) {
+   systemProperty 'anyastorage.pocketPrototype', 'true'
+   systemProperty 'anya.positionRestart', restart.toString()
+  }
+  jvmArguments.addAll '-Xms256m', '-Xmx1400m'
+ }
+ p.tasks.register("live${title}PrivacyTest") {
+  dependsOn "run${runName.capitalize()}"
+  doLast {
+   def receipt = new File(evidenceDir, restart ? 'position-restart.json' : "${kind}-privacy.json")
+   if (!receipt.isFile()) throw new GradleException("Missing disposable server result: ${receipt.name}")
+  }
+ }
+ p.sourceSets.create('liveAcceptance');p.sourceSets.liveAcceptance.java.srcDir p.file('fixtures/live-view/java');p.sourceSets.liveAcceptance.resources.srcDir p.file('fixtures/live-view/resources');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveAcceptance)
+ p.dependencies.add('liveAcceptanceCompileOnly',p.sourceSets.main.output)
+ p.dependencies.add('liveAcceptanceCompileOnly',p.sourceSets.liveView.output)
+ p.dependencies.add('liveAcceptanceCompileOnly',p.files(p.provider{p.tasks.named('operatorProbeJar').get().archiveFile.get().asFile}).builtBy('operatorProbeJar'))
+ p.dependencies.add('liveAcceptanceCompileOnly',p.files('build/ce-control/approved-ce.jar'))
+ p.tasks.register('liveAcceptanceJar',Jar){dependsOn 'liveAcceptanceClasses','liveViewJar';from p.sourceSets.liveAcceptance.output;archiveBaseName='anya-live-view-fixture';destinationDirectory=p.layout.buildDirectory.dir('live-view');preserveFileTimestamps=false;reproducibleFileOrder=true}
+ p.sourceSets.create('liveRuntime');p.neoForge.addModdingDependenciesTo(p.sourceSets.liveRuntime)
+ // Each lazy provider must capture its own task name; a shared Groovy loop variable
+ // resolves all entries to the final fixture JAR and omits the adapter and safety mods.
+ ['jar','operatorProbeJar','liveViewJar','liveAcceptanceJar'].each { taskName ->
+  p.dependencies.add('liveRuntimeRuntimeOnly',p.files(p.provider{p.tasks.named(taskName).get().archiveFile.get().asFile}).builtBy(taskName))
+ }
+ for(role in ['Alpha','Beta','Gamma']){
+  def name='live'+role
+  p.neoForge.runs.create(name){client();sourceSet=p.sourceSets.liveRuntime;loadedMods=[];gameDirectory=p.file('build/live-view/client-'+role)
+   systemProperty 'anya.liveControl',p.file('build/live-view/control').absolutePath;systemProperty 'anya.control',p.file('build/live-view/control').absolutePath;systemProperty 'anya.role',role
+   for(key in ['anyastorage.liveViewPrototype','anyastorage.pocketPrototype','anya.nonblockingPrepare','anya.minimalOwnership','anya.serializationBudget','anya.backpressure','anya.repairJournal'])systemProperty key,'true'
+   programArguments.addAll '--username',role,'--width','800','--height','600';jvmArguments.addAll '-Xmx1000m','-Xms256m'
+  }
+ }
+ p.tasks.register('exportLiveLaunches'){dependsOn 'jar','operatorProbeJar','liveViewJar','liveAcceptanceJar','createLiveAlphaLaunchScript','createLiveBetaLaunchScript','createLiveGammaLaunchScript';doLast{
+  def required=['jar','operatorProbeJar','liveViewJar','liveAcceptanceJar'].collect { taskName -> p.tasks.named(taskName).get().archiveFile.get().asFile.canonicalFile }
+  def resolved=p.sourceSets.liveRuntime.runtimeClasspath.files.collect { it.canonicalFile }
+  if(required.toSet().size()!=4 || !resolved.containsAll(required))throw new GradleException('Live-view runtime omitted or aliased a required owned artifact')
+  def evidence=p.file('build/live-view/evidence/runtime-classpath.json');evidence.parentFile.mkdirs()
+  evidence.text=groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson([required:required.collect{it.path},resolved:resolved.collect{it.path}.sort(),kind:'resolved dev classpath; runtime ModList remains authoritative']))
+  def result=[:];for(role in ['Alpha','Beta','Gamma']){def f=p.tasks.named('createLive'+role+'LaunchScript').get().launchScript.get().asFile;result[role]=[command:['bash',f.absolutePath],cwd:p.file('build/live-view/client-'+role).absolutePath]}
+  def out=p.file('build/live-view/client-launches.json');out.parentFile.mkdirs();out.text=groovy.json.JsonOutput.toJson(result)
+ }}
+}}

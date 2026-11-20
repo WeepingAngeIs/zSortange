@@ -1,0 +1,8 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/operator-init.gradle')
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.sourceSets.acceptance.java.srcDir(p.file('src/operatorClient/java'))
+ for(n in ['durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe','operatorProbe'])p.dependencies.add('acceptanceCompileOnly',p.sourceSets.getByName(n).output)
+ p.dependencies.add('packagedLauncherRuntimeOnly',p.files(p.tasks.named('operatorProbeJar')))
+ p.tasks.named('exportAcceptanceLaunches'){dependsOn 'operatorProbeJar'}
+}

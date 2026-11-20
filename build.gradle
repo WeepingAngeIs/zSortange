@@ -1,0 +1,125 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+version = project.mod_version
+group = 'dev.anya.storage'
+base { archivesName = 'anya-storage-plus' }
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java.withSourcesJar()
+neoForge {
+    version = project.neo_version
+    runs {
+        client { client()
+            if (project.hasProperty('clientSmoke')) {
+                systemProperty 'anyastorage.clientSmoke', 'true'
+                programArguments.addAll '--width', '1280', '--height', '1000'
+                gameDirectory = project.file(project.hasProperty('accessoriesTest') ? 'run-client-accessories-smoke' : 'run-client-smoke')
+            }
+        }
+        server {
+            server(); programArgument '--nogui'
+            if(project.hasProperty('pocketTest')) {
+                systemProperty 'anyastorage.pocketPrototype', 'true'
+                systemProperty 'anyastorage.pocketTests', 'true'
+                gameDirectory = project.file('run-pocket-tests')
+            }
+
+            if(project.hasProperty('guidePersistence')) {
+                systemProperty 'anyastorage.guidePersistence', project.guidePersistence
+                gameDirectory = project.file('run-guide-persistence')
+            }
+        }
+        gameTestServer {
+            type = 'gameTestServer'
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'anyastorage'
+            if(project.hasProperty('accessoriesTest')) {
+                gameDirectory = project.file('run-accessories-tests')
+                systemProperty 'anyastorage.requireAccessories', 'true'
+            }
+        }
+    }
+    mods { anyastorage { sourceSet(sourceSets.main) } }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.named('processResources', ProcessResources) {
+    inputs.property 'mod_version', project.mod_version
+    filesMatching('META-INF/neoforge.mods.toml') { expand mod_version: project.mod_version }
+}
+tasks.register('generateAssets', Exec) { commandLine 'python3', 'scripts/generate_assets.py' }
+tasks.register('generateExpansionAssets', Exec) { dependsOn 'generateAssets'; commandLine 'python3', 'scripts/guide_assets.py' }
+tasks.register('generatePocketAssets', Exec) { dependsOn 'generateExpansionAssets'; commandLine 'python3', 'scripts/pocket_assets.py' }
+tasks.named('processResources') { dependsOn 'generatePocketAssets' }
+tasks.register('coreTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.CoreTests'
+}
+tasks.named('test') { enabled = false }
+tasks.named('check') { dependsOn tasks.named('coreTest') }
+tasks.named('sourcesJar') { dependsOn 'generatePocketAssets' }
+
+tasks.named('compileTestJava', JavaCompile) { classpath += sourceSets.main.compileClasspath }
+
+tasks.register('imageProtocolTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.ImageProtocolTests'
+}
+tasks.named('check') { dependsOn tasks.named('imageProtocolTest') }
+
+tasks.register('guideJournalTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.GuideJournalTests'
+}
+tasks.named('check') { dependsOn tasks.named('guideJournalTest') }
+
+
+tasks.register('sharedBaseTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.SharedBaseCoreTests'
+}
+tasks.named('check') { dependsOn tasks.named('sharedBaseTest') }
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.wispforest.io/releases' }
+    maven { url = 'https://maven.sinytra.org'; content { includeGroup 'org.sinytra.forgified-fabric-api' } }
+    maven { url = 'https://maven.su5ed.dev/releases'; content { includeGroup 'org.sinytra.forgified-fabric-api' } }
+}
+dependencies {
+    compileOnly('io.wispforest:accessories-neoforge:1.1.0-beta.53+1.21.1') { transitive = false }
+    if(project.hasProperty('accessoriesTest')) {
+        runtimeOnly('io.wispforest:accessories-neoforge:1.1.0-beta.53+1.21.1') { transitive = false }
+        runtimeOnly('io.wispforest:owo-lib-neoforge:0.12.15.1-beta.6+1.21')
+    }
+}
+
+tasks.register('gridTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.GridTests'
+}
+tasks.named('check') { dependsOn tasks.named('gridTest') }
+
+tasks.register('pocketCoreTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.PocketCoreTests'
+}
+tasks.named('check') { dependsOn tasks.named('pocketCoreTest') }
+
+apply from: 'acceptance.gradle'
+
+tasks.register('roomBoundsTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath + sourceSets.main.compileClasspath
+    mainClass = 'dev.anya.storage.RoomBoundsTests'
+}
+tasks.named('check') { dependsOn tasks.named('roomBoundsTest') }
+
+apply from: 'profiling.gradle'
+
+apply from: 'remote-ticket.gradle'

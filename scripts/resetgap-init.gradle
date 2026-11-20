@@ -1,0 +1,13 @@
+apply from: new File(gradle.startParameter.currentDir,'scripts/repair-init.gradle')
+gradle.projectsEvaluated {
+ def p=gradle.rootProject
+ p.sourceSets.create('resetGap');p.neoForge.addModdingDependenciesTo(p.sourceSets.getByName('resetGap'))
+ for(n in ['main','durableProbe','minimalProbe','budgetProbe','pressureProbe','repairProbe'])p.dependencies.add('resetGapCompileOnly',p.sourceSets.getByName(n).output)
+ p.tasks.register('resetGapJar',Jar){
+  dependsOn p.tasks.named('resetGapClasses'),p.tasks.named('repairProbeJar')
+  from({p.zipTree(p.tasks.named('repairProbeJar').get().archiveFile.get().asFile)}){exclude 'META-INF/neoforge.mods.toml';exclude 'META-INF/MANIFEST.MF'}
+  from p.sourceSets.getByName('resetGap').output
+  archiveBaseName='anya-reset-publication-fault-fixture';destinationDirectory=p.layout.buildDirectory.dir('resetgap')
+  preserveFileTimestamps=false;reproducibleFileOrder=true
+ }
+}
