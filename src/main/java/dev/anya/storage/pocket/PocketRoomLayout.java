@@ -31,6 +31,26 @@ public final class PocketRoomLayout {
     }
     static List<StorageEntity> present(PocketLedger.Pocket r, Predicate<BlockPos> loaded,
             Predicate<BlockPos> empty, Function<BlockPos,BlockEntity> entityAt)throws IOException{
+        return scan(r,loaded,empty,entityAt,StorageEntity::storageIdentity);
+    }
+
+    /** Verify the loaded layout for display without assigning identities or materializing block entities. */
+    static List<StorageEntity> observe(LoadedPocketBlocks blocks, PocketLedger.Pocket room) throws IOException {
+        var chests = scan(room, pos -> blocks.chunk(pos.getX() >> 4, pos.getZ() >> 4) != null,
+                pos -> blocks.getBlockState(pos).isAir() && blocks.getFluidState(pos).isEmpty(),
+                blocks::getBlockEntity, StorageEntity::existingStorageIdentity);
+        for (var chest : chests) {
+            if (!blocks.getBlockState(chest.getBlockPos()).is(Content.CRATE.get())
+                    || room.anchor().hubId().equals(chest.existingStorageIdentity()))
+                throw new IOException("Registered pocket chest does not match the room layout");
+        }
+        if (!blocks.complete()) throw new IOException("Registered pocket chest layout is not fully loaded");
+        return chests;
+    }
+
+    private static List<StorageEntity> scan(PocketLedger.Pocket r, Predicate<BlockPos> loaded,
+            Predicate<BlockPos> empty, Function<BlockPos,BlockEntity> entityAt,
+            Function<StorageEntity,UUID> identityOf)throws IOException{
         if(r.stage()!=PocketLedger.Stage.READY)throw new IOException("Pocket is not ready");
         List<StorageEntity> found=new ArrayList<>();Set<UUID> identities=new HashSet<>();
         var positions = positions(r);
@@ -42,7 +62,9 @@ public final class PocketRoomLayout {
                 continue;
             }
             if(!(entityAt.apply(p) instanceof StorageEntity c)||!p.equals(c.getBlockPos())||c.isRemoved()||!r.id().equals(c.pocketId)||!r.owner().equals(c.owner)||!c.kind().equals("chest")||c.getContainerSize()!=54||Transactions.quarantined(c))throw new IOException("Registered pocket chest changed; no regeneration attempted");
-            if(!identities.add(c.storageIdentity()))throw new IOException("Duplicate physical chest identity; access refused");
+            UUID identity = identityOf.apply(c);
+            if(identity==null)throw new IOException("Registered pocket chest identity is unavailable");
+            if(!identities.add(identity))throw new IOException("Duplicate physical chest identity; access refused");
             found.add(c);
         }
         return List.copyOf(found);

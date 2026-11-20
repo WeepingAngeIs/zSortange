@@ -40,7 +40,12 @@ final class RoomPlans {
     }
 
     static LiteralArgumentBuilder<CommandSourceStack> commands() {
-        var root = Commands.literal("plan").executes(c -> { AnyaStorage.tell(c.getSource().getPlayerOrException(), HELP); return 1; });
+        var root = Commands.literal("plan").executes(c -> {
+            var player = c.getSource().getPlayerOrException();
+            AnyaStorage.tell(player, HELP);
+            ChestPadGuide.showPlan(player);
+            return 1;
+        });
         for (String action : new String[]{"add", "undo", "cancel", "apply"})
             root.then(Commands.literal(action).executes(c -> run(c.getSource().getPlayerOrException(), action)));
         return root;
@@ -80,7 +85,8 @@ final class RoomPlans {
                 draft.marks.put(mark.pos(),mark);
                 draft.expires = player.serverLevel().getGameTime() + LIFETIME;
                 drafts.put(id,draft);
-                AnyaStorage.tell(player,"Marked " + mark.state().getBlock().getName().getString() + " (" + draft.marks.size() + "/" + LIMIT + ").");
+                AnyaStorage.tell(player,"Marked " + mark.state().getBlock().getName().getString() + " (" + draft.marks.size() + "/" + LIMIT + ")."
+                        + (mark.addsChest() ? " Apply spends one plain Labelled Storage Chest and adds 54 slots." : ""));
             } else {
                 if (draft == null) throw new IOException("Your room plan is empty. " + HELP);
                 if (action.equals("apply")) {
