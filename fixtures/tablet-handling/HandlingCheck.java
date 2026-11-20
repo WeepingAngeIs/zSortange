@@ -89,18 +89,21 @@ public final class HandlingCheck {
                 check(point(device, w, h / 2f, 0).x() > point(device, 0, h / 2f, 0).x(), "Front art flipped");
                 for (boolean slim : new boolean[]{false, true}) {
                     Matrix4f arm = TabletHandlingPose.armMatrix(width, height, rightHand, slim, swing, equip, p);
-                    float wristX = (rightHand ? -1 : 1) * (slim ? 5.5f : 6f) / 16;
-                    float wristY = 12f / 16;
-                    Vector3f wrist = point(arm, wristX, wristY, 0);
-                    Vector3f grip = point(device, rightHand ? 423 : 9, 229, -5);
+                    float side = rightHand ? 1 : -1;
+                    var handEnd = new Vector3f(-side * (slim ? .5f : 1f), 10, 0)
+                            .rotateZ(side * .1f).add(-side * 5f, 2, 0).div(16);
+                    Vector3f wrist = arm.transformPosition(new Vector3f(handEnd));
+                    Vector3f grip = point(device, rightHand ? 420 : 12, 184, -5);
                     samePoint(grip, wrist, "Wrist must stay attached to its side rail during the entire lift");
                     if (step == 0 && swing == 0 && equip == 0) {
-                        Vector3f shoulder = point(arm, wristX, 0, 0);
+                        Vector3f shoulder = point(arm, -side * 5f / 16f, 2f / 16f, 0);
                         check(rightHand ? shoulder.x() > wrist.x() : shoulder.x() < wrist.x(),
                                 "Idle forearm approaches the rail from the selected side");
                         check(shoulder.y() > wrist.y() + 0.1f * Math.min(width, height), "Forearm must remain visible");
                         check(shoulder.y() >= height || shoulder.x() <= 0 || shoulder.x() >= width,
                                 "Idle arm must enter from the viewport edge");
+                        check(wrist.x() > 3 && wrist.x() < width - 3 && wrist.y() < height - .035f * height,
+                                "The hand end must remain visibly inside the viewport at rest");
                     }
                 }
                 if (step == 0) {
@@ -108,7 +111,11 @@ public final class HandlingCheck {
                     check(normal.y() < -0.25 && normal.z() > 0.25 && normal.z() < 0.95, "Upward-facing rest angle");
                     check(rightHand ? normal.x() < -0.1 : normal.x() > 0.1, "Screen inclined toward its holder");
                     Vector3f center = point(device, w / 2f, h / 2f, 0);
-                    check(center.y() > height / 2f, "Resting device is low");
+                    check(center.y() > height * .76f, "Resting device is low");
+                    if (swing == 0 && equip == 0) {
+                        Vector3f bottom = point(device, rightHand ? w : 0, h, 0);
+                        check(bottom.y() > height + 2, "The outside rim must run naturally out of the shot");
+                    }
                 } else if (step == 20) {
                     samePoint(new Vector3f(opening.x(), opening.y(), 0), point(device, 0, 0, 0), "GUI top left");
                     samePoint(new Vector3f(opening.x() + w * opening.scale(), opening.y() + h * opening.scale(), 0),
@@ -124,7 +131,7 @@ public final class HandlingCheck {
             geometry(viewport[0], viewport[1], 0, 0);
             geometry(viewport[0], viewport[1], 0.6f, 0.3f);
         }
-        System.out.println("PASS: bounded use-edge rise/decline, repeat-use and cancellation; both mirrored hands, "
-                + "classic/slim anchored grip across idle and swing, upward and inward tilt, exact GUI bounds at three sizes");
+        System.out.println("PASS: bounded use-edge rise/decline, mirrored wide/slim skin hand ends touch the rail, "
+                + "visible grip with cropped resting rim, upward and inward tilt, exact GUI bounds at three sizes");
     }
 }

@@ -31,6 +31,7 @@ HOST = {
     "net.minecraft.world.item.ItemStack": """public class ItemStack {
         public final Item item; public ItemStack(Item item){this.item=item;}
         public boolean is(Item candidate){return item==candidate;}
+        public static boolean matches(ItemStack a, ItemStack b){return a.item == b.item;}
     }""",
     "net.neoforged.neoforge.registries.DeferredItem": """public class DeferredItem<T> {
         private final T value; public DeferredItem(T value){this.value=value;} public T get(){return value;}
@@ -106,8 +107,15 @@ HOST = {
                 return by == player && by.getItemInHand(hand) == stack && by.getInventory().selected == slot
                         && rightSide(by, hand) == grip.right();
             }
+            Held afterMenuSync(net.minecraft.client.player.LocalPlayer by) {
+                if (stillHeld(by)) return this;
+                if (by != player || by.getInventory().selected != slot || rightSide(by, hand) != grip.right()) return null;
+                var current = by.getItemInHand(hand);
+                return net.minecraft.world.item.ItemStack.matches(stack, current)
+                        ? new Held(grip, progress, width, height, by, current, hand, slot, time, portrait) : null;
+            }
         }
-        public static Held saved;
+        public static Held saved, closing;
         public static Grip painted;
         public static Portrait face;
         public static boolean liveAtlas;
@@ -120,7 +128,10 @@ HOST = {
             return (player.getMainArm() == net.minecraft.world.entity.HumanoidArm.RIGHT)
                     == (hand == net.minecraft.world.InteractionHand.MAIN_HAND);
         }
-        public static void forgetHeld() { saved = null; }
+        public static void forgetHeld() { saved = null; closing = null; }
+        public static void forgetWorldFrame() { saved = null; }
+        public static void lowerFrom(Held frame) { closing = frame; }
+        public static Held takeClosing() { var frame = closing; closing = null; return frame; }
         public static Held peekHeld() { return saved; }
         public static void rememberHeld(Held held) { saved = held; }
         public static int chooseVisit() { visits++; return 4; }

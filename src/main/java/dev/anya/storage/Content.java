@@ -24,6 +24,8 @@ public final class Content {
     private static final DeferredRegister<SoundEvent> SOUNDS = DeferredRegister.create(Registries.SOUND_EVENT, AnyaStorage.ID);
     public static final Supplier<SoundEvent> CHEST_OPEN = chestSound("chest_open");
     public static final Supplier<SoundEvent> CHEST_CLOSE = chestSound("chest_close");
+    public static final Supplier<SoundEvent> CUBE_OPEN = chestSound("cube_open");
+    public static final Supplier<SoundEvent> CUBE_CLOSE = chestSound("cube_close");
 
     private static Supplier<SoundEvent> chestSound(String name) {
         return SOUNDS.register(name, () -> SoundEvent.createFixedRangeEvent(ResourceLocation.fromNamespaceAndPath(AnyaStorage.ID, name), 7));

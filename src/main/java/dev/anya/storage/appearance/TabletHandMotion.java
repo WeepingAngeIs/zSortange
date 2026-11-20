@@ -7,6 +7,12 @@ import org.joml.Matrix4f;
 record TabletHandMotion(float yaw, float pitch, float walkX, float walkY, float roll) {
     static final TabletHandMotion STILL = new TabletHandMotion(0, 0, 0, 0, 0);
 
+    TabletHandMotion toward(TabletHandMotion next, float amount) {
+        return new TabletHandMotion(yaw + (next.yaw - yaw) * amount, pitch + (next.pitch - pitch) * amount,
+                walkX + (next.walkX - walkX) * amount, walkY + (next.walkY - walkY) * amount,
+                roll + (next.roll - roll) * amount);
+    }
+
     void apply(PoseStack pose, int width, int height, float progress) {
         float weight = 1f - TabletHandlingPose.eased(progress);
         if (weight == 0 || equals(STILL)) return;

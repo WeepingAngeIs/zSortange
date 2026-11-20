@@ -1,0 +1,27 @@
+gradle.beforeProject { project ->
+    project.afterEvaluate {
+        def camera = project.sourceSets.create('moonCamera')
+        camera.java.srcDir project.file('fixtures/moon-console/java')
+        camera.resources.srcDir project.file('fixtures/moon-console/resources')
+        project.neoForge.addModdingDependenciesTo(camera)
+        project.dependencies.add('moonCameraCompileOnly', project.sourceSets.main.output)
+        def fixture = project.tasks.register('moonCameraJar', Jar) {
+            dependsOn 'moonCameraClasses'
+            from camera.output
+            archiveBaseName = 'moon-camera-fixture'
+            destinationDirectory = project.layout.buildDirectory.dir('moon-fixture')
+        }
+        def runtime = project.sourceSets.create('moonRuntime')
+        project.neoForge.addModdingDependenciesTo(runtime)
+        project.dependencies.add('moonRuntimeRuntimeOnly', project.files(project.tasks.named('jar')))
+        project.dependencies.add('moonRuntimeRuntimeOnly', project.files(fixture))
+        project.neoForge.runs.create('moonVisual') {
+            client()
+            sourceSet = runtime
+            loadedMods = []
+            gameDirectory = project.file('build/moon-review/client')
+            programArguments.addAll '--username', 'MoonCamera', '--width', '960', '--height', '640'
+            jvmArguments.addAll '-Xmx2304m', '-Xms384m'
+        }
+    }
+}

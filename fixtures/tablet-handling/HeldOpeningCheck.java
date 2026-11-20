@@ -137,9 +137,59 @@ public final class HeldOpeningCheck {
         check(routed.verb().equals("slot") && routed.value() == 0 && routed.menu() == id,
                 "Existing inventory slot and menu identity must be preserved");
 
+        check(screen.keyPressed(256, 0, 0), "Escape closes the inventory at once");
+        var closing = TabletDevice.takeClosing();
+        check(closing != null && closing.progress() == 1 && closing.grip() == grip
+                && closing.portrait() == portrait && closing.stillHeld(owner),
+                "Escape from slots must hand the same physical tablet and held face back at the centered pose");
+        screen.onClose();
+        check(TabletDevice.takeClosing() == null, "A second close replayed the tablet");
         var nextRemote = paint(open(id + 10, owner), firstMenuPaint + 1100);
         check(nextRemote.armPose == null && nextRemote.expressionColumn < 0 && nextRemote.row == 0,
                 "An authorized Cupid Tablet without a matching grip still uses Twin Tails and never replays the arm");
+    }
+
+    private static void escapeDuringIntro(int age, boolean changedSlot) {
+        var owner = new LocalPlayer();
+        var hand = InteractionHand.OFF_HAND;
+        var grip = new TabletDevice.Grip(false, .1f, .02f, 0xb000d0);
+        var face = TabletDevice.visit(4, 5);
+        TabletDevice.rememberHeld(new TabletDevice.Held(grip, .23f, WIDTH, HEIGHT, owner, owner.getItemInHand(hand),
+                hand, owner.getInventory().selected, 40_000, face));
+        var screen = open(40, owner);
+        // Vanilla's initial ClientboundContainerSetContent replaces even an unchanged held stack.
+        owner.off = new net.minecraft.world.item.ItemStack();
+        paint(screen, 40_010);
+        var frame = paint(screen, 40_010 + age);
+        if (changedSlot) owner.getInventory().selected++;
+        int before = PacketDistributor.sent.size();
+        check(screen.keyPressed(256, 0, 0) && PacketDistributor.sent.size() == before, "Escape sent storage input");
+        var closing = TabletDevice.takeClosing();
+        if (changedSlot) {
+            check(closing == null, "A replacement stack inherited the old handback");
+            return;
+        }
+        float expected = Math.min(1f, .23f + age / (float) TabletLift.RISE_MS);
+        check(closing != null && closing.progress() == expected && closing.grip() == grip && closing.stack() == owner.off,
+                "Mid-intro Escape jumped or failed to adopt the synced held slot");
+        same(frame.casePose, withMotion(grip, expected, TabletHandlingPose.deviceMatrix(WIDTH, HEIGHT,
+                false, grip.swing(), grip.equip(), expected)), "Handback skipped the last painted matrix");
+        if (age == 325) {
+            check(frame.row == 2 && closing.portrait().image().getPath().endsWith("tablet_guardian.png")
+                    && closing.portrait().v() == 296, "Closing on Cupid's blink lost her closed eyes");
+        } else check(closing.portrait() == face, "Closing partway up lost the original visit");
+    }
+
+    private static void changedBindingCannotCarry() {
+        var owner = new LocalPlayer();
+        var grip = new TabletDevice.Grip(false, 0, 0, 0xb000d0);
+        TabletDevice.rememberHeld(new TabletDevice.Held(grip, .5f, WIDTH, HEIGHT, owner, owner.off,
+                InteractionHand.OFF_HAND, owner.getInventory().selected, 41_000));
+        var screen = open(41, owner);
+        owner.off = new net.minecraft.world.item.ItemStack();
+        owner.off.components = "other hub";
+        var frame = paint(screen, 41_010);
+        check(frame.armPose == null && frame.row == 0, "A changed binding inherited the other tablet's pose");
     }
 
     private static void allPortraits() {
@@ -322,6 +372,11 @@ public final class HeldOpeningCheck {
         allPortraits();
         serverChance();
         nonRemoteCannotClaimHeldVisuals();
+        escapeDuringIntro(30, false);
+        escapeDuringIntro(325, false);
+        escapeDuringIntro(30, true);
+        changedBindingCannotCarry();
+        System.out.println("PASS: Escape carries the last partial lift, mid-blink portrait and settled case; swapped items discard it");
         System.out.println("PASS: server hit works with default JVM arguments; heart Remote, miss and opt-out reveal "
                 + "immediately, first ready slot dispatches exactly once, and resize/reopening cannot replay the decision");
         System.out.println("PASS: Twin Tails double blink and left glance, Cloud body tiles and tumble, "

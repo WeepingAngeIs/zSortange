@@ -1,0 +1,14 @@
+Anya Storage Plus 0.3.0-beta.7-moonconsole.1
+Visual test beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+The Cupid Tablet rests lower in either hand. Its grip, case and glass move
+together through the raise, quick turns and return on Escape. The server
+controls the appearance chance, which still defaults to 24 percent.
+
+The 216-slot UwU Storage Cube has a larger crescent-marked shell, a hinged lid
+and two new chimes. The Anya Storage Hub has a recessed mint monitor. Its
+light trails play a fixed loop on each faceplate. Owners keep their existing
+storage, labels and automatic links. The 54-slot starter chest and Home Void
+Cube keep their distinct designs.
+
+This candidate includes the Home storage guide and the in-game pocket commands.

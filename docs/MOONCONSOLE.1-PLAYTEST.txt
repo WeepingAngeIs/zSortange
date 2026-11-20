@@ -1,0 +1,17 @@
+Anya Storage Plus moonconsole.1 visual playtest
+
+In a disposable world, bind the Cupid Tablet by crouch-using it on your hub.
+With the tablet selected, turn, walk and use it in the air. Try both main-hand
+preferences and your usual skin. Escape during Cupid's blink, then reopen
+and close the settled storage. Check grip contact at the outside bezel and
+readability of the search field, first and last rows. Pause and resume while
+holding the tablet. For repeated appearances, an operator can use
+/anya storage settings set expansion.tabletOpeningChancePercent 100
+on the disposable server and restore its previous value afterward.
+
+Place the starter chest, UwU Storage Cube and hub side by side in the
+disposable world. Open and close the UwU Storage Cube while another player
+watches the split latch and listens. Open it with both players and close one
+menu at a time. Move around the hinge and the hub's glass to check for flicker.
+Compare your usual shaders and GUI scale. The Home Void Cube is the separate
+entrance, and an operator can run /anya pocket status to see its setting.

@@ -27,6 +27,10 @@ import java.util.Map;
 public final class ChestRenderer implements BlockEntityRenderer<StorageEntity> {
     private static final ModelResourceLocation BASE = model("chest_base");
     private static final ModelResourceLocation LID = model("chest_lid");
+    private static final ModelResourceLocation CUBE_BASE = model("uwu_cube_base");
+    private static final ModelResourceLocation CUBE_LID = model("uwu_cube_lid");
+    // The cube's baked shell scales around the floor centre in scripts/moon_cube.py.
+    private static final float CUBE_WIDTH = 1.10f, CUBE_HEIGHT = 1.105f, CUBE_DEPTH = 1.075f;
     private static final float HINGE_Y = 8.54f / 16;
     private static final float HINGE_Z = 14.58f / 16;
     private static final Map<String, RenderType> LABELS = new HashMap<>();
@@ -51,31 +55,36 @@ public final class ChestRenderer implements BlockEntityRenderer<StorageEntity> {
     public static void registerModels(ModelEvent.RegisterAdditional event) {
         event.register(BASE);
         event.register(LID);
+        event.register(CUBE_BASE);
+        event.register(CUBE_LID);
     }
 
     @Override
     public AABB getRenderBoundingBox(StorageEntity chest) {
         // The open crown clears the top of the block and the rear hinge.
-        return new AABB(chest.getBlockPos()).inflate(.25, 0, .25).expandTowards(0, .6, 0);
+        return new AABB(chest.getBlockPos()).inflate(.25, 0, .25).expandTowards(0, .65, 0);
     }
 
     @Override
     public void render(StorageEntity chest, float partial, PoseStack pose, MultiBufferSource buffers, int light, int overlay) {
-        if (!chest.kind().equals("chest")) return;
+        boolean cube = chest.getBlockState().is(Content.CUBE.get());
+        if (!cube && !chest.getBlockState().is(Content.CRATE.get())) return;
         pose.pushPose();
         pose.translate(.5, 0, .5);
         pose.mulPose(Axis.YP.rotationDegrees(180 - chest.getBlockState().getValue(StorageBlock.FACING).toYRot()));
         pose.translate(-.5, 0, -.5);
-        drawModel(BASE, chest, pose, buffers, light, overlay);
-        if (chest.showLabels) drawLabel(chest.symbol, pose, buffers, 6.35f, 8.32f, .5f, 1, light, overlay);
+        drawModel(cube ? CUBE_BASE : BASE, chest, pose, buffers, light, overlay);
+        if (chest.showLabels) drawLabel(chest.symbol, cube, pose, buffers, 6.35f, 8.32f, .5f, 1, light, overlay);
 
         float progress = Mth.lerp(partial, chest.previousOpenness, chest.openness);
         float eased = progress * progress * (3 - 2 * progress);
-        pose.translate(0, HINGE_Y, HINGE_Z);
+        float hingeY = cube ? HINGE_Y * CUBE_HEIGHT : HINGE_Y;
+        float hingeZ = cube ? .5f + (HINGE_Z - .5f) * CUBE_DEPTH : HINGE_Z;
+        pose.translate(0, hingeY, hingeZ);
         pose.mulPose(Axis.XP.rotationDegrees(72 * eased));
-        pose.translate(0, -HINGE_Y, -HINGE_Z);
-        drawModel(LID, chest, pose, buffers, light, overlay);
-        if (chest.showLabels) drawLabel(chest.symbol, pose, buffers, 8.65f, 10.62f, 0, .5f, light, overlay);
+        pose.translate(0, -hingeY, -hingeZ);
+        drawModel(cube ? CUBE_LID : LID, chest, pose, buffers, light, overlay);
+        if (chest.showLabels) drawLabel(chest.symbol, cube, pose, buffers, 8.65f, 10.62f, 0, .5f, light, overlay);
         pose.popPose();
     }
 
@@ -86,13 +95,20 @@ public final class ChestRenderer implements BlockEntityRenderer<StorageEntity> {
                 chest.getBlockState(), model, 1, 1, 1, light, overlay);
     }
 
-    private static void drawLabel(String symbol, PoseStack pose, MultiBufferSource buffers, float bottom, float top,
+    private static void drawLabel(String symbol, boolean cube, PoseStack pose, MultiBufferSource buffers, float bottom, float top,
                                   float vTop, float vBottom, int light, int overlay) {
+        if (cube) {
+            pose.pushPose();
+            pose.translate(.5f, 0, .5f);
+            pose.scale(CUBE_WIDTH, CUBE_HEIGHT, CUBE_DEPTH);
+            pose.translate(-.5f, 0, -.5f);
+        }
         VertexConsumer out = buffers.getBuffer(LABELS.getOrDefault(symbol, LABELS.get("heart")));
         vertex(out, pose.last(), 6, bottom, 0, vBottom, light, overlay);
         vertex(out, pose.last(), 6, top, 0, vTop, light, overlay);
         vertex(out, pose.last(), 10, top, 1, vTop, light, overlay);
         vertex(out, pose.last(), 10, bottom, 1, vBottom, light, overlay);
+        if (cube) pose.popPose();
     }
 
     private static void vertex(VertexConsumer out, PoseStack.Pose pose, float x, float y, float u, float v,

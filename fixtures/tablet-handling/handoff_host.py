@@ -15,6 +15,14 @@ def materialize(root):
     player = "net.minecraft.world.entity.player.Player"
     sources[player] = sources[player].replace("public class Player {", "public class Player extends net.minecraft.world.entity.Entity {")
     extend("net.minecraft.world.entity.player.Inventory", "public int selected;")
+    sources[player] = sources[player].replace("private final net.minecraft.world.item.ItemStack off",
+                                             "public net.minecraft.world.item.ItemStack off")
+    extend("net.minecraft.world.item.ItemStack", """
+        public String components = "bound hub";
+        public static boolean matches(ItemStack a, ItemStack b) {
+            return a.components.equals(b.components);
+        }
+    """)
     extend("net.minecraft.client.Minecraft", """
         private static final Minecraft client = new Minecraft();
         public static Minecraft getInstance() { return client; }

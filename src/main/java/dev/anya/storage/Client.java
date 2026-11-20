@@ -225,6 +225,7 @@ public final class Client {
             if (closeRequested || minecraft == null || minecraft.screen != this) return;
             closeRequested = true;
             boolean ownsMenu = activeScreen();
+            if (ownsMenu && showTabletFrame()) tabletBoot.returnToHand(openingPlayer, width, height);
             retire();
             if (ownsMenu) super.onClose();
             else minecraft.setScreen(null); // Dismiss only this stale surface; its replacement owns the container.

@@ -27,20 +27,10 @@ shapes={
 for name,rows in shapes.items():png(f'assets/{MOD}/textures/entity/label_{name}.png',8,8,[PINK if c=='1' else (0,0,0,0) for row in rows for c in row])
 from chest_shell import generate as generate_chest_shell
 generate_chest_shell(ROOT)
-for name in ['hub','uwu_cube']:
-    side=image(16,16,DARK);rect(side,16,0,0,16,1,EDGE);rect(side,16,0,15,16,1,EDGE);rect(side,16,1,1,14,1,CYAN)
-    front=side.copy()
-    if name=='hub':
-        rect(front,16,3,3,10,5,EDGE);rect(front,16,4,4,8,3,CYAN);rect(front,16,4,10,8,4,EDGE);rect(front,16,5,12,6,1,(255,178,83,255));rect(front,16,6,11,4,1,(242,109,85,255))
-    elif name=='uwu_cube':
-        for x in (3,10):
-            rect(front,16,x,4,1,2,WHITE);rect(front,16,x+1,6,2,1,WHITE);rect(front,16,x+3,4,1,2,WHITE)
-        for x,y in ((6,7),(7,8),(8,7),(9,8),(10,7)):rect(front,16,x,y,1,1,WHITE)
-        for y,row in enumerate(('11011','11111','01110','00100')):
-            for x,bit in enumerate(row):
-                if bit=='1':rect(front,16,x+6,y+10,1,1,PINK)
-    png(f'assets/{MOD}/textures/block/{name}_side.png',16,16,side);png(f'assets/{MOD}/textures/block/{name}_front.png',16,16,front)
-    js(f'assets/{MOD}/models/block/{name}.json',{'parent':'minecraft:block/orientable','textures':{'front':f'{MOD}:block/{name}_front','side':f'{MOD}:block/{name}_side','top':f'{MOD}:block/{name}_side'}})
+from hub_console import generate as generate_hub_console
+generate_hub_console(png, js)
+from moon_cube import generate as generate_moon_cube
+generate_moon_cube(ROOT)
 for name in ['hub','chest','uwu_cube']:
     js(f'assets/{MOD}/blockstates/{name}.json',{'variants':{f'facing={face}':{'model':f'{MOD}:block/{name}','y':rot} for face,rot in [('north',0),('east',90),('south',180),('west',270)]}})
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':f'{MOD}:block/{name}'})
@@ -66,6 +56,7 @@ for index,name in enumerate(items):
 lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
 lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
 lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
+lang.update({'subtitles.anyastorage.cube_open':'UwU storage cube opens','subtitles.anyastorage.cube_close':'UwU storage cube closes'})
 lang.update({'subtitles.anyastorage.frame_on':'Pocket window powers on','subtitles.anyastorage.frame_off':'Pocket window powers down'})
 lang.update({f'block.{MOD}.hub':'Anya Storage Hub',f'block.{MOD}.chest':'Labelled Storage Chest',f'block.{MOD}.uwu_cube':'UwU Storage Cube',f'key.{MOD}.quick':'QuickStack matching items',f'key.{MOD}.dump':'Dump broader matching items',f'key.{MOD}.undo_dump':'Undo last nearby dump',f'key.{MOD}.bag':'Open first backpack',f'key.categories.{MOD}':'Anya Storage'})
 js(f'assets/{MOD}/lang/en_us.json',lang)

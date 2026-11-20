@@ -29,6 +29,8 @@ public final class HeldTablet {
     private static final TabletLift LIFT = new TabletLift();
     private static boolean useLatched;
     private static HandPose pending;
+    private static TabletDevice.Held lowering;
+    private static long loweringAt;
     private static long frozenAt = Long.MIN_VALUE;
     private static long coveredTime;
 
@@ -87,22 +89,26 @@ public final class HeldTablet {
         int slot = player.getInventory().selected;
         if (IDLE.bind(player, stack, hand == InteractionHand.OFF_HAND, slot)) {
             pending = null;
+            lowering = null;
             LIFT.reset();
             useLatched = false;
             frozenAt = Long.MIN_VALUE;
             coveredTime = 0;
-            TabletDevice.forgetHeld();
+            // The close callback may just have queued a frame for the newly synced stack.
+            TabletDevice.forgetWorldFrame();
         }
         return new Held(player, stack, hand, slot);
     }
 
     private static void reset() {
         pending = null;
+        lowering = null;
         LIFT.reset();
         useLatched = false;
         frozenAt = Long.MIN_VALUE;
         coveredTime = 0;
-        if (IDLE.bind(null, null, false, -1)) TabletDevice.forgetHeld();
+        IDLE.bind(null, null, false, -1);
+        TabletDevice.forgetHeld();
     }
 
     @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
@@ -129,8 +135,10 @@ public final class HeldTablet {
         var next = event.getNewScreen();
         animationTime(Util.getMillis(), next instanceof Client.Screen || next instanceof PauseScreen);
         if (next instanceof Client.Screen) {
-            LIFT.reset(); // The screen owns the captured rise. Resume to the natural hand position on close.
+            lowering = null;
+            LIFT.reset(); // The storage screen owns the captured rise until the player closes it.
         } else if (next != null && !(next instanceof PauseScreen)) {
+            lowering = null;
             IDLE.quiet();
             LIFT.reset();
             TabletDevice.forgetHeld();
@@ -158,7 +166,7 @@ public final class HeldTablet {
         var mc = Minecraft.getInstance();
         var held = observe(mc);
         // Vanilla can still be animating an older stack after a hotbar switch.
-        if (held == null || event.getHand() != held.hand() || event.getItemStack() != held.stack()) return;
+        if (held == null || event.getHand() != held.hand() || !ItemStack.matches(event.getItemStack(), held.stack())) return;
         boolean paused = mc.screen instanceof PauseScreen;
         if (mc.screen != null && !paused) {
             if (mc.screen instanceof Client.Screen) event.setCanceled(true);
@@ -190,9 +198,34 @@ public final class HeldTablet {
         float progress = LIFT.progress(visualTime);
         int column = IDLE.paintColumn(visualTime);
         TabletDevice.Portrait portrait = TabletDevice.visit(IDLE.row(), column);
-        TabletDevice.drawHandling(graphics, width, height, held.player(), pose.grip(), progress, portrait, true);
-        TabletDevice.rememberHeld(new TabletDevice.Held(pose.grip(), progress, width, height, held.player(), held.stack(),
+        TabletDevice.Grip grip = pose.grip();
+        var close = TabletDevice.takeClosing();
+        if (close != null && close.width() == width && close.height() == height) {
+            lowering = close.afterMenuSync(held.player());
+            loweringAt = visualTime;
+        }
+        if (lowering != null) {
+            float remaining = lowering.progress() - (visualTime - loweringAt) / (float) TabletLift.RETURN_MS;
+            if (remaining <= 0 || !lowering.stillHeld(held.player()) || lowering.width() != width || lowering.height() != height) {
+                lowering = null;
+            } else {
+                progress = Math.max(progress, remaining);
+                var previous = TabletDevice.peekHeld();
+                // Pause reuses the already blended grip. Blending it again each paint would creep.
+                grip = paused && previous != null && previous.stillHeld(held.player()) ? previous.grip()
+                        : blendGrip(lowering.grip(), grip, TabletHandlingPose.eased(1f - remaining / lowering.progress()));
+                portrait = lowering.portrait();
+            }
+        }
+        TabletDevice.drawHandling(graphics, width, height, held.player(), grip, progress, portrait, true);
+        TabletDevice.rememberHeld(new TabletDevice.Held(grip, progress, width, height, held.player(), held.stack(),
                 held.hand(), held.selectedSlot(), now, portrait));
+    }
+
+    private static TabletDevice.Grip blendGrip(TabletDevice.Grip from, TabletDevice.Grip to, float amount) {
+        if (amount == 0) return from;
+        return new TabletDevice.Grip(to.right(), Mth.lerp(amount, from.swing(), to.swing()),
+                Mth.lerp(amount, from.equip(), to.equip()), to.light(), from.motion().toward(to.motion(), amount));
     }
 
     private HeldTablet() {}

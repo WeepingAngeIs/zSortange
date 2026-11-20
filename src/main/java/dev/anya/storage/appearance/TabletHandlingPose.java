@@ -15,31 +15,37 @@ public final class TabletHandlingPose {
     }
     public static Matrix4f deviceMatrix(int width, int height, boolean right, float swing, float equip, float progress) {
         float lift = eased(progress), rest = 1f - lift, side = right ? 1f : -1f;
-        float heldScale = Math.min(width * .36f / WIDTH, height * .42f / HEIGHT);
+        float heldScale = Math.min(width * .36f / WIDTH, height * .43f / HEIGHT);
         float arc = (float) Math.sin(Math.sqrt(Math.clamp(swing, 0f, 1f)) * Math.PI);
-        float heldX = width * (.5f + side * (.225f - arc * .025f));
-        float heldY = height * (.78f + .15f * Math.clamp(equip, 0f, 1f) - .052f * arc);
+        float heldX = width * (.5f + side * (.30f - arc * .018f));
+        // Keep the glass visible and let the lower edge of the case run out of the shot.
+        float heldY = height - heldScale * HEIGHT * .315f
+                + height * (.13f * Math.clamp(equip, 0f, 1f) - .032f * arc);
+        // Lift the wrist clear of the hotbar before bringing the glass square to the camera.
+        float travelY = lift + .82f * lift * rest;
         float scale = rest * heldScale + lift * openScale(width, height);
         return new Matrix4f()
-                .translation(rest * heldX + lift * width / 2f, rest * heldY + lift * height / 2f, 0)
+                .translation(rest * heldX + lift * width / 2f, (1f - travelY) * heldY + travelY * height / 2f, 0)
                 .scale(scale)
-                .rotateZ(rad(side * (5f + 3f * arc) * rest))
-                .rotateY(rad(-side * 19f * rest))
-                .rotateX(rad(39f * rest))
+                .rotateZ(rad(side * (4f + 3f * arc) * rest))
+                .rotateY(rad(-side * 17f * rest))
+                .rotateX(rad(30f * rest))
                 .translate(-WIDTH / 2f, -HEIGHT / 2f, 0);
     }
     public static Matrix4f armMatrix(int width, int height, boolean right, boolean slim, float swing, float equip, float progress) {
         float side = right ? 1f : -1f;
-        float wristX = -side * (slim ? 5.5f : 6f) / 16f;
-        // HumanoidModel.setupAnim resets both shoulder pivots to Y=2, including the slim model.
-        float wristY = 12f / 16f;
+        // Vanilla's neutral player arm has a 0.1 radian roll. Locate the center of its actual
+        // hand end after that roll and its (-/+5, 2, 0) shoulder translation, in model units.
+        float offset = slim ? .5f : 1f;
+        float wristX = -side * (5f + offset * (float) Math.cos(.1) + 10f * (float) Math.sin(.1)) / 16f;
+        float wristY = (2f + 10f * (float) Math.cos(.1) - offset * (float) Math.sin(.1)) / 16f;
         var tablet = deviceMatrix(width, height, right, swing, equip, progress);
-        var wrist = tablet.transformPosition(right ? 423f : 9f, 229f, -5f, new Vector3f());
+        var wrist = tablet.transformPosition(right ? 420f : 12f, 184f, -5f, new Vector3f());
         float armScale = 248f * tablet.getScale(new Vector3f()).x;
         // The wrist tracks the edge; the elbow approaches from below instead of rotating like a bolted handle.
         return new Matrix4f().translation(wrist)
-                .rotateZ(rad(side * (145f + 2f * eased(progress))))
-                .rotateX(rad(-23f - 13f * eased(progress))).rotateY(rad(side * 16f))
+                .rotateZ(rad(side * (140f + 7f * eased(progress))))
+                .rotateX(rad(-22f - 14f * eased(progress))).rotateY(rad(side * 16f))
                 .scale(armScale, armScale, -armScale)
                 .translate(-wristX, -wristY, 0);
     }

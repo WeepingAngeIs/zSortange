@@ -26,7 +26,8 @@ public final class StorageBlock extends BaseEntityBlock {
     @Override public BlockEntity newBlockEntity(BlockPos pos,BlockState state){return new StorageEntity(pos,state);}
     @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block,BlockState> builder){builder.add(FACING);}
     @Override public BlockState getStateForPlacement(BlockPlaceContext context){return defaultBlockState().setValue(FACING,context.getHorizontalDirection().getOpposite());}
-    @Override protected RenderShape getRenderShape(BlockState state){return kind.equals("chest")?RenderShape.ENTITYBLOCK_ANIMATED:RenderShape.MODEL;}
+    boolean hasHingedLid(){return kind.equals("chest") || kind.equals("cube");}
+    @Override protected RenderShape getRenderShape(BlockState state){return hasHingedLid()?RenderShape.ENTITYBLOCK_ANIMATED:RenderShape.MODEL;}
     @Override protected VoxelShape getShape(BlockState state,BlockGetter level,BlockPos pos,CollisionContext context){return kind.equals("chest")?Block.box(1,0,1,15,14,15):Shapes.block();}
     @Override public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level,BlockState state,BlockEntityType<T> type){return createTickerHelper(type,Content.STORAGE.get(),StorageEntity::tick);}
     @Override public void setPlacedBy(Level level,BlockPos pos,BlockState state,LivingEntity placer,ItemStack stack){

@@ -50,8 +50,16 @@ public final class TabletDevice {
             return by == player && by.getItemInHand(hand) == stack && by.getInventory().selected == slot
                     && rightSide(by, hand) == grip.right();
         }
+        /** Full menu sync replaces player slots with decoded ItemStacks. Adopt the copy only at the handoff. */
+        Held afterMenuSync(LocalPlayer by) {
+            if (stillHeld(by)) return this;
+            if (by != player || by.getInventory().selected != slot || rightSide(by, hand) != grip.right()) return null;
+            ItemStack synced = by.getItemInHand(hand);
+            return ItemStack.matches(stack, synced)
+                    ? new Held(grip, progress, width, height, by, synced, hand, slot, time, portrait) : null;
+        }
     }
-    private static Held lastHeld;
+    private static Held lastHeld, closing;
 
     public static boolean enabled() {
         return Boolean.parseBoolean(System.getProperty("anyastorage.tabletIntro", "true"));
@@ -128,7 +136,14 @@ public final class TabletDevice {
         return (player.getMainArm() == net.minecraft.world.entity.HumanoidArm.RIGHT) == (hand == InteractionHand.MAIN_HAND);
     }
     static void rememberHeld(Held sample) { lastHeld = sample; }
-    public static void forgetHeld() { lastHeld = null; }
+    static void forgetWorldFrame() { lastHeld = null; }
+    public static void forgetHeld() { lastHeld = null; closing = null; }
+    static void lowerFrom(Held sample) { closing = sample; }
+    static Held takeClosing() {
+        var sample = closing;
+        closing = null;
+        return sample;
+    }
     static Held peekHeld() { return lastHeld; }
     static Held takeHeld() {
         Held held = lastHeld;

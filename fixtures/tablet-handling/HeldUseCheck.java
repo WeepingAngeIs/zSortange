@@ -164,12 +164,32 @@ public final class HeldUseCheck {
         CLIENT.screen = null;
         HeldTablet.tick(null);
         check(paint(resumed + 8_010) == 0 && TabletDevice.face.equals(beforePause.portrait()),
-                "Closing storage must resume the face and return the tablet to its natural grip");
+                "A screen that never painted a tablet must resume the held face without inventing a lowering animation");
+        var closedFace = new TabletDevice.Portrait(3, 2);
+        var captured = TabletDevice.saved;
+        var closingGrip = new TabletDevice.Grip(true, .7f, .3f, captured.grip().light(), TabletHandMotion.STILL);
+        TabletDevice.lowerFrom(new TabletDevice.Held(closingGrip, 1f, captured.width(), captured.height(), captured.player(),
+                captured.stack(), captured.hand(), captured.slot(), Util.now, closedFace));
+        CLIENT.player.main = new ItemStack(Content.CUPID_TABLET.get()); // A late full inventory sync on closing.
+        long closeAt = resumed + 8_020;
+        check(paint(closeAt) == 1f && TabletDevice.painted == closingGrip && TabletDevice.face == closedFace,
+                "The first world frame after Escape must be the exact last painted case, grip and face");
+        float halfway = paint(closeAt + 95);
+        var middleGrip = TabletDevice.painted;
+        check(halfway == .5f && middleGrip.swing() < closingGrip.swing() && middleGrip.swing() > .12f
+                && TabletDevice.face == closedFace, "The return must carry the face and blend the updated world motion");
+        HeldTablet.screenOpening(new ScreenEvent.Opening(null, pause));
+        CLIENT.screen = pause;
+        check(paint(closeAt + 1_095) == halfway && TabletDevice.painted == middleGrip && TabletDevice.face == closedFace,
+                "Pausing during the return must preserve its pose");
+        CLIENT.screen = null;
+        HeldTablet.tick(null);
+        check(paint(closeAt + 1_192) == 0 && TabletDevice.face != closedFace, "The return must finish after 190 unpaused ms");
         HeldTablet.screenOpening(new ScreenEvent.Opening(null, unrelated));
         CLIENT.screen = unrelated;
         CLIENT.screen = null;
-        check(paint(resumed + 8_020) == 0 && TabletDevice.face == null && TabletDevice.visits == 1,
+        check(paint(closeAt + 1_202) == 0 && TabletDevice.face == null && TabletDevice.visits == 1,
                 "An unrelated screen must release the prior visit");
-        System.out.println("PASS: held motion, view bob option, existing face through the lift, pause/resume, and storage return");
+        System.out.println("PASS: shared hand motion, view bob option, carried face through lift and Escape, smooth 190 ms return with pause/resume");
     }
 }

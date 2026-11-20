@@ -154,7 +154,7 @@ class Shell:
         self.face('item_label',points,'heart',[(0,uvbottom),(0,uvtop),(1,uvtop),(1,uvbottom)])
 
 
-def make_shell():
+def make_shell(rear_panel='shell'):
     s = Shell()
     # Continuous octagonal surfaces use only the outer faces. The lower well is hollow.
     foot=ring(0,5.45,5.45,1.35); sole=ring(.82,6.22,6.05,1.65)
@@ -162,7 +162,7 @@ def make_shell():
     edge=ring(8.04,6.92,6.93,2.14); seal=ring(8.43,6.66,6.70,2.03)
     s.cap('base',foot,'rubber',False)
     s.band('base',foot,sole,'rubber'); s.band('base',sole,hip,'chin')
-    s.band('base',hip,waist,('shell','steel','flank','steel','shell','steel','flank','steel'))
+    s.band('base',hip,waist,('shell','steel','flank','steel',rear_panel,'steel','flank','steel'))
     s.band('base',waist,edge,'rose'); s.band('base',edge,seal,'rubber')
     mouth=ring(8.43,5.66,5.72,1.9); floor=ring(4.10,4.85,4.86,1.6)
     s.band('base',seal,mouth,'trim'); s.band('base',mouth,floor,'liner'); s.cap('base',floor,'well',True)
@@ -180,13 +180,13 @@ def make_shell():
     return s
 
 
-def obj(shell):
+def obj(shell, material_file='chest_shell.mtl'):
     vertices={}; uvs={}
     for faces in shell.parts.values():
         for xyz,uv in faces:
             for point in xyz: vertices.setdefault(point,len(vertices)+1)
             for point in uv: uvs.setdefault(point,len(uvs)+1)
-    lines=['mtllib chest_shell.mtl']
+    lines=['mtllib '+material_file]
     lines += ['v '+' '.join(f'{n/16:.6f}' for n in point) for point in vertices]
     lines += ['vt '+' '.join(f'{n:.7f}' for n in point) for point in uvs]
     for part,faces in shell.parts.items():
