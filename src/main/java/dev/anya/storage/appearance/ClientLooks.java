@@ -36,6 +36,10 @@ public final class ClientLooks {
         Path file=FMLPaths.CONFIGDIR.get().resolve("anya-storage-plus-client.json");
         try{if(Files.isRegularFile(file)&&Files.size(file)<=4096){Options loaded=Config.JSON.fromJson(Files.readString(file),Options.class);if(loaded!=null)options=loaded;}}catch(Exception ignored){}
         options.particleBudget=Math.max(0,Math.min(8,options.particleBudget));
+        TabletThreatCue.receiver = (connection, cue) -> {
+            var current = Minecraft.getInstance().getConnection();
+            if (current != null && current.getConnection() == connection) TabletThreat.receive(cue.octant());
+        };
         for (var tablet : List.of(Content.CUPID_TABLET.get(), Content.CREATIVE_TABLET.get()))
             ItemProperties.register(tablet,ExpansionPackets.id("cupid_face"),
                     (stack,level,living,seed)->TabletFaces.face(stack).property());
@@ -75,7 +79,7 @@ public final class ClientLooks {
     public static final class Events {
         @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){worn.clear();previousLevel=null;ClientInteriors.clear();}
         @SubscribeEvent public static void tick(ClientTickEvent.Post event){
-            var mc=Minecraft.getInstance();if(mc.level!=previousLevel){previousLevel=mc.level;worn.clear();ClientInteriors.clear();}
+            var mc=Minecraft.getInstance();if(mc.level!=previousLevel){previousLevel=mc.level;worn.clear();ClientInteriors.clear();TabletThreat.clear();}
             if(mc.level==null||mc.player==null)return;
             worn.entrySet().removeIf(e->mc.level.getEntity(e.getKey())==null);
             if(mc.player.tickCount%20!=0||!options.particles||mc.isPaused())return;

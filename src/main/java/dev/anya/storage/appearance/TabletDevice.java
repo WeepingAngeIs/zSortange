@@ -115,6 +115,7 @@ public final class TabletDevice {
     static void forgetWorldFrame() { lastHeld = null; }
     public static void forgetHeld() { lastHeld = null; closing = null; }
     static void lowerFrom(Held sample) { closing = sample; }
+    static boolean hasClosing() { return closing != null; }
     static Held takeClosing() {
         var sample = closing;
         closing = null;

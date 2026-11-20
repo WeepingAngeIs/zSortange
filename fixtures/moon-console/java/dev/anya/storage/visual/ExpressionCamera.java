@@ -41,7 +41,7 @@ final class ExpressionCamera {
             CLOCK.setAccessible(true);
         } catch (ReflectiveOperationException e) { throw new ExceptionInInitializerError(e); }
     }
-    private enum Step { SETUP, SELECT, USE, OPEN, CLOSE, END }
+    private enum Step { SETUP, SELECT, USE, OPEN, CLOSE, WARN, END }
     private static Step step=Step.SETUP;
     private static CompletableFuture<Void> task;
     private static int ticks, attempt, active=-1;
@@ -76,7 +76,9 @@ final class ExpressionCamera {
         var srv=mc.getSingleplayerServer();var id=mc.player.getUUID();
         task=srv.submit(()->op.accept(srv.getPlayerList().getPlayer(id)));
     }
+    static GuardianBlink clock(Client.Screen s) throws IllegalAccessException {return (GuardianBlink)CLOCK.get(s);}
     static void frame(Minecraft mc) throws ReflectiveOperationException {
+        if(step==Step.WARN){WarningCamera.frame(mc);return;}
         if(step!=Step.OPEN || !(mc.screen instanceof Client.Screen s) || !(mc.player.containerMenu instanceof StoreMenu m)
                 || !m.storageView() || !m.showsTabletIntro())return;
         var clock=(GuardianBlink)CLOCK.get(s);
@@ -93,7 +95,7 @@ final class ExpressionCamera {
     static void tick(Minecraft mc) throws Exception {
         if(task!=null){if(!task.isDone())return;task.join();task=null;}
         if(mc.player==null||mc.level==null||mc.getOverlay()!=null)return;
-        require(++ticks<360,"Timed out at "+step+", opening "+attempt+", sequence "+active);
+        if(step!=Step.WARN)require(++ticks<360,"Timed out at "+step+", opening "+attempt+", sequence "+active);
         switch(step){
             case SETUP -> {if(mc.screen!=null)return;server(mc,ExpressionCamera::setup);next(Step.SELECT);}
             case SELECT -> {
@@ -126,7 +128,12 @@ final class ExpressionCamera {
                 if(mc.screen!=null||ticks<8)return;
                 attempt++;
                 if(attempt==8)server(mc,p->require(Config.setTabletOpeningChancePercent(p,Config.get().revision,0),"Set miss policy"));
-                next(attempt<=8?Step.SELECT:Step.END);
+                next(attempt<=8?Step.SELECT:Step.WARN);
+            }
+            case WARN -> {
+                if(!WarningCamera.tick(mc))return;
+                receipt.add("Actual visible targeted husks delivered private glances left and right, one blip each. Proximity, other targets, wall, range, inactive inventory and lingering encounter yielded no extra blip. A threat during tablet opening left inventory on time with no deferred warning.");
+                next(Step.END);
             }
             case END -> {
                 require(visits.size()==8 && captures.size()==8,"Eight real openings captured");

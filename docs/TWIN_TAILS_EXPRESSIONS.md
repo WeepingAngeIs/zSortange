@@ -15,11 +15,17 @@ The regular and Creative Cupid Tablets share eight opening animations. Each play
 
 In an unselected hotbar slot, Cupid can hold her long squint or make one of the visits in rows 4–6. Select the tablet mid-visit and she finishes from the expression you caught. The icon and the tablet in your hand go dark together within 15 game ticks.
 
+## Mob warning
+
+Carry either tablet in your hotbar or offhand. When a visible hostile within 12 blocks targets you, Cupid glances toward it for just under a second and your tablet plays one quiet glass note. Her glance follows the direction relative to where you were facing when she noticed it. Mobs chasing another player or a Guardian leave her quiet.
+
+You can pick up the tablet during the glance and watch it finish. Other attackers joining the same fight keep the same warning. It can return after four seconds without a hostile targeting you within 16 blocks. Tablet openings take priority, and an encounter during an opening stays quiet when you close the inventory.
+
 ## Artwork
 
-Openings 0–6 use all 63 frames of the original Cloud head-only sheet. Its six named expressions are Blush, Smug, Tongue out, Wink, Giggle and Pout. The sideways smile comes from Tongue out. The generator also uses neutral and speaking-mouth frames plus a smug blink. Counting frames from zero, the wink lands on row 2 frame 8 and row 5 frame 3. The giggle follows on row 5 frames 4 and 5. [Original face and pose assignments](https://github.com/WeepingAngeIs/zSortange/blob/de3b2bd99a936a1bc563178c1412c7c0bb34899a/scripts/tablet_expression_art.py)
+Openings 0–6 use all 63 frames of the original Cloud head-only sheet from `tabletintro.5`. Its six named expressions are Blush, Smug, Tongue out, Wink, Giggle and Pout. The sideways smile comes from Tongue out. The generator also uses neutral and speaking-mouth frames plus a smug blink. Counting frames from zero, the wink lands on row 2 frame 8 and row 5 frame 3. The giggle follows on row 5 frames 4 and 5.
 
-Opening 7 and the long squint use the earlier polished twin-tails portrait. It has separate open, half-closed and closed eyelids. Holding the half-closed pose gives Cupid her squint. Cycling through it twice gives her the classic double blink. The pocket-room hologram uses the full-body art. [Original portrait generator](https://github.com/WeepingAngeIs/zSortange/blob/f2869f95489a64730f3703bc785c40274036855b/scripts/tablet_guardian_art.py)
+Opening 7 and the long squint use the earlier polished twin-tails portrait from `tabletintro.4`. It has separate open, half-closed and closed eyelids. Holding the half-closed pose gives Cupid her squint. Cycling through it twice gives her the classic double blink. The pocket-room hologram uses the full-body art.
 
 | Source artwork | SHA-256 |
 | --- | --- |

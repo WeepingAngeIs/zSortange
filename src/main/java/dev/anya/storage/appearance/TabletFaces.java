@@ -20,6 +20,7 @@ final class TabletFaces {
     private static TabletIdle.Face carriedFace;
 
     static void clear() {
+        TabletThreat.clear();
         java.util.Arrays.fill(slots, null);
         java.util.Arrays.fill(incoming, null);
         visits.clear();
@@ -74,8 +75,26 @@ final class TabletFaces {
         }
     }
 
+    static long clock() { return clock; }
+
+    static boolean hasVisibleTablet() {
+        for (int i = 0; i < 9; i++) if (slots[i] != null) return true;
+        return slots[SLOTS - 1] != null;
+    }
+
+    private static boolean visible(ItemStack stack) {
+        for (int i = 0; i < 9; i++) if (slots[i] == stack) return true;
+        return slots[SLOTS - 1] == stack;
+    }
+
     static TabletIdle.Face face(ItemStack stack) {
         if (stack == carried && carried != null) return carriedFace;
+        var warning = TabletThreat.face(clock);
+        if (warning != null && visible(stack)) return warning;
+        return idleFace(stack);
+    }
+
+    static TabletIdle.Face idleFace(ItemStack stack) {
         TabletIdle visit = visits.get(stack);
         // A world item, display model or creative palette has no local equip history.
         return visit == null ? TabletIdle.Face.SQUINT : visit.frame(clock);

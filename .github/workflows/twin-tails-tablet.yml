@@ -1,4 +1,4 @@
-name: Twin Tails tablet expressions
+name: Twin Tails expressions and private mob warning
 on:
   push:
     branches: [experiment/twin-tails-tablet-expressions]
@@ -26,6 +26,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.3'
+      - name: Prepare image reading and software rendering on the runner
+        run: |
+          if ! /usr/bin/python3 -c 'import PIL.Image' || ! command -v xvfb-run || ! command -v xauth; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-pil xvfb xauth libgl1-mesa-dri
+          fi
       - name: Build the playable JAR and isolated camera
         run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle -I fixtures/moon-console/init.gradle jar moonCameraJar createMoonVisualLaunchScript durableAuditClasspath
       - name: Verify the actual JAR's opening policy, faces and shared hand clock
@@ -39,10 +45,14 @@ jobs:
           python3 -B fixtures/tablet-chance/check_server.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_check.py "${args[@]}" --packaged
           java -cp "$jar" fixtures/tablet-intro/GuardianBlinkCheck.java
+          mkdir -p build/expression-checks
+          javac --release 21 -cp "$jar" -d build/expression-checks fixtures/tablet-expressions/ThreatEncounterCheck.java
+          java -cp "$jar:build/expression-checks" dev.anya.storage.ThreatEncounterCheck
           python3 -B fixtures/tablet-lifecycle/run.py "${args[@]}" --packaged
           python3 -B fixtures/tablet-handling/run_use.py "${args[@]}" --packaged
           /usr/bin/python3 -B fixtures/tablet-handling/check_shy_sprites.py "$jar"
-      - name: Open each expression in Minecraft and check a missed appearance
+          python3 -B fixtures/tablet-expressions/check_warning_sound.py "$jar"
+      - name: Check the expression cycle, immediate miss and private mob warnings in Minecraft
         env:
           ANYA_EXPRESSION_REVIEW: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
@@ -65,6 +75,7 @@ jobs:
           cp docs/TWIN_TAILS_EXPRESSIONS.md upload/TWIN_TAILS_EXPRESSIONS.md
           cp build/moon-review/client/expression-review.txt upload/EXPRESSIONS-CHECK.txt
           cp build/moon-review/gallery.png upload/expressions-in-game.png
+          cp build/moon-review/client/screenshots/warning-{left,right}.png upload/
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum *.jar > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4

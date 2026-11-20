@@ -22,5 +22,8 @@
   "frame_off": {
     "subtitle": "subtitles.anyastorage.frame_off",
     "sounds": ["anyastorage:frame/off"]
+  },
+  "tablet_warning": {
+    "sounds": ["anyastorage:tablet/warning"]
   }
 }

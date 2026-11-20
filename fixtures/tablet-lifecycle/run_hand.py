@@ -12,6 +12,10 @@ SRC = HERE.parents[1] / "src/main/java/dev/anya/storage/appearance"
 # The production event callbacks, idle state and actual NeoForge event classes run unmodified.
 HOST = {
     "net.minecraft.Util": "public class Util { public static long now; public static long getMillis(){return now;} }",
+    "dev.anya.storage.appearance.TabletWarningSound": """public class TabletWarningSound {
+        public static int plays;
+        public static void play(){ plays++; }
+    }""",
     "net.minecraft.util.Mth": """public class Mth {
         public static final float PI=(float)Math.PI;
         public static float sin(float x){return (float)Math.sin(x);}
@@ -148,6 +152,7 @@ HOST = {
         public static void forgetHeld() { saved = null; closing = null; }
         public static void forgetWorldFrame() { saved = null; }
         public static void lowerFrom(Held frame) { closing = frame; }
+        public static boolean hasClosing() { return closing != null; }
         public static Held takeClosing() { var frame = closing; closing = null; return frame; }
         public static Held peekHeld() { return saved; }
         public static void rememberHeld(Held held) { saved = held; }
@@ -192,7 +197,7 @@ def run(options):
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-d", compiled,
                    "-classpath", os.pathsep.join([app,libraries]), *[SRC / (name + ".java") for name in
                    ("HeldTablet","TabletFaces","TabletIdle","TabletLift","TabletHandMotion","TabletHandlingPose","TabletArmRenderer",
-                    "TabletDevice","GuardianBlink")]], scratch)
+                    "TabletDevice","GuardianBlink","TabletThreat","TabletWarningSound")]], scratch)
             app = os.pathsep.join([compiled.as_posix(), app])
         cp = os.pathsep.join([host.as_posix(), app, libraries])
         invoke(options.jdk, "javac", ["--release","21","-proc:none","-d",host,"-classpath",cp,

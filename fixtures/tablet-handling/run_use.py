@@ -23,15 +23,17 @@ def run(options):
             compiled.mkdir()
             src = HERE.parents[1] / "src/main/java/dev/anya/storage/appearance"
             production = ("HeldTablet", "TabletFaces", "TabletIdle", "TabletLift", "TabletHandMotion", "TabletHandlingPose", "TabletArmRenderer",
-                          "TabletDevice", "GuardianBlink")
+                          "TabletDevice", "GuardianBlink", "TabletThreat", "TabletWarningSound")
             invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", os.pathsep.join((app, libs)),
                    "-d", compiled, *(src / (name + ".java") for name in production)], scratch)
             app = os.pathsep.join((compiled.as_posix(), app))
         cp = os.pathsep.join((host.as_posix(), app, libs))
         invoke(options.jdk, "javac", ["--release", "21", "-proc:none", "-classpath", cp, "-d", host,
-               *sources(scratch / "stubs"), HERE / "HeldUseCheck.java",
+               *sources(scratch / "stubs"), HERE / "HeldUseCheck.java", HERE / "TabletThreatCheck.java",
                HERE.parent / "tablet-lifecycle/TabletIdleCheck.java"], scratch)
         invoke(options.jdk, "java", ["-classpath", cp, "dev.anya.storage.appearance.TabletIdleCheck"], scratch)
+        invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-classpath", cp,
+               "dev.anya.storage.appearance.TabletThreatCheck"], scratch)
         invoke(options.jdk, "java", ["-Djava.awt.headless=true",
                "-classpath", cp, "dev.anya.storage.appearance.HeldUseCheck"], scratch)
         invoke(options.jdk, "java", ["-Djava.awt.headless=true", "-Danyastorage.tabletIntro=false",

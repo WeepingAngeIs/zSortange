@@ -133,6 +133,7 @@ public final class HeldTablet {
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void screenOpening(ScreenEvent.Opening event) {
+        if (event.getNewScreen() != null) TabletThreat.clear();
         if (!TabletDevice.enabled()) return;
         observe(Minecraft.getInstance()); // The selected stack can change before the server menu arrives.
         pending = null;
@@ -154,6 +155,7 @@ public final class HeldTablet {
         if (mc.screen != null || !event.isUseItem() || useLatched) return;
         var held = observe(mc);
         if (held != null && event.getHand() == held.hand() && !held.player().isShiftKeyDown()) {
+            TabletThreat.clear();
             useLatched = true;
             LIFT.use(animationTime(Util.getMillis(), false));
         }
@@ -165,6 +167,7 @@ public final class HeldTablet {
         boolean paused = mc.screen instanceof PauseScreen;
         // Capture one display state before either the native hotbar or the hand is painted.
         TabletFaces.sample(mc.player, paused || mc.screen instanceof Client.Screen);
+        TabletThreat.expire(mc);
         if (!TabletDevice.enabled() || mc.screen != null && !paused) return;
         var held = observe(mc);
         if (held == null) return;
@@ -187,6 +190,11 @@ public final class HeldTablet {
 
     private static float remaining(long time) {
         return lowering.progress() - (time - loweringAt) / (float) TabletLift.RETURN_MS;
+    }
+
+    static boolean handling() {
+        return lowering != null || TabletDevice.hasClosing()
+                || owner != null && (useLatched || LIFT.progress(animationTime(Util.getMillis(), false)) > 0);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -242,8 +250,11 @@ public final class HeldTablet {
             }
         }
         TabletDevice.drawHandling(graphics, width, height, held.player(), grip, progress, portrait, true, creative);
+        // A server menu may arrive between paints. Its Escape handoff must never replay an old warning.
+        var returnPortrait = TabletThreat.face(TabletFaces.clock()) == null ? portrait
+                : TabletDevice.physicalFace(TabletFaces.idleFace(held.stack()), creative);
         TabletDevice.rememberHeld(new TabletDevice.Held(grip, progress, width, height, held.player(), held.stack(),
-                held.hand(), held.selectedSlot(), now, portrait));
+                held.hand(), held.selectedSlot(), now, returnPortrait));
     }
 
     private static TabletDevice.Grip blendGrip(TabletDevice.Grip from, TabletDevice.Grip to, float amount) {

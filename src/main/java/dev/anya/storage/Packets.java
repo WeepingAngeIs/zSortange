@@ -17,6 +17,7 @@ public final class Packets {
         @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
     public static void register(RegisterPayloadHandlersEvent event) {
+        TabletThreatCue.register(event);
         event.registrar("3").playToServer(Action.TYPE,Action.CODEC,(p,context)->context.enqueueWork(()->{
             if(!(context.player() instanceof ServerPlayer player) || player.isSpectator() || !player.isAlive()) return;
             try {

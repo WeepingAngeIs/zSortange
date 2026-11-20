@@ -149,6 +149,9 @@ public final class MoonCamera {
         }
     }
 
+    @SubscribeEvent public static void warningSound(net.neoforged.neoforge.client.event.sound.PlaySoundEvent event) {
+        if(EXPRESSIONS)WarningCamera.sound(event);
+    }
     @SubscribeEvent public static void sound(PlayLevelSoundEvent.AtPosition event) {
         if (!event.getLevel().isClientSide() || !CENTER.equals(event.getPosition()) || event.getSound() == null) return;
         String id = event.getSound().value().getLocation().toString();
