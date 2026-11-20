@@ -27,11 +27,14 @@ public final class PocketGameTests {
         hub.setMember(p.getUUID(),BasePermissions.VISIT);check(h,hub.permits(p,BasePermissions.VISIT)&&!hub.permits(p,BasePermissions.VIEW|BasePermissions.WITHDRAW),"Visit does not grant storage");h.succeed();
     }
     @GameTest(template="empty") public static void entranceRecipeCannotEatContainers(GameTestHelper h){
-        boolean old=ExpansionRules.get().pocketStorage;ExpansionRules.get().pocketStorage=true;
+        boolean old=ExpansionRules.get().pocketStorage;
         try{
             var recipe=new PocketContent.EntranceRecipe(CraftingBookCategory.MISC);List<ItemStack> items=new ArrayList<>();
             for(int i=0;i<4;i++)items.add(new ItemStack(Items.OBSIDIAN));for(int i=0;i<2;i++)items.add(new ItemStack(Items.ENDER_PEARL));for(int i=0;i<2;i++)items.add(new ItemStack(Items.AMETHYST_SHARD));items.add(new ItemStack(Items.DIAMOND));
-            check(h,recipe.matches(CraftingInput.of(3,3,items),h.getLevel())==Boolean.getBoolean("anyastorage.pocketPrototype"),"Recipe requires explicit prototype launch as well as config");
+            ExpansionRules.get().pocketStorage=false;
+            check(h,!recipe.matches(CraftingInput.of(3,3,items),h.getLevel()),"Recipe requires the operator pocket storage opt-in");
+            ExpansionRules.get().pocketStorage=true;
+            check(h,recipe.matches(CraftingInput.of(3,3,items),h.getLevel()),"The operator can enable the entrance recipe");
             items.set(8,new ItemStack(Content.BACKPACK.get()));check(h,!recipe.matches(CraftingInput.of(3,3,items),h.getLevel()),"Never consume a stored backpack as a core");
             check(h,recipe.assemble(CraftingInput.of(3,3,items),h.getLevel().registryAccess()).is(PocketContent.ITEM.get()),"Distinct entrance result");
         }finally{ExpansionRules.get().pocketStorage=old;}h.succeed();

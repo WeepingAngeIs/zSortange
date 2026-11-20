@@ -84,7 +84,7 @@ public final class ServerChanceCheck {
         var actor = new ServerPlayer();
         var draft = Config.copy(Config.get());
         draft.expansion.tabletOpeningChancePercent = 0;
-        Config.validateDraft(draft); // An existing dormant pocket gate is unrelated to this edit.
+        Config.validateDraft(draft); // Existing pocket settings are independent of this edit.
         require(Config.tabletOpeningChance().percent() == 24 && Files.readString(config).equals(previous), "Draft escaped");
         require(!Config.setTabletOpeningChancePercent(actor,11,24), "Unauthorized no-op");
         require(!Config.setTabletOpeningChancePercent(actor,11,100), "Unauthorized edit");

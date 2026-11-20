@@ -39,6 +39,7 @@ held_tablet = source("appearance/HeldTablet.java")
 policy = source("ExpansionRules.java")
 bounds = source("pocket/RoomBounds.java")
 guide = source("pocket/ChestPadGuide.java")
+admin_commands = source("StorageSettingsCommands.java")
 
 bound = body(item, "static StorageEntity bound(")
 ordered(bound, 'tag.contains("HubPos")', 'tag.getString("HubDimension")',
@@ -92,6 +93,20 @@ ordered(body(client, "void drawPocketPadSummary("), "!menu.storageView()", "!men
         "lore.lines().get(0)", "graphics.drawString")
 assert 'commandLink("Room upgrades", ClickEvent.Action.RUN_COMMAND, PLAN)' in body(guide, "Component upgradesLink(")
 ordered(body(guide, "void offerUpgradesOnArrival("), "canOfferUpgrades(player, room)", "upgradesLink()")
+assert "Config.pocketStorageEnabled()" in body(pockets, "boolean enabled()")
+for source_code in (pockets, policy):
+    assert 'Boolean.getBoolean("anyastorage.pocketPrototype")' not in source_code
+ordered(body(pockets, "void validateStorageChange("), "enabling && dimension(server) == null",
+        "throw new IllegalArgumentException", "!enabling && currentServer == server && !PREPARING.isEmpty()",
+        "throw new IllegalArgumentException")
+assert '.then(StorageSettingsCommands.settings())' in source("AnyaStorage.java")
+ordered(source("pocket/PocketEvents.java"), "StorageSettingsCommands.pocketCommands()", 'Commands.literal("exit")')
+ordered(body(admin_commands, " settings()"), 'Commands.literal("settings").requires(source -> source.hasPermission(2))',
+        'Commands.literal("set")', "apply(actor, key, value)")
+ordered(body(admin_commands, " pocketCommands()"), 'pocketToggle("enable", true)', 'pocketToggle("disable", false)',
+        'Commands.literal("status").requires(source -> source.hasPermission(2))')
+ordered(body(admin_commands, " pocketToggle("), "requires(source -> source.hasPermission(2))", "apply(actor, POCKET_STORAGE")
+ordered(body(admin_commands, "boolean apply("), "Config.serverSettings(actor)", "Config.setServerSetting(actor, snapshot.revision()")
 assert re.search(r"tabletOpeningChancePercent\s*=\s*24;", policy)
 assert re.search(r"chestCameoEnabled\s*=\s*false;", policy)
 assert re.search(r"chestCameoChancePercent\s*=\s*1;", policy)
@@ -114,3 +129,5 @@ print("PASS: both terminals use existing binding, dimension, radius, and access 
 print("PASS: terminal flags require View, and only the Cupid Tablet rolls for the intro")
 print("PASS: chest and backpack settings default off, use separate branches, and never gate input")
 print("PASS: both authorized pocket terminals show the pad summary and gated Room upgrades link")
+print("PASS: pocket authorization reads the effective server policy without the old JVM gate")
+print("PASS: operator settings and pocket commands use the shared revision-checked policy API")

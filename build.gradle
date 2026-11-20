@@ -20,7 +20,6 @@ neoForge {
         server {
             server(); programArgument '--nogui'
             if(project.hasProperty('pocketTest')) {
-                systemProperty 'anyastorage.pocketPrototype', 'true'
                 systemProperty 'anyastorage.pocketTests', 'true'
                 gameDirectory = project.file('run-pocket-tests')
             }

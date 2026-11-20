@@ -860,7 +860,7 @@ public final class StoreMenu extends AbstractContainerMenu {
                     if(percent<0||percent>100)throw new IllegalArgumentException("Enter a whole percentage from 0 to 100.");
                     if(tabletChance)draft.expansion.tabletOpeningChancePercent=percent;
                     else draft.expansion.chestCameoChancePercent=percent;
-                },tabletChance?"Only authorized Remote opens. 0% skips the intro.":"Direct Anya chests only, with Chest Cupid cameo enabled.",
+                },tabletChance?"Only authorized Cupid Tablet opens. 0% skips the intro.":"Direct Anya chests only, with Chest Cupid cameo enabled.",
                         "Left +1%, right -1%. Shift-click sets the typed percentage.",
                         "Back, then Review changes and Apply server settings to save.");
                 continue;
@@ -877,7 +877,9 @@ public final class StoreMenu extends AbstractContainerMenu {
             }
             button(i,ControlGlyph.setting(f.getName()),value instanceof Boolean enabled?(enabled?State.ON:State.OFF):State.NORMAL,f.getName()+": "+value,c->{
                 try{
-                    if(f.getType()==boolean.class)f.setBoolean(draft.expansion,!f.getBoolean(draft.expansion));
+                    if (key.equals("pocketStorage") || key.equals("pocketEditing"))
+                        ServerSettings.update(draft, "expansion." + key, Boolean.toString(!Boolean.TRUE.equals(value)));
+                    else if(f.getType()==boolean.class)f.setBoolean(draft.expansion,!f.getBoolean(draft.expansion));
                     else if(f.getType()==int.class)f.setInt(draft.expansion,c.shift?Integer.parseInt(input):f.getInt(draft.expansion)+(c.button==1?-1:1));
                     else if(f.getType()==double.class)f.setDouble(draft.expansion,c.shift?Double.parseDouble(input):Math.round((f.getDouble(draft.expansion)+(c.button==1?-.01:.01))*10000)/10000.0);
                     else if(f.getType()==String.class){if(input.isBlank())throw new IllegalArgumentException("Enter an exact material registry ID first.");f.set(draft.expansion,input);}

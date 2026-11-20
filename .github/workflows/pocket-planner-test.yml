@@ -1,8 +1,8 @@
-name: Build physical Cupid Tablet test JAR
+name: Build in-game pocket admin test JAR
 
 on:
   push:
-    branches: [experiment/physical-cupid-tablet]
+    branches: [experiment/pocket-admin-commands]
 
 permissions:
   contents: read
@@ -31,7 +31,7 @@ jobs:
         run: python3 -B fixtures/tablet-chance/check_opening_sources.py
       - name: Build the candidate JAR
         run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle clean jar durableAuditClasspath
-      - name: Check packaged tablet behavior and chest planner
+      - name: Check packaged settings, tablet behavior and chest planner
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +52,18 @@ jobs:
           printf -- '-classpath\n"%s:%s"\n' "$classpath" "$client_jar" > "$classpath_file"
           python3 -B fixtures/chest-expansion/run.py "${args[@]}" --packaged
           python3 -B fixtures/room-plan/run.py "${args[@]}"
+      - name: Test enable, disable and recovery on a fresh server
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          test ! -e run-pocket-tests/world
+          mkdir -p run-pocket-tests
+          printf 'eula=true\n' > run-pocket-tests/eula.txt
+          gradle --no-daemon --max-workers=2 -PpocketTest runServer | tee pocket-runtime.log
+          grep -F 'ANYA_POCKET_RUNTIME_OK' pocket-runtime.log
+          grep -F 'ANYA_POCKET_ADMIN_TRANSITIONS_OK' pocket-runtime.log
+          grep -F 'ANYA_POCKET_UNLOAD_OK' pocket-runtime.log
       - name: Verify and prepare the test artifact
         shell: bash
         run: |
@@ -97,17 +109,23 @@ jobs:
               assert recipe["result"]["id"] == "anyastorage:cupid_tablet"
               assert recipe["neoforge:conditions"] == [{"type":"anyastorage:recipe_group","group":"terminals"}]
               assert all(ingredient.get("item") != "anyastorage:remote" for ingredient in recipe["key"].values())
-              print("PASS: both terminal item models, tablet animation and independent recipe packaged")
+              for entry in ("data/anyastorage/dimension/pockets.json",
+                            "data/anyastorage/dimension_type/pockets.json",
+                            "dev/anya/storage/ServerSettings.class",
+                            "dev/anya/storage/StorageSettingsCommands.class"):
+                  assert entry in jar.namelist(), entry
+              print("PASS: both terminal models, pocket dimension and operator settings API packaged")
           PY
           sed 's/TABLET_OPENING_CHANCE\.md/CUPID-SETTINGS.md/g' docs/FIELD_KIT.md > upload/FIELD-KIT.md
           cp docs/TABLET_OPENING_CHANCE.md upload/CUPID-SETTINGS.md
-          cp docs/PHYSICALTABLET.1-CHANGELOG.txt upload/CHANGELOG.txt
-          cp docs/PHYSICALTABLET.1-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/POCKETADMIN.1-CHANGELOG.txt upload/CHANGELOG.txt
+          cp docs/POCKETADMIN.1-PLAYTEST.txt upload/PLAYTEST.txt
+          cp docs/SERVER_SETTINGS.md upload/SERVER-SETTINGS.md
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$jar" > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-physicaltablet.1
+          name: anya-storage-plus-pocketadmin.1
           path: upload/
           if-no-files-found: error
           retention-days: 14

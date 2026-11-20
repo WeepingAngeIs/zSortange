@@ -39,7 +39,23 @@ public final class PocketService {
     private static IOException failure;
     private static long clock;
     private static int lastPreparedBlocks;
-    public static boolean enabled(){return Boolean.getBoolean("anyastorage.pocketPrototype")&&ExpansionRules.get().pocketStorage;}
+    public static boolean enabled(){return Config.pocketStorageEnabled();}
+
+    public static void validateStorageChange(MinecraftServer server, boolean enabling) {
+        if (enabling && dimension(server) == null)
+            throw new IllegalArgumentException("The pocket dimension is missing. Load the matching mod data before enabling pockets.");
+        if (!enabling && currentServer == server && !PREPARING.isEmpty())
+            throw new IllegalArgumentException("A pocket room is being prepared. Wait for it to finish before disabling pockets.");
+    }
+    public static void storageDisabled(MinecraftServer server) {
+        if (currentServer != server) return;
+        for (var lease : LEASES.snapshot()) {
+            UUID player = lease.player();
+            endLease(player, leasePlayer(server, player, PENDING.get(player)));
+        }
+        syncTickets(server);
+    }
+
     public static boolean inPocket(Level level){return level.dimension().equals(DIMENSION);}
     public static boolean ownTeleport(){return TELEPORT.get();}
     public static PocketLedger ledger(MinecraftServer server)throws IOException {
@@ -56,8 +72,7 @@ public final class PocketService {
     static boolean present(ServerPlayer p){return p.getServer()!=null&&(p.getServer().getPlayerList().getPlayer(p.getUUID())==p||(Boolean.getBoolean("anyastorage.pocketTests")&&p instanceof FakePlayer));}
     public static String status(){return "Experimental pocket gate="+enabled()+"; active pockets="+LEASES.active().size()+"; leases="+LEASES.snapshot().size()+"; Anya-owned ticket requests="+TICKETS.size()+"; last preparation writes="+lastPreparedBlocks+" (not total engine chunks)";}
     private static String disabledHint() {
-        return "Pocket access is gated OFF. On a test server, start with -Danyastorage.pocketPrototype=true"
-                + " and enable Pocket storage in /anya storage.";
+        return "Pocket storage is off. An operator can use /anya pocket enable on the test server.";
     }
     private static void error(ServerPlayer p,Exception e){AnyaStorage.tell(p,e.getMessage()==null?"Pocket action denied":e.getMessage());AnyaStorage.LOG.warn("Pocket action stopped for {}: {}",p.getUUID(),e.toString());}
     public static StorageEntity home(ServerPlayer p,PocketLedger.Pocket pocket){
@@ -69,7 +84,7 @@ public final class PocketService {
     }
     /** Loaded-only home checks. The radius stays spherical; claims can restrict, never widen it. */
     public static String authorize(ServerPlayer p,PocketLedger.Pocket pocket,PocketLeases.Kind kind,boolean arriving,int rights){
-        if(!enabled())return "Pocket prototype is gated OFF";
+        if(!enabled())return disabledHint();
         if(!p.isAlive()||p.isSpectator())return "Player cannot interact";
         if(arriving&&kind==PocketLeases.Kind.VISIT){String travel=PocketTravelGuard.reason(p);if(!travel.isEmpty())return travel;}
         StorageEntity hub=home(p,pocket);if(hub==null)return "Loaded home hub/entrance identity is missing or changed";
@@ -226,13 +241,13 @@ public final class PocketService {
         // Recovery stays active even when the feature is switched OFF.
         for(ServerPlayer p:server.getPlayerList().getPlayers())if(inPocket(p.level())&&LEASES.get(p.getUUID())==null&&!RECOVERY.containsKey(p.getUUID()))recover(p);
         for(PocketLeases.Lease l:LEASES.snapshot()){
-            Pending pending=PENDING.get(l.player());ServerPlayer p=pending==null?server.getPlayerList().getPlayer(l.player()):pending.player();
-            if(p==null&&Boolean.getBoolean("anyastorage.pocketTests"))p=TEST_PLAYERS.get(l.player());
+            Pending pending=PENDING.get(l.player());
+            ServerPlayer p=leasePlayer(server,l.player(),pending);
             var r=ledger==null?null:ledger.get(l.pocket());
             boolean valid=p!=null&&present(p)&&r!=null&&authorize(p,r,l.kind(),pending!=null,0).isEmpty();
             if(valid&&pending==null&&l.kind()==PocketLeases.Kind.REMOTE)valid=p.containerMenu instanceof StoreMenu m&&m.hasPocket(l.pocket());
             if(valid)valid=LEASES.renew(l.player(),r.epoch(),clock,80);
-            if(!valid){release(l.player());if(p!=null){p.closeContainer();if(inPocket(p.level()))recover(p);}}
+            if(!valid)endLease(l.player(),p);
         }
         LEASES.expire(clock);syncTickets(server);
         // One pocket receives preparation work per tick, never one budget per viewer.
@@ -304,6 +319,22 @@ public final class PocketService {
         savePlayer(p);if(l!=null&&back!=null)l.clearReturn(p.getUUID());
         AnyaStorage.tell(p,"Returned from pocket storage. No player or chest inventory was copied.");
     }
+    private static ServerPlayer leasePlayer(MinecraftServer server, UUID player, Pending pending) {
+        if (pending != null) return pending.player();
+        ServerPlayer online = server.getPlayerList().getPlayer(player);
+        if (online == null && Boolean.getBoolean("anyastorage.pocketTests")) return TEST_PLAYERS.get(player);
+        return online;
+    }
+
+    private static void endLease(UUID player, ServerPlayer online) {
+        if (online != null && inPocket(online.level())) {
+            recover(online);
+        } else {
+            release(player);
+            if (online != null) online.closeContainer();
+        }
+    }
+
     public static void recover(ServerPlayer p){p.closeContainer();release(p.getUUID());RECOVERY.put(p.getUUID(),p);RETRY.remove(p.getUUID());}
     public static void login(ServerPlayer p){
         try{if(inPocket(p.level())||ledger(p.getServer()).returning(p.getUUID())!=null)recover(p);}catch(IOException e){if(inPocket(p.level()))recover(p);else error(p,e);}

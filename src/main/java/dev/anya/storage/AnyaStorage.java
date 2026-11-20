@@ -46,7 +46,8 @@ public final class AnyaStorage {
     public static void tell(ServerPlayer player,String message) { player.sendSystemMessage(Component.literal("[Anya Storage] "+message)); }
     private static void commands(RegisterCommandsEvent event) {
         var storage=Commands.literal("storage").executes(c->{StoreMenu.settings(c.getSource().getPlayerOrException());return 1;})
-            .then(Commands.literal("status").executes(c->{c.getSource().sendSuccess(()->Component.literal(Config.lastStatus+" | "+Safety.status()),false);return 1;}));
+            .then(Commands.literal("status").executes(c->{c.getSource().sendSuccess(()->Component.literal(Config.lastStatus+" | "+Safety.status()),false);return 1;}))
+            .then(StorageSettingsCommands.settings());
         var root=Commands.literal("anya").then(storage)
             .then(Commands.literal("guide").executes(c->{var p=c.getSource().getPlayerOrException();if(dev.anya.storage.guide.GuideService.hasGuide(p))dev.anya.storage.guide.GuideService.open(p);else tell(p,"Recover Ancient Technology with /anya guide recover while carrying one ordinary Book.");return 1;})
                 .then(Commands.literal("recover").executes(c->dev.anya.storage.guide.GuideService.recover(c.getSource().getPlayerOrException()))))

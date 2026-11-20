@@ -28,11 +28,18 @@ HOST = {
         import net.minecraft.server.packs.repository.PackRepository;
         public class MinecraftServer {
             public boolean serverThread = true;
-            public int reloads;
+            public int reloads, pocketTransitions, pocketDisables;
+            public boolean pocketDimensionLoaded = true, pocketPreparing, deferReload;
+            public java.util.concurrent.CompletableFuture<Void> pendingReload;
             public boolean isSameThread() { return serverThread; }
             public PackRepository getPackRepository() { return new PackRepository(); }
             public java.util.concurrent.CompletableFuture<Void> reloadResources(java.util.Collection<String> ids) {
-                reloads++; return java.util.concurrent.CompletableFuture.completedFuture(null);
+                reloads++;
+                if (deferReload) {
+                    pendingReload = new java.util.concurrent.CompletableFuture<>();
+                    return pendingReload;
+                }
+                return java.util.concurrent.CompletableFuture.completedFuture(null);
             }
             public void execute(Runnable callback) { callback.run(); }
         }""",
@@ -45,6 +52,22 @@ HOST = {
             public boolean hasPermissions(int level) { return operator && level <= 2; }
             public java.util.UUID getUUID() { return new java.util.UUID(0,1); }
             public com.mojang.authlib.GameProfile getGameProfile() { return new com.mojang.authlib.GameProfile(getUUID(), "Test"); }
+        }""",
+    "dev.anya.storage.pocket.PocketService": """
+        import dev.anya.storage.Config;
+        import net.minecraft.server.MinecraftServer;
+        public final class PocketService {
+            public static void validateStorageChange(MinecraftServer server, boolean enabled) {
+                server.pocketTransitions++;
+                if (enabled && !server.pocketDimensionLoaded)
+                    throw new IllegalArgumentException("Missing pocket dimension");
+                if (!enabled && server.pocketPreparing)
+                    throw new IllegalArgumentException("Pocket preparation is active");
+            }
+            public static void storageDisabled(MinecraftServer server) {
+                if (Config.pocketStorageEnabled()) throw new AssertionError("Cleaning leases before disabling storage");
+                server.pocketDisables++;
+            }
         }""",
     "dev.anya.storage.AnyaStorage": """
         public class AnyaStorage {
@@ -94,8 +117,10 @@ def run(options):
         if not options.packaged:
             classes = temp / "compiled"
             classes.mkdir()
+            sources = ("Config.java", "StoreMenu.java", "ExpansionRules.java", "ServerSettings.java",
+                       "pocket/PocketService.java")
             invoke(jdk, "javac", ["--release", "21", "-proc:none", "-cp", os.pathsep.join((support, libs)),
-                                  "-d", classes, *(JAVA / n for n in ("Config.java","StoreMenu.java","ExpansionRules.java"))], temp)
+                                  "-d", classes, *(JAVA / name for name in sources)], temp)
             app = os.pathsep.join((str(classes), support))
         check_menu(jdk, app)
         paths = []
@@ -106,9 +131,12 @@ def run(options):
             path.write_text("package " + pkg + ";\n" + body, encoding="utf-8")
             paths.append(path)
         cp = os.pathsep.join((str(host), app, libs))
-        invoke(jdk, "javac", ["--release","21","-proc:none","-cp",cp,"-d",host,*paths,HERE / "ServerChanceCheck.java"], temp)
-        invoke(jdk, "java", ["-Djava.awt.headless=true","-Dfixture.config="+str(configdir),"-cp",cp,
-                             "dev.anya.storage.ServerChanceCheck",configdir], temp)
+        checks = ("ServerChanceCheck", "PocketSettingsCheck")
+        invoke(jdk, "javac", ["--release", "21", "-proc:none", "-cp", cp, "-d", host,
+                              *paths, *(HERE / (name + ".java") for name in checks)], temp)
+        for name in checks:
+            invoke(jdk, "java", ["-Djava.awt.headless=true", "-Dfixture.config=" + str(configdir), "-cp", cp,
+                                 "dev.anya.storage." + name, configdir], temp)
 
 
 if __name__ == "__main__":

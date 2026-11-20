@@ -1,6 +1,7 @@
 package dev.anya.storage.pocket;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.anya.storage.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
@@ -26,10 +27,10 @@ public final class PocketRuntimeSmoke {
         void succeed(){running=false;getLevel.getServer().saveEverything(true,true,true);getLevel.getServer().halt(false);}
     }
     private static void check(Fixture h,boolean value,String message){if(!value)throw new IllegalStateException(message);}
-    private static ServerPlayer player(Fixture h,String name){
+    private static ServerPlayer player(Fixture h,String name,boolean operator){
         var profile=new GameProfile(UUID.randomUUID(),name);
         var p=new ServerPlayer(h.getLevel().getServer(),h.getLevel(),profile,net.minecraft.server.level.ClientInformation.createDefault()){
-            @Override public boolean hasPermissions(int ignored){return false;}
+            @Override public boolean hasPermissions(int level){return operator&&level<=2;}
         };
         var connection=new net.minecraft.network.Connection(net.minecraft.network.protocol.PacketFlow.SERVERBOUND){
             @Override public boolean isMemoryConnection(){return true;}
@@ -39,6 +40,10 @@ public final class PocketRuntimeSmoke {
         net.neoforged.neoforge.network.registration.NetworkRegistry.configureMockConnection(connection);
         h.getLevel().getServer().getPlayerList().placeNewPlayer(connection,p,net.minecraft.server.network.CommonListenerCookie.createInitial(profile,false));
         return p;
+    }
+    private static int pocketCommand(ServerPlayer actor,int permission,String action)throws CommandSyntaxException {
+        return actor.getServer().getCommands().getDispatcher().execute("anya pocket "+action,
+                actor.createCommandSourceStack().withPermission(permission));
     }
     @net.neoforged.bus.api.SubscribeEvent public static void started(net.neoforged.neoforge.event.server.ServerStartedEvent event)throws Exception {
         if(!Boolean.getBoolean("anyastorage.pocketTests"))return;
@@ -55,8 +60,10 @@ public final class PocketRuntimeSmoke {
         catch(Throwable error){running=false;AnyaStorage.LOG.error("ANYA_POCKET_RUNTIME_FAILED",error);server.halt(false);}
     }
     private static void exercise(Fixture h)throws Exception {
-        ExpansionRules.get().pocketStorage=true;
-        var server=h.getLevel().getServer();ServerPlayer owner=player(h,"PocketOwner"),visitor=player(h,"PocketGuest");
+        var server=h.getLevel().getServer();ServerPlayer owner=player(h,"PocketOwner",true),visitor=player(h,"PocketGuest",false);
+        check(h,System.getProperty("anyastorage.pocketPrototype")==null,"Pocket smoke must omit the old JVM gate");
+        check(h,!PocketService.enabled(),"Fresh disposable config starts with pockets off");
+        check(h,pocketCommand(owner,2,"enable")==1&&PocketService.enabled(),"Operator enabled pockets through the registered command without a JVM gate");
         BlockPos hp=h.absolutePos(new BlockPos(1,1,1)),ep=h.absolutePos(new BlockPos(3,1,1));
         h.setBlock(1,1,1,Content.HUB.get());h.setBlock(3,1,1,PocketContent.ENTRANCE.get());h.setBlock(3,0,3,Blocks.STONE);h.setBlock(4,0,3,Blocks.STONE);
         StorageEntity hub=(StorageEntity)h.getLevel().getBlockEntity(hp);hub.owner=owner.getUUID();
@@ -68,6 +75,7 @@ public final class PocketRuntimeSmoke {
         UUID id=entrance.pocket;var r=PocketService.ledger(server).get(id);hub.setMember(visitor.getUUID(),BasePermissions.VIEW);
         check(h,!PocketService.authorize(visitor,r,PocketLeases.Kind.VISIT,true,0).isEmpty(),"Storage viewer cannot enter without Visit");
         PocketService.enter(owner,entrance);
+        h.runAfterDelay(1,()->checkDisableDuringPreparation(h,owner,id));
         h.runAfterDelay(150,()->{
             try{
                 check(h,PocketService.inPocket(owner.level()),"Owner actually crossed into registered pocket dimension");
@@ -144,10 +152,10 @@ public final class PocketRuntimeSmoke {
                 var record=PocketService.ledger(server).get(id);var level=PocketService.dimension(server);var chest=(StorageEntity)level.getBlockEntity(PocketService.chestPositions(record).getFirst());
                 check(h,Transactions.same(chest.getItem(0),named),"Reanchor/logout/recovery never copied or removed chest contents");
                 AnyaStorage.LOG.info("ANYA_POCKET_RUNTIME_OK: actual dimension crossings; two embedded-channel ServerPlayer identities; four physical chests; components; Visit; revocation; home remote; anchor destruction/reanchor; logout/login hooks; zero final Anya-owned requests. Normal player-file save verification ran; not real-client multiplayer or forced socket disconnect testing.");
-                PocketService.logout(owner);PocketService.logout(visitor);
+                verifyAdminTransitions(h,owner,visitor,hub,remote,record,chest,named);
             }catch(Exception e){throw new AssertionError(e);}
         });
-        h.runAfterDelay(940,()->{
+        h.runAfterDelay(1060,()->{
             try{
                 var record=PocketService.ledger(server).get(id);var level=PocketService.dimension(server);int remaining=0;
                 for(int x=(record.x()-1)>>4;x<=(record.x()+32)>>4;x++)for(int z=(record.z()-1)>>4;z<=(record.z()+32)>>4;z++)
@@ -156,6 +164,109 @@ public final class PocketRuntimeSmoke {
                 AnyaStorage.LOG.info("ANYA_POCKET_UNLOAD_OK: zero Anya-owned tickets and zero of the 16 destination chunk positions loaded after 600 additional idle ticks; isolated server only, not full-pack retention proof");
                 h.succeed();
             }catch(Exception e){throw new AssertionError(e);}
+        });
+    }
+
+    private static void checkDisableDuringPreparation(Fixture h,ServerPlayer owner,UUID pocketId) {
+        try {
+            var record=PocketService.ledger(server).get(pocketId);
+            if (record.stage()==PocketLedger.Stage.RESERVED&&tick<100) {
+                h.runAfterDelay((int)tick+1,()->checkDisableDuringPreparation(h,owner,pocketId));
+                return;
+            }
+            check(h,record.stage()==PocketLedger.Stage.BUILDING,"First visit must enter durable BUILDING before the operator disable attempt");
+            long revision=Config.get().revision;
+            check(h,pocketCommand(owner,2,"disable")==0,"Operator disable must refuse an active room preparation");
+            check(h,PocketService.enabled()&&Config.get().revision==revision&&PocketService.lease(owner.getUUID())!=null
+                    &&PocketService.ledger(server).get(pocketId).stage()==PocketLedger.Stage.BUILDING,
+                    "Rejected disable must retain live policy, in-flight room and lease");
+        } catch (Exception e) { throw new AssertionError(e); }
+    }
+
+    private static void verifyAdminTransitions(Fixture h,ServerPlayer owner,ServerPlayer guest,StorageEntity hub,
+            ItemStack remote,PocketLedger.Pocket original,StorageEntity chest,ItemStack named)throws Exception {
+        UUID id=original.id();
+        UUID chestIdentity=chest.existingStorageIdentity();
+        check(h,chestIdentity!=null,"Original chest has a durable identity before the operator test");
+        var entrance=(PocketContent.EntranceEntity)h.getLevel().getBlockEntity(BlockPos.of(original.anchor().entrance()));
+        var homePosition=owner.position();
+        var guestRemote=remote.copy();
+        guest.getInventory().setItem(0,guestRemote);
+        hub.setMember(guest.getUUID(),BasePermissions.VIEW);
+        check(h,Config.setServerSetting(owner,Config.get().revision,"expansion.pocketEditing","true")&&RoomEditor.enabled(),
+                "Enable editing for the atomic disable check");
+        PocketService.enter(owner,entrance);
+        check(h,PocketService.remote(guest,guestRemote,hub),"Bound guest Remote routes to the same pocket");
+
+        h.runAfterDelay(370,()->{
+            try {
+                check(h,PocketService.inPocket(owner.level())&&guest.level()==h.getLevel(),"One player visits; the second views from home");
+                var ownerView=new PocketView(owner,original,PocketLeases.Kind.VISIT);
+                StoreMenu.pocket(owner,ownerView);
+                check(h,owner.containerMenu instanceof StoreMenu menu&&menu.hasPocket(id),"Visitor has an open pocket menu");
+                check(h,guest.containerMenu instanceof StoreMenu menu&&menu.hasPocket(id)&&menu.capacity()==216&&!menu.privateView(),
+                        "Authorized guest can see the linked pocket's real capacity");
+                var ownerLease=PocketService.lease(owner.getUUID());
+                var guestLease=PocketService.lease(guest.getUUID());
+                check(h,ownerLease!=null&&ownerLease.kind()==PocketLeases.Kind.VISIT
+                        &&guestLease!=null&&guestLease.kind()==PocketLeases.Kind.REMOTE,"Both independent leases are active");
+                try {
+                    pocketCommand(guest,0,"disable");
+                    throw new AssertionError("A nonoperator reached the pocket disable command");
+                } catch (CommandSyntaxException expected) {}
+                check(h,PocketService.enabled()&&PocketService.lease(guest.getUUID())!=null,"Nonoperator attempt did not change pocket access");
+
+                check(h,pocketCommand(owner,2,"disable")==1&&!PocketService.enabled()&&!ExpansionRules.get().pocketEditing,
+                        "The registered admin command disabled storage and editing together");
+                check(h,owner.containerMenu==owner.inventoryMenu&&guest.containerMenu==guest.inventoryMenu,
+                        "Admin disable immediately closed both viewers' menus");
+                check(h,PocketService.lease(owner.getUUID())==null&&PocketService.lease(guest.getUUID())==null,
+                        "Admin disable immediately released both pocket leases");
+                check(h,PocketService.recovering(owner.getUUID())&&!PocketService.recovering(guest.getUUID())
+                        &&PocketService.ledger(server).returning(owner.getUUID())!=null,
+                        "Only the physical visitor is returned, with the durable record still present before save");
+            } catch (Exception e) { throw new AssertionError(e); }
+        });
+        h.runAfterDelay(400,()->{
+            try {
+                check(h,owner.level()==h.getLevel()&&owner.position().distanceToSqr(homePosition)<0.01
+                        &&PocketService.ledger(server).returning(owner.getUUID())==null,
+                        "Disable returned the occupant home and cleared the record after saving");
+                check(h,guest.level()==h.getLevel()&&guest.containerMenu==guest.inventoryMenu
+                        &&PocketService.ownedTicketRequests()==0,"Remote guest stayed home and temporary tickets expired");
+                PocketService.enter(owner,entrance);
+                PocketService.remote(guest,guestRemote,hub);
+                check(h,PocketService.lease(owner.getUUID())==null&&PocketService.lease(guest.getUUID())==null,
+                        "Both entry and Remote storage remain closed while disabled");
+
+                check(h,pocketCommand(owner,2,"enable")==1&&PocketService.enabled()&&!ExpansionRules.get().pocketEditing,
+                        "Re-enable restored storage without independently restoring edit access");
+                PocketService.enter(owner,entrance);
+                PocketService.remote(guest,guestRemote,hub);
+            } catch (Exception e) { throw new AssertionError(e); }
+        });
+        h.runAfterDelay(430,()->{
+            try {
+                check(h,PocketService.inPocket(owner.level())&&guest.containerMenu instanceof StoreMenu menu
+                        &&menu.hasPocket(id)&&menu.capacity()==216,"The same entrance and linked Remote work again after re-enable");
+                var reopened=PocketService.ledger(server).get(id);
+                check(h,original.equals(reopened)&&id.equals(entrance.pocket)&&id.equals(BagInventory.data(guestRemote).getUUID("PocketId")),
+                        "Disable and re-enable preserve the linked room identity, cell, anchor and epoch");
+                var view=new PocketView(owner,reopened,PocketLeases.Kind.VISIT);
+                StorageEntity keptChest=(StorageEntity)view.containers().getFirst();
+                check(h,chestIdentity.equals(keptChest.existingStorageIdentity())&&Transactions.same(keptChest.getItem(0),named),
+                        "Existing physical chest, item count and components survived both policy transitions");
+                PocketService.recover(owner);
+                guest.closeContainer();
+            } catch (Exception e) { throw new AssertionError(e); }
+        });
+        h.runAfterDelay(460,()->{
+            check(h,owner.level()==h.getLevel()&&PocketService.lease(owner.getUUID())==null
+                    &&PocketService.lease(guest.getUUID())==null&&PocketService.ownedTicketRequests()==0,
+                    "The reopened pocket released both leases and all owned ticket requests");
+            PocketService.logout(owner);
+            PocketService.logout(guest);
+            AnyaStorage.LOG.info("ANYA_POCKET_ADMIN_TRANSITIONS_OK: operator commands; rejected disable during BUILDING; active visit and remote leases closed; safe return; re-enable kept pocket, chest and item identity");
         });
     }
     private PocketRuntimeSmoke(){}

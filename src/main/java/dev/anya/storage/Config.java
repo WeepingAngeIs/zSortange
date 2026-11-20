@@ -1,6 +1,7 @@
 package dev.anya.storage;
 
 import com.google.gson.*;
+import dev.anya.storage.pocket.PocketService;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,6 +20,7 @@ public final class Config {
     private static volatile Data live;
     private static Path path;
     private static boolean reloading;
+    private static volatile boolean pocketActivationPending;
     public static String lastStatus = "Not initialized";
     public static final List<String> GROUPS = List.of("backpacks", "hubs", "terminals", "containers", "upgrades", "endgame");
     public static final List<String> UPGRADE_IDS = List.of("pickup", "feeding", "refill", "crafting", "smelting", "compacting", "resupply");
@@ -26,6 +28,8 @@ public final class Config {
     public static final List<String> SYMBOLS = List.of("heart", "star", "square", "circle", "diamond", "leaf", "gear");
     private static final List<String> CUPID_SETTINGS = List.of(
             "tabletOpeningChancePercent", "chestCameoEnabled", "chestCameoChancePercent", "backpackCameoEnabled");
+    private static final List<String> RUNTIME_EXPANSION_SETTINGS = java.util.stream.Stream.concat(
+            CUPID_SETTINGS.stream(), java.util.stream.Stream.of("pocketStorage", "pocketEditing")).toList();
 
     public static final class Tier {
         public String id, name, predecessor, material;
@@ -76,17 +80,39 @@ public final class Config {
     }
     /** Apply one operator edit from the logical server thread using the normal config transaction. */
     public static synchronized boolean setTabletOpeningChancePercent(ServerPlayer actor, long expectedRevision, int percent) {
-        if (actor == null || actor.getServer() == null || !actor.getServer().isSameThread()) return false;
-        if (!canSave(actor, expectedRevision)) return false;
-        if (percent < 0 || percent > 100) {
-            AnyaStorage.tell(actor, "Tablet opening chance must be a whole percentage from 0 to 100.");
+        return setServerSetting(actor, expectedRevision, "expansion.tabletOpeningChancePercent", Integer.toString(percent));
+    }
+
+    /** Immutable server-side values for a pack settings adapter. */
+    public record SettingsSnapshot(long revision, Map<String, Object> values) {}
+
+    public static SettingsSnapshot serverSettings(ServerPlayer actor) {
+        if (!onServerThread(actor) || !actor.hasPermissions(2)) return null;
+        Data current = get();
+        return new SettingsSnapshot(current.revision, ServerSettings.values(current));
+    }
+
+    /** Apply a single named setting with the same transaction used by the operator menu. */
+    public static synchronized boolean setServerSetting(ServerPlayer actor, long expectedRevision, String key, String value) {
+        if (!onServerThread(actor) || !canSave(actor, expectedRevision)) return false;
+        Data current = get();
+        Data draft = copy(current);
+        try {
+            ServerSettings.update(draft, key, value);
+        } catch (IllegalArgumentException e) {
+            AnyaStorage.tell(actor, e.getMessage());
             return false;
         }
-        Data current = get();
-        if (percent == current.expansion.tabletOpeningChancePercent) return true;
-        Data draft = copy(current);
-        draft.expansion.tabletOpeningChancePercent = percent;
+        if (JSON.toJsonTree(current).equals(JSON.toJsonTree(draft))) return true;
         return applyDraft(actor, draft);
+    }
+
+    private static boolean onServerThread(ServerPlayer actor) {
+        return actor != null && actor.getServer() != null && actor.getServer().isSameThread();
+    }
+
+    public static boolean pocketStorageEnabled() {
+        return get().expansion.pocketStorage && !pocketActivationPending;
     }
     public static Data copy(Data data) { return JSON.fromJson(JSON.toJson(data),Data.class); }
     static Data read(Path file) throws IOException {
@@ -121,6 +147,7 @@ public final class Config {
     }
     public static void init() {
         path=FMLPaths.CONFIGDIR.get().resolve("anya-storage-plus.json").toAbsolutePath();
+        pocketActivationPending=false;
         try {
             if(Files.exists(path)) {
                 live=read(path);
@@ -210,48 +237,62 @@ public final class Config {
         return true;
     }
     private static boolean onlyCupidSettingsChanged(Data before, Data after) {
+        return onlyExpansionSettingsChanged(before, after, CUPID_SETTINGS);
+    }
+    private static boolean onlyExpansionSettingsChanged(Data before, Data after, List<String> keys) {
         if (after.expansion == null) return false;
         JsonObject expected = JSON.toJsonTree(before).getAsJsonObject();
         JsonObject actual = JSON.toJsonTree(after).getAsJsonObject();
         JsonObject previousExpansion = expected.getAsJsonObject("expansion");
         JsonObject nextExpansion = actual.getAsJsonObject("expansion");
         if (previousExpansion.equals(nextExpansion)) return false;
-        for (String key : CUPID_SETTINGS) previousExpansion.add(key, nextExpansion.get(key));
+        for (String key : keys) previousExpansion.add(key, nextExpansion.get(key));
         return expected.equals(actual);
     }
     public static synchronized boolean save(ServerPlayer actor,Data draft) {
-        if (!canSave(actor, draft.revision)) return false;
+        if (!onServerThread(actor) || draft == null || !canSave(actor, draft.revision)) return false;
         return applyDraft(actor, draft);
     }
-    /** Both entry points hold the Config lock and have already checked permission, revision and reload state. */
+    /** The callers hold the Config lock and have checked thread, permission, revision and reload state. */
     private static boolean applyDraft(ServerPlayer actor, Data draft) {
         Data before=copy(live), next=copy(draft);
-        boolean justCupidSettings = onlyCupidSettingsChanged(before, next);
+        boolean reload = !onlyExpansionSettingsChanged(before, next, RUNTIME_EXPANSION_SETTINGS);
+        boolean pocketChanged = next.expansion != null && before.expansion.pocketStorage != next.expansion.pocketStorage;
+        var server = actor.getServer();
         try {
-            validate(next, justCupidSettings); // A visual-only edit leaves dormant pocket settings as loaded.
+            validate(next, onlyCupidSettingsChanged(before, next));
+            if (pocketChanged) PocketService.validateStorageChange(server, next.expansion.pocketStorage);
             for(Tier t:next.tiers) {
                 Tier old=before.tier(t.id);
                 if(t.enabled&&!t.id.equals("starter")&&(old==null||!old.enabled||!old.material.equals(t.material)))
                     require(installed(t.material),"Cannot enable missing material "+t.material);
             }
             next.revision=Math.addExact(live.revision,1);
-            persist(next); live=next;
+            persist(next);
+            // A mixed edit can still roll back after reload. Keep new pocket construction closed until it succeeds.
+            pocketActivationPending = reload && pocketChanged && next.expansion.pocketStorage;
+            live=next;
         } catch(Exception e) { AnyaStorage.tell(actor,"Not saved: "+e.getMessage()); return false; }
+        if (pocketChanged && !next.expansion.pocketStorage) PocketService.storageDisabled(server);
         if(before.audit||next.audit) AnyaStorage.LOG.info("Storage config revision {} by {} [{}]",next.revision,actor.getGameProfile().getName(),actor.getUUID());
-        if (justCupidSettings) {
+        if (!reload) {
             lastStatus="Applied revision "+next.revision;
             AnyaStorage.tell(actor,lastStatus);
             return true;
         }
         reloading=true;
-        var server=actor.getServer();
         try {
             server.reloadResources(List.copyOf(server.getPackRepository().getSelectedIds())).whenComplete((v,error)->server.execute(()->{
-                if(error==null) { reloading=false; lastStatus="Applied revision "+next.revision; AnyaStorage.tell(actor,lastStatus); }
+                if(error==null) {
+                    pocketActivationPending=false; reloading=false;
+                    lastStatus="Applied revision "+next.revision;
+                    AnyaStorage.tell(actor,lastStatus);
+                }
                 else {
                     AnyaStorage.LOG.error("Storage recipe reload failed",error);
                     try {
                         before.revision=next.revision+1; persist(before); live=before;
+                        pocketActivationPending=false;
                         server.reloadResources(List.copyOf(server.getPackRepository().getSelectedIds())).whenComplete((unused,recovery)->server.execute(()->{
                             reloading=recovery!=null;
                             lastStatus=recovery==null?"Reload failed; previous settings restored":"Recovery failed. Inspect logs and restart before edits";
@@ -260,7 +301,11 @@ public final class Config {
                     } catch(Exception failure) { lastStatus="Recovery failed; restart required"; AnyaStorage.LOG.error(lastStatus,failure); }
                 }
             }));
-        } catch(Exception e) { lastStatus="Reload could not start; restart required"; AnyaStorage.LOG.error(lastStatus,e); }
+        } catch(Exception e) {
+            lastStatus="Reload could not start; restart required";
+            AnyaStorage.LOG.error(lastStatus,e);
+            AnyaStorage.tell(actor,lastStatus);
+        }
         return true;
     }
     private static void persist(Data d) throws IOException {

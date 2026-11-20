@@ -1,0 +1,17 @@
+Pocket admin playtest for 0.3.0-beta.7-pocketadmin.1
+
+[ ] Use a disposable server and save with the matching client and no pocket
+    launch argument. An operator runs /anya pocket status to verify default
+    off. A non-operator cannot enable pockets or change admin settings.
+[ ] Run /anya pocket enable and check that storage is on and editing is off.
+    Bind the Remote or Cupid Tablet to the ordinary hub, crouch-use it on the
+    Home Void Cube, then stand and right-click the cube to visit.
+[ ] During first room construction, an attempt to disable pockets reports
+    that preparation must finish. After arrival, place a distinguishable
+    test item in a chest. Disable from another operator while a player is
+    inside. Check safe return and closure of an active remote inventory.
+[ ] Enable again, check the original item and binding, and restart cleanly.
+    Confirm the setting, bound item and pocket storage survived the restart.
+[ ] In the settings menu, toggle Pocket storage off, save, and check that
+    room editing turns off too. Enable storage again and verify editing
+    requires its own setting.

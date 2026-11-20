@@ -1,6 +1,6 @@
 # Anya Storage Plus field kit
 
-Experimental candidate `0.3.0-beta.7-physicaltablet.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
+Experimental candidate `0.3.0-beta.7-pocketadmin.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
 ## Place a keepsake shelf
 
@@ -13,6 +13,12 @@ Use the shelf while holding an item. It takes one item from the stack. In first 
 Look at your hatch and use `/anya furniture invite PlayerName` to invite an online friend. At the hatch, they can use their held stack or type `/anya furniture deliver Berries for your next trip`. The hatch keeps up to nine separate stacks with their notes. Senders have deposit access only. The owner can sneak and use an empty hand to collect one whole parcel and read the note. A full inventory leaves the parcel in place. Use `/anya furniture close` to clear the invitations.
 
 Claims still apply. In a pocket, viewing a shared display needs Visit and View, sending needs Visit and Deposit, and collecting needs the owner's View and Withdraw rights. Empty furniture can be removed by its owner.
+
+## Enable pockets in a test world
+
+As an operator, run `/anya pocket enable`, then `/anya pocket status`. The setting is saved and takes effect once the command succeeds. Use `/anya pocket disable` to switch off storage and room editing. If a room is being prepared, wait for it to finish and retry the disable.
+
+To test entry, crouch-right-click the hub with a Remote or Cupid Tablet, then crouch-right-click the Home Void Cube with the same item. Stand up and right-click the cube to visit. To enable editing separately, use `/anya storage settings set expansion.pocketEditing true`.
 
 ## Plan a corner of the pocket
 

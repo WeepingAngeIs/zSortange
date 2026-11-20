@@ -21,7 +21,7 @@ public final class ExpansionRules {
         public boolean pocketEditing=false;
         public boolean pocketStorage=false, pocketActivityLog=false, pocketLogNames=false;
         public int pocketLimit=64, activePocketLimit=4, pocketContainers=32, pocketLogEntries=100;
-        /** Percentage of approved Remote openings that show Cupid before the inventory. */
+        /** Percentage of authorized Cupid Tablet openings with an intro. */
         public int tabletOpeningChancePercent=24;
         public boolean chestCameoEnabled=false;
         public int chestCameoChancePercent=1;
@@ -42,8 +42,7 @@ public final class ExpansionRules {
         range(o.tabletOpeningChancePercent,0,100,"Tablet opening chance (%)");
         range(o.chestCameoChancePercent,0,100,"Chest cameo chance (%)");
         range(o.activityLogEntries,1,128,"Base activity log entries");
-        require(dormantLoad||!o.pocketStorage||Boolean.getBoolean("anyastorage.pocketPrototype"),"Pocket storage remains experimental: requires the explicit disposable-test JVM gate anyastorage.pocketPrototype");
-        require(dormantLoad||!o.pocketEditing||(o.pocketStorage&&Boolean.getBoolean("anyastorage.pocketPrototype")),"Room editing requires both pocketStorage and the disposable-test JVM gate");
+        require(dormantLoad || !o.pocketEditing || o.pocketStorage, "Enable Pocket storage before enabling room editing.");
         require(Config.validId(o.pocketCoreMaterial),"Pocket core material must be a registry ID");
         range(o.pocketSessionTicks,200,12000,"Pocket session ticks");
         finite(o.stoneArmor,0,4,"Stone armor");finite(o.diamondArmor,0,6,"Diamond armor");

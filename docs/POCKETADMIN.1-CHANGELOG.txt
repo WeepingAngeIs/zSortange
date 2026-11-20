@@ -1,0 +1,11 @@
+Anya Storage Plus 0.3.0-beta.7-pocketadmin.1
+Experimental beta for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21
+
+- Operators can enable, disable or check Home Void Cube pocket access with
+  /anya pocket enable, /anya pocket disable and /anya pocket status.
+- The setting saves in-game and applies immediately with the pocket
+  dimension loaded. Fresh configurations start with pockets off.
+- Room editing requires its own opt-in. Turning pockets off turns editing
+  off, closes open pocket views and returns visitors through recovery.
+- /anya storage settings list, get and set expose supported gameplay settings.
+  Server settings adapters can use the same revision and validation checks.
