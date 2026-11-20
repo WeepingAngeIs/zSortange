@@ -11,6 +11,10 @@ public final class RoomBounds {
     static final int PAD_Z = 14;
     public static final List<Integer> PAD_X = List.of(6, 10, 22, 26);
 
+    public static int starterChestCount() {
+        return STARTER_CHEST_X.size();
+    }
+
     public static boolean chestPad(int x,int y,int z){
         return y == CHEST_Y && z == PAD_Z && PAD_X.contains(x);
     }

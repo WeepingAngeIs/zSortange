@@ -18,6 +18,8 @@ import net.minecraft.world.item.component.ItemLore;
 import java.lang.reflect.Field;
 import dev.anya.storage.appearance.*;
 import dev.anya.storage.images.InteriorImages;
+import dev.anya.storage.pocket.PocketService;
+import dev.anya.storage.pocket.RoomBounds;
 import net.neoforged.neoforge.network.PacketDistributor;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -34,6 +36,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private final SimpleContainer display=new SimpleContainer(54);
     private final ContainerData sync=new SimpleContainerData(18);
     private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256;
+    static final int POCKET_ACTION_SLOT = 51;
     private final int openingFlags;
     private final Map<Integer,Consumer<Click>> buttons=new HashMap<>();
     private final Map<Integer,Entry> entries=new HashMap<>();
@@ -285,10 +288,28 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(bag!=null)button(51,ControlGlyph.UPGRADES,"Backpack upgrades",c->navigate(Page.UPGRADES),bag.name(),"Saved capacity: "+bag.getContainerSize());
         else if(hub!=null)button(51,ControlGlyph.BASE,hub.ownedBy(owner)?"Base profile / ore feeder":"Base information",c->navigate(hub.ownedBy(owner)?Page.BASE:hub.canReadActivity(owner)?Page.ACTIVITY:Page.DIAGNOSTICS),hub.baseName,"Radius: "+hub.radius());
         else if(chest!=null)button(51,ControlGlyph.SYMBOL,chest.ownedBy(owner)?State.NORMAL:State.DISABLED,"Cycle front symbol",c->{if(chest.ownedBy(owner)){chest.symbol=Config.SYMBOLS.get((Config.SYMBOLS.indexOf(chest.symbol)+1)%Config.SYMBOLS.size());chest.profileChanged();}},"Owner/operator only",chest.symbol);
-        if(pocket!=null)button(51,ControlGlyph.EXIT,"Pocket exit / information",c->{if(dev.anya.storage.pocket.PocketService.inPocket(owner.level()))dev.anya.storage.pocket.PocketService.recover(owner);else AnyaStorage.tell(owner,"Home-radius storage only. Visit is a separate permission. Physical pocket: "+pocket.id());});
+        if (pocket != null) pocketControls(mayView, containers.size());
         toggle(52,ControlGlyph.FAVORITES,"Favorites only",favoritesOnly,()->favoritesOnly=!favoritesOnly);
         button(53,ControlGlyph.INFO,"Field kit and storage information",c->navigate(Page.FIELD_KIT),"Pack for a trip, set keep counts or undo a dump.","Real slots: "+capacity+" | Occupied: "+occupied,"Visible results: "+values.size(),"Click items in your inventory below to deposit.","Type name, @mod or #tag in the search bar.");
         decorateTransferReport();
+    }
+    private void pocketControls(boolean mayView, int chestCount) {
+        boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
+        String upgradeHint = "Visit through the linked Void Cube. With Build access, open chat and click Room upgrades.";
+        Consumer<Click> action = c -> {
+            if (PocketService.inPocket(owner.level())) PocketService.recover(owner);
+            else AnyaStorage.tell(owner, "Home-radius storage only. Visit is a separate permission. Physical pocket: "
+                    + pocket.id() + (showUpgrades ? ". " + upgradeHint : ""));
+        };
+        if (showUpgrades) {
+            // The client also draws the first line of this server-owned control beneath the slot total.
+            int occupiedPads = chestCount - RoomBounds.starterChestCount();
+            button(POCKET_ACTION_SLOT, ControlGlyph.POCKET_EDIT, "Room upgrades", action,
+                    occupiedPads + "/" + RoomBounds.PAD_X.size() + " upgrade pads occupied", upgradeHint,
+                    "The planner also requires room editing and View, Deposit and Withdraw access.");
+        } else {
+            button(POCKET_ACTION_SLOT, ControlGlyph.EXIT, "Pocket exit / information", action);
+        }
     }
     private String sourceLabel(Container inventory,BlockPos position,List<Container> stores){
         if(position==null)return "Backpack";

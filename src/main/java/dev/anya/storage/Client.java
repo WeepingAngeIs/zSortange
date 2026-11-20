@@ -286,7 +286,8 @@ public final class Client {
                 if(face!=null)return switch(face.glyph()){
                     case SCROLL_UP->"Scroll up";case SCROLL_DOWN->"Scroll down";case ORGANIZE->"Organize";
                     case QUICKSTACK->"QuickStack";case DUMP->"Dump";case PROTECT->"Lock slots";case UPGRADES->"Upgrades";
-                    case BASE->"Base";case SYMBOL->"Symbol";case EXIT->"Pocket";case FAVORITES->"Favorites";case INFO->"Field kit";
+                    case BASE->"Base";case SYMBOL->"Symbol";case EXIT->"Pocket";case POCKET_EDIT->"Upgrades";
+                    case FAVORITES->"Favorites";case INFO->"Field kit";
                     default->stack.getHoverName().getString();
                 };
             }
@@ -301,6 +302,18 @@ public final class Client {
             ItemLore lore=stack.get(DataComponents.LORE);
             if(lore!=null)lines.addAll(lore.lines());
             g.renderComponentTooltip(font,lines,x,y);
+        }
+        private void drawPocketPadSummary(GuiGraphics graphics, int y, int color) {
+            int slot = StoreMenu.POCKET_ACTION_SLOT;
+            if (!menu.storageView() || !menu.remoteOpening() || menu.privateView() || !menu.controlSlot(slot)) return;
+            ItemStack control = menu.getSlot(slot).getItem();
+            ControlGlyph.Face face = ControlGlyph.read(control);
+            if (face == null || face.glyph() != ControlGlyph.POCKET_EDIT) return;
+            ItemLore lore = control.get(DataComponents.LORE);
+            if (lore != null && !lore.lines().isEmpty()) {
+                String summary = font.plainSubstrByWidth(lore.lines().get(0).getString(), 170);
+                graphics.drawString(font, summary, StorageGrid.Layout.GRID_X, y, color, false);
+            }
         }
         @Override public void render(GuiGraphics g,int mx,int my,float partial){
             // The existing screenshot fixture delegates paint with a synthetic inventory at the title screen.
@@ -353,6 +366,7 @@ public final class Client {
             }
             int iy=layout.inventoryY();String summary=menu.privateView()?"Private contents":menu.storageView()?(menu.filteredView()?menu.resultCount()+" matches / "+menu.capacity()+" slots":menu.occupiedSlots()+" occupied / "+menu.capacity()+" slots"):"Your inventory";
             g.drawString(font,font.plainSubstrByWidth(summary,170),104,iy-19,colors[2],false);
+            drawPocketPadSummary(g, iy - 10, colors[2]);
             long remaining=menu.transferRemainders();
             for(int i=0;i<36;i++){
                 var box=layout.inventory(i);

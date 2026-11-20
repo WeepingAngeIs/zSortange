@@ -29,6 +29,8 @@ A plan holds eight spots, with room for one optional Labelled Storage Chest per 
 
 During a visit, open chat and click **Room upgrades** in the welcome message. You can bring the link back by right-clicking the floor while holding a plain Labelled Storage Chest. The planner shows the four pads and the cost. To build, aim at a vacant pad and use **Mark pad** to add an outline for free. **Apply plan** spends one chest and adds 54 physical slots. Press Enter to confirm the suggested action. The server rechecks reach, permissions and the chest limit at placement. The framed preview draws the added chest from the room's verified layout when the room is loaded and the viewer has permission.
 
+The bound pocket Remote shows the real slot total and how many of the four upgrade pads are occupied. Hover over **Upgrades** to see how to find **Room upgrades** during a visit.
+
 ## Pack, find and put things away
 
 Open storage and select **Field kit and storage information** in the action column.
