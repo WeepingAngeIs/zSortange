@@ -1,0 +1,58 @@
+name: Cat backpack trim clearance
+on:
+  push:
+    branches: [experiment/cat-trim]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  geometry:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      BASELINE: anya-storage-plus-0.3.0-beta.7-feeding.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-cattrim.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-feeding.1
+          run-id: 44876333779
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Build the playable from the verified backpack version
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = e91ed362fc7a9a325107802f45380ecebe3620d0
+          (cd reference && sha256sum --check SHA256SUMS.txt)
+          gradle --no-daemon --max-workers=2 --console=plain jar
+      - name: Measure the two trim blocks and render the front and oblique views
+        run: |
+          set -euo pipefail
+          if ! /usr/bin/python3 -c 'import PIL.ImageFont'; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          fi
+          mkdir -p upload
+          cp "build/libs/$PLAYABLE" upload/
+          /usr/bin/python3 -B scripts/check_cat_trim.py "reference/$BASELINE" "upload/$PLAYABLE" | tee upload/CHECKS.txt
+          /usr/bin/python3 -B scripts/render_cat_trim.py "reference/$BASELINE" "upload/$PLAYABLE" upload/trim-views.png | tee -a upload/CHECKS.txt
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-cattrim.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14

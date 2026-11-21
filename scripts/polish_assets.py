@@ -67,8 +67,13 @@ for name in ORDER:
   elements.append({'from':a,'to':b,'faces':faces})
  if 'cat' in name:
   del elements[12:]
-  for x in (3,10):
-   box([x,14,9],[x+3,14.8,10.5]);box([x+.6,14.8,9.2],[x+2.4,16,10.4]);box([x+1.1,16,9.4],[x+1.9,17,10.2])
+  # Raise only the lower trim's two exposed faces clear of the zipper flap.
+  trim_offset=1/16
+  for x,side in ((3,-1),(10,1)):
+   trim_x=x+side*trim_offset
+   box([trim_x,14,9+trim_offset],[trim_x+3,14.8,10.5+trim_offset])
+   box([x+.6,14.8,9.2],[x+2.4,16,10.4])
+   box([x+1.1,16,9.4],[x+1.9,17,10.2])
  if 'leaf' in name or name in ('oak','cherry','dark_oak'):
   del elements[12:]
   box([12,11,9],[15,11.8,9.6]);box([13,11.8,9],[15,13.3,9.6]);box([13.6,13.3,9],[14.5,14,9.6]);box([1,9,8],[3,9.8,8.6])
