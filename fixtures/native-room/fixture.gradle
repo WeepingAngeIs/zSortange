@@ -1,0 +1,32 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def playable = p.file(p.property('swapPlayable'))
+    def fixture = p.sourceSets.create('swapProbe')
+    fixture.java.srcDir p.file('fixtures/native-room/java')
+    fixture.resources.srcDir p.file('fixtures/native-room/resources')
+    p.neoForge.addModdingDependenciesTo(fixture)
+    p.dependencies.add(fixture.compileOnlyConfigurationName, p.files(playable))
+    def jar = p.tasks.register('swapProbeJar', Jar) {
+        dependsOn fixture.classesTaskName
+        from fixture.output
+        archiveBaseName = 'hosted-swap-fixture'
+        destinationDirectory = p.layout.buildDirectory.dir('native-room/fixture')
+    }
+    def runtime = p.sourceSets.create('swapRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(playable))
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(jar))
+    def dest = p.file('build/native-room')
+    p.neoForge.runs.create('swapReview') {
+        server()
+        programArgument '--nogui'
+        sourceSet = runtime
+        loadedMods = []
+        gameDirectory = new File(dest,'game')
+        jvmArguments.addAll '-Xmx1600m', '-Xms256m'
+        systemProperty 'anya.swapPlayable', playable.absolutePath
+    }
+    p.tasks.register('prepareSwapReview') {
+        dependsOn jar, 'createSwapReviewLaunchScript'
+        doLast { new File(dest,'launch.txt').text = p.tasks.named('createSwapReviewLaunchScript').get().launchScript.get().asFile.absolutePath }
+    }
+}}
