@@ -52,7 +52,7 @@ public final class RoomCover {
             if(!RoomBounds.decoration(x+2,y+65,z+2))continue;
             var pos=left.offset(0,y,z);
             var state=blocks.getBlockState(pos);
-            if(state.isAir() || state.is(dev.anya.storage.Content.CRATE.get()) || !RoomEditor.supported(state.getBlock()))continue;
+            if(state.isAir() || state.is(dev.anya.storage.Content.CRATE.get()) || state.getRenderShape()==net.minecraft.world.level.block.RenderShape.INVISIBLE)continue;
             if(!Safety.locationReason(viewer,level,pos).isEmpty() || blocks.getBlockState(pos)!=state)continue;
             // Furniture can carry private data. Draw its public default casing only.
             int id=Block.getId(state.hasBlockEntity()?state.getBlock().defaultBlockState():state);

@@ -26,6 +26,7 @@ import java.util.*;
 @EventBusSubscriber(modid=AnyaStorage.ID)
 public final class PocketEvents {
     @SubscribeEvent public static void tick(ServerTickEvent.Post e){PocketService.tick(e.getServer());RoomPlans.tick(e.getServer());RoomEditor.tick(e.getServer());}
+    @SubscribeEvent public static void checkNativeMenus(ServerTickEvent.Pre e){for(var p:e.getServer().getPlayerList().getPlayers())NativeRoomBuild.checkMenu(p);}
     @SubscribeEvent public static void stop(ServerStoppingEvent e){PocketService.stop(e.getServer());}
     @SubscribeEvent public static void login(PlayerEvent.PlayerLoggedInEvent e){if(e.getEntity() instanceof ServerPlayer p)PocketService.login(p);}
     @SubscribeEvent public static void logout(PlayerEvent.PlayerLoggedOutEvent e){if(e.getEntity() instanceof ServerPlayer p)PocketService.logout(p);}
@@ -50,13 +51,17 @@ public final class PocketEvents {
     }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void breakBlock(BlockEvent.BreakEvent e){
         if(RoomEditor.permissionEvent(e))return;
-        if(e.getLevel() instanceof Level level&&PocketService.inPocket(level)){e.setCanceled(true);return;}
+        if(e.getLevel() instanceof Level level&&PocketService.inPocket(level)){
+            if(!(e.getPlayer() instanceof ServerPlayer p) || RoomEditor.supported(e.getState().getBlock()) || !NativeRoomBuild.breakable(p,e.getPos()))e.setCanceled(true);
+            return;
+        }
         if(e.getLevel().getBlockEntity(e.getPos()) instanceof StorageEntity chest&&chest.pocketId!=null){e.setCanceled(true);return;}
         if(e.getLevel().getBlockEntity(e.getPos()) instanceof PocketContent.EntranceEntity entrance&&e.getPlayer() instanceof ServerPlayer p){
             if(!Objects.equals(entrance.owner,p.getUUID())||!Safety.locationReason(p,p.serverLevel(),e.getPos()).isEmpty())e.setCanceled(true);
         }
     }
-    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void place(BlockEvent.EntityPlaceEvent e){if(!RoomEditor.permissionEvent(e)&&e.getLevel() instanceof Level level&&PocketService.inPocket(level))e.setCanceled(true);}
+    @SubscribeEvent(priority=EventPriority.HIGHEST) public static void place(BlockEvent.EntityPlaceEvent e){if(!RoomEditor.permissionEvent(e)&&e.getLevel() instanceof Level level&&PocketService.inPocket(level)
+                && (!(e.getEntity() instanceof ServerPlayer p)||!NativeRoomBuild.place(p,e)))e.setCanceled(true);}
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void piston(PistonEvent.Pre e){if(e.getLevel() instanceof Level level&&PocketService.inPocket(level))e.setCanceled(true);}
     @SubscribeEvent public static void explosion(ExplosionEvent.Detonate e){if(PocketService.inPocket(e.getLevel())){e.getAffectedBlocks().clear();e.getAffectedEntities().clear();}}
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void join(EntityJoinLevelEvent e){
@@ -68,6 +73,8 @@ public final class PocketEvents {
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void clickToRemove(PlayerInteractEvent.LeftClickBlock e){
         if(!PocketService.inPocket(e.getLevel()))return;
         boolean denied=e.getUseBlock().isFalse() || e.getUseItem().isFalse();
+        if(!denied && !RoomEditor.supported(e.getLevel().getBlockState(e.getPos()).getBlock())
+                && (e.getLevel().isClientSide || e.getEntity() instanceof ServerPlayer p && NativeRoomBuild.breakable(p,e.getPos())))return;
         // NeoForge still sends START, but suppresses client mining, block callbacks, and predicted Creative breaks.
         e.setCanceled(true);
         if(!denied && e.getEntity() instanceof ServerPlayer p && e.getAction()==PlayerInteractEvent.LeftClickBlock.Action.START)
@@ -75,6 +82,33 @@ public final class PocketEvents {
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
         boolean denied=e.getUseBlock().isFalse() || e.getUseItem().isFalse();
+        if(PocketService.inPocket(e.getLevel()) && !denied){
+            var target=e.getLevel().getBlockState(e.getPos());
+            var held=e.getItemStack();
+            boolean nativeItem=NativeRoomBuild.useNative(held);
+            boolean ordinaryInteraction=!NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)
+                    && !RoomEditor.supported(target.getBlock()) && !nativeItem && !(held.getItem() instanceof net.minecraft.world.item.BlockItem);
+            if(nativeItem || ordinaryInteraction){
+                if(e.getLevel().isClientSide)return;
+                if(e.getEntity() instanceof ServerPlayer p){
+                    if(nativeItem && !net.minecraft.world.item.ItemStack.isSameItemSameComponents(held,new net.minecraft.world.item.ItemStack(held.getItem()))){
+                        p.displayClientMessage(Component.literal("This block item has custom data. It stays in your hand."),true);
+                    }else if(nativeItem && !NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)){
+                        var ctx=new net.minecraft.world.item.context.BlockPlaceContext(p,e.getHand(),held,e.getHitVec());
+                        var state=((net.minecraft.world.item.BlockItem)held.getItem()).getBlock().defaultBlockState();
+                        if(NativeRoomBuild.cell(p,ctx.getClickedPos(),state,false,state.hasBlockEntity())){
+                            // Only the held block item may run here; container use is a separate authorized click.
+                            e.setUseBlock(TriState.FALSE);return;
+                        }
+                    }else if(ordinaryInteraction && NativeRoomBuild.cell(p,e.getPos(),target,false,target.hasBlockEntity())){
+                        NativeRoomBuild.watch(p,e.getPos());e.setUseItem(TriState.FALSE);return;
+                    }
+                }
+                if(!NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)){
+                    e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);return;
+                }
+            }
+        }
         if(e.getLevel().isClientSide && PocketService.inPocket(e.getLevel())){
             // The use-on packet still goes to the server. Plain surfaces also allow the usual air-use
             // fallback for the tablet, backpack, guide, or an empty main hand with an item in the offhand.

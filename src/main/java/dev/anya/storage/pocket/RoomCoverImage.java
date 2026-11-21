@@ -46,7 +46,10 @@ final class RoomCoverImage {
         for(int x=0;x<W;x++)if(strips[x]!=null && tick-seen[x]<=40)for(int packed:strips[x]){
             int index=packed&255;if(index>=RoomCover.CELLS)continue;
             int z=index/H+2,y=index%H,rx=x+2;
-            var stamp=stamps.computeIfAbsent(packed>>>8,id->new Stamp(Block.stateById(id)));
+            var stamp=stamps.computeIfAbsent(packed>>>8,id->{
+                try{return new Stamp(Block.stateById(id));}
+                catch(RuntimeException unsupported){return new Stamp();}
+            });
             int left=56+6*rx-2*z-3,top=96+rx+3*z-6*y-7;
             for(int j=0;j<Stamp.SIZE;j++)for(int i=0;i<Stamp.SIZE;i++){
                 int k=j*Stamp.SIZE+i,px=left+i,py=top+j;
@@ -62,6 +65,7 @@ final class RoomCoverImage {
         static final int SIZE=13;
         final int[] color=new int[SIZE*SIZE];
         final float[] depth=new float[SIZE*SIZE];
+        Stamp(){}
         Stamp(BlockState state){
             Arrays.fill(depth,Float.NEGATIVE_INFINITY);
             var mc=Minecraft.getInstance();var model=mc.getBlockRenderer().getBlockModel(state);
