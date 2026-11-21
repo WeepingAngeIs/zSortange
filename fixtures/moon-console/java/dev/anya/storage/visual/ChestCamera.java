@@ -38,7 +38,7 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid="anyamoonreview", value=Dist.CLIENT)
 public final class ChestCamera {
     private static final BlockPos CRATE=new BlockPos(0,80,0), CUBE=CRATE.east(2);
-    private enum Step { JOIN, USE, CRATE, HOVER, TAKE, DEPOSIT, DRAWER, FAVORITES_ON, FILTER, FAVORITES_OFF, UNFILTER, DRAWER_CLOSED, DISPLAY, OFF,
+    private enum Step { JOIN, USE, CRATE, KEY_SEARCH, KEY_OPEN, KEY_CLOSE, KEY_REOPEN, HOVER, TAKE, DEPOSIT, DRAWER, FAVORITES_ON, FILTER, FAVORITES_OFF, UNFILTER, DRAWER_CLOSED, DISPLAY, OFF,
         ON, EMPTY, RESIZE, COMPACT_DRAWER, COMPACT_HOVER, COMPACT_WHEEL, COMPACT, SCROLLED, CUBE_USE, CUBE_COMPACT, HOTBAR, DEPOSIT_HOTBAR, WIDE, WHEEL, BOTTOM, RETURN_TOP,
         EMI_SEARCH, EMI_CELL, EMI_HOVER, EMI_RECIPE, RESUMED, POST_CLICK, FINISH, RECEIPT, DONE }
     private static Step step=Step.JOIN;
@@ -100,6 +100,13 @@ public final class ChestCamera {
         var callback=GLFW.glfwSetScrollCallback(handle,null);GLFW.glfwSetScrollCallback(handle,callback);
         require(callback!=null,"No game scroll callback");callback.invoke(handle,0,amount);
     }
+    private static void key(Minecraft mc,int key){
+        long handle=mc.getWindow().getWindow();
+        var callback=GLFW.glfwSetKeyCallback(handle,null);GLFW.glfwSetKeyCallback(handle,callback);
+        require(callback!=null,"No game keyboard callback");
+        int scan=GLFW.glfwGetKeyScancode(key);
+        callback.invoke(handle,key,scan,GLFW.GLFW_PRESS,0);callback.invoke(handle,key,scan,GLFW.GLFW_RELEASE,0);
+    }
     private static void resize(Minecraft mc,boolean wide){
         GLFW.glfwSetWindowSize(mc.getWindow().getWindow(),wide?960:690,wide?640:500);
     }
@@ -113,9 +120,15 @@ public final class ChestCamera {
     private static void geometry(Client.Screen screen,StoreMenu menu){
         Box main=screen.emiMainBounds(),display=new Box(0,0,screen.width,screen.height);
         require(inside(display,main),"Main chest bounds "+main+" exceed "+display);
+        Box footer=screen.chestFooterBounds();
+        require(inside(main,footer),"Empty or off-panel help footer: "+footer+" / "+main);
         List<Box> cells=new ArrayList<>();
         for(int i=0;i<menu.shownSlots();i++)cells.add(screen.chestCellBounds(i));
-        for(int i=0;i<36;i++)cells.add(screen.chestInventoryBounds(i));
+        for(int i=0;i<36;i++){
+            Box slot=screen.chestInventoryBounds(i);
+            require(!overlap(footer,slot),"Help footer overlaps player slot "+i+": "+footer+" / "+slot);
+            cells.add(slot);
+        }
         cells.add(screen.chestSearchBounds());cells.add(screen.chestDrawerBounds());
         for(int i=0;i<cells.size();i++){
             require(inside(main,cells.get(i)),"Cell escapes main bounds: "+i);
@@ -126,6 +139,7 @@ public final class ChestCamera {
             var search=EmiProbe.searchBounds();
             require(inside(display,search),"EMI search field outside the actual window: "+search);
             require(!overlap(main,search),"EMI search field overlaps the chest panel or footer: "+main+" / "+search);
+            require(!overlap(footer,search),"Help footer overlaps the EMI search field: "+footer+" / "+search);
             for(int ordinal=0;ordinal<36;ordinal++){
                 var slot=screen.chestInventoryBounds(ordinal);
                 require(!overlap(slot,search) && !search.contains(slot.x()+slot.width()*.5,slot.y()+slot.height()*.5),
@@ -133,7 +147,7 @@ public final class ChestCamera {
             }
             notes.add("EMI search "+search+" clear of the main panel and all 36 player slot rectangles.");
         }
-        notes.add((menu.cubeView()?"Cube":"Chest")+" at "+screen.width+"x"+screen.height+": "+menu.visibleColumns()+" columns x "+menu.visibleRows()+" rows, "+menu.shownSlots()+" visible slots.");
+        notes.add((menu.cubeView()?"Cube":"Chest")+" at "+screen.width+"x"+screen.height+": "+menu.visibleColumns()+" columns x "+menu.visibleRows()+" rows, "+menu.shownSlots()+" visible slots. Help footer "+footer+" clears all 36 player slots.");
     }
     @SubscribeEvent public static void tooltip(RenderTooltipEvent.Pre e){
         if(!"1".equals(System.getenv("ANYA_CHEST_REVIEW")))return;
@@ -187,6 +201,16 @@ public final class ChestCamera {
                 require(!menu.cubeView()&&menu.visibleColumns()==9&&!screen.chestDrawerOpen(),"Initially closed 54-slot chest");
                 geometry(screen,menu);shot(mc,"chest-wide");
                 require(mc.player.getMainHandItem().isEmpty() && menu.getCarried().isEmpty(),"Empty hand for hover");
+                click(mc,screen.chestSearchBounds(),0);next(Step.KEY_SEARCH);}
+            case KEY_SEARCH->{require(screen!=null && screen.getFocused() instanceof net.minecraft.client.gui.components.EditBox input && input.isFocused(),"Chest search did not take keyboard focus");
+                key(mc,GLFW.GLFW_KEY_TAB);key(mc,GLFW.GLFW_KEY_ENTER);next(Step.KEY_OPEN);}
+            case KEY_OPEN->{require(screen!=null && screen.chestDrawerOpen(),"Tab from search and Enter did not open Settings");
+                key(mc,GLFW.GLFW_KEY_ESCAPE);next(Step.KEY_CLOSE);}
+            case KEY_CLOSE->{require(screen!=null && !screen.chestDrawerOpen(),"Escape did not close just the Settings drawer");
+                key(mc,GLFW.GLFW_KEY_ENTER);next(Step.KEY_REOPEN);}
+            case KEY_REOPEN->{require(screen!=null && screen.chestDrawerOpen(),"Settings did not retain keyboard focus after Escape");
+                click(mc,screen.chestDrawerBounds(),0);
+                notes.add("Native Tab and Enter opened Settings from chest search. Escape closed the drawer and Enter reopened it from restored focus.");
                 point(mc,screen.chestCellBounds(49));next(Step.HOVER);}
             case HOVER->{if(filledTips==0)return;shot(mc,"chest-item-tooltip");click(mc,screen.chestCellBounds(49),1);next(Step.TAKE);}
             case TAKE->{if(menu.getSlot(StorageGrid.chestSlot(49)).getItem().getCount()!=6 || mc.player.getInventory().countItem(Items.IRON_INGOT)!=1)return;

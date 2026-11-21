@@ -5,7 +5,7 @@ import dev.anya.storage.ui.StorageGrid.Box;
 /** Drawing, hit testing and recipe-browser bounds use this one geometry in scaled GUI coordinates. */
 public record ChestLayout(int columns,int rows,int width,int height,double left,double top,double scale,
                           boolean outsideDrawer) {
-    private static final int GRID_X=9, GRID_Y=42, TAB_WIDTH=22, DRAWER_WIDTH=100;
+    private static final int GRID_X=9, GRID_Y=42, TAB_WIDTH=22, DRAWER_WIDTH=100, FIXED_HEIGHT=151;
     public static ChestLayout fit(int screenWidth,int screenHeight,boolean cube,boolean privateView) {
         return fit(screenWidth,screenHeight,cube,privateView,0);
     }
@@ -13,10 +13,10 @@ public record ChestLayout(int columns,int rows,int width,int height,double left,
         int usableHeight=Math.max(1,screenHeight-Math.clamp(bottomSpace,0,screenHeight));
         int columns=cube && screenWidth>=370 ? StorageGrid.WIDE_COLUMNS : 9;
         int maximum=privateView?3:cube?StorageGrid.CHEST_ROWS:6;
-        int rows=Math.clamp((usableHeight-151)/18,2,maximum);
-        int width=columns*18+32, height=143+rows*18;
+        int rows=Math.clamp((usableHeight-FIXED_HEIGHT)/18,2,maximum);
+        int width=columns*18+32, height=FIXED_HEIGHT+rows*18;
         double scale=Math.min(1,Math.min(Math.max(1,screenWidth-4)/(double)(width+2*TAB_WIDTH),
-                Math.max(1,usableHeight-6)/(double)height));
+                usableHeight/(double)height));
         double left=(screenWidth-width*scale)/2,top=(usableHeight-height*scale)/2;
         return new ChestLayout(columns,rows,width,height,left,top,scale,
                 left>=(TAB_WIDTH+DRAWER_WIDTH+4)*scale);
@@ -39,6 +39,10 @@ public record ChestLayout(int columns,int rows,int width,int height,double left,
     }
     public int inventoryY(){return GRID_Y+rows*18+18;}
     public Box inventory(int i){return new Box((width-9*18)/2+1+i%9*18,inventoryY()+i/9*18+(i>=27?4:0),16,16);}
+    public Box footer(){
+        Box hotbar=inventory(27);
+        return new Box(GRID_X,hotbar.y()+hotbar.height()+5,width-2*GRID_X,9);
+    }
     public Box scrollUp(){return new Box(width-17,GRID_Y,11,12);}
     public Box scrollDown(){return new Box(width-17,GRID_Y+rows*18-14,11,12);}
     public Box scroll(){return new Box(width-15,GRID_Y+14,7,rows*18-30);}
