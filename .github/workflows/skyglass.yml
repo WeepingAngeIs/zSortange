@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 24
     env:
       BASELINE: anya-storage-plus-0.3.0-beta.7-roombuild.1.jar
-      PLAYABLE: anya-storage-plus-0.3.0-beta.7-skyglass.2.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-skyglass.3.jar
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,17 +51,30 @@ jobs:
           python3 -B fixtures/skygrid/run.py | tee upload/CHECKS.txt
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Exercise real pinned Cobblemon species on a disposable server
+        run: |
+          set -euo pipefail
+          cd build/skygrid/Server
+          mkdir -p mods
+          curl -fsSL --retry 2 'https://edge.forgecdn.net/files/9341/850/Cobblemon-neoforge-1.8.4%2B1.21.1.jar' -o mods/cobblemon.jar
+          echo '060579fb8ac67ddd131c9cc9076ef512cda9e66e7a584c7c82326be9ef0cbb69ce6c99ff772aa78f990dc1b771bac02f3bbba68a9c7ff68c557009c64f733d04  mods/cobblemon.jar' | sha512sum -c
+          curl -fsSL --retry 2 'https://edge.forgecdn.net/files/8335/665/kotlinforforge-5.12.0-all.jar' -o mods/kotlin.jar
+          echo '095aed94f21b4e55895b21ea957750ae3ab829fbcfc6d3c66a3489f5f1128d46  mods/kotlin.jar' | sha256sum -c
+          touch pokemon-camera
+          echo 'level-name=pokemon-check' >> server.properties
+          timeout 300 bash "$(cat launch.txt)" > pokemon.log 2>&1
+          cat POKEMON-PASS >> ../../../upload/CHECKS.txt
       - name: Show fixture failures
         if: failure()
         run: |
           ls build/skygrid/Client/{noon,roof,night,rain} || true
           cat build/skygrid/Client/last-camera || true
           cat build/skygrid/Server/FAILED || true
-          for f in build/skygrid/{Server,Client}/{console,restart}.log; do
+          for f in build/skygrid/{Server,Client}/{console,restart,pokemon}.log; do
             if test -f "$f"; then tail -45 "$f" | cut -c1-900; fi
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-skyglass.2
+          name: anya-storage-plus-skyglass.3
           path: upload/
           retention-days: 14

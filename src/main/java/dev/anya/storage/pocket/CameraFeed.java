@@ -128,6 +128,7 @@ public final class CameraFeed {
     }
     private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob){
         var end=eye.add(ray.scale(24));
+        var silhouette=mob==null?null:mob.getBoundingBox().clip(eye,end).map(BlockPos::containing).orElse(null);
         return net.minecraft.world.level.BlockGetter.traverseBlocks(eye,end,ray,(dir,pos)->{
             if(!allowed(p,level,pos,access))return UNKNOWN;
             var state=blocks.getBlockState(pos);
@@ -140,7 +141,7 @@ public final class CameraFeed {
                     return color==0?0x5a5360:color;
                 }
             }
-            if(mob!=null && pos.equals(mob.blockPosition()) && mob.getBoundingBox().clip(eye,end).isPresent())return 0xd4b9db;
+            if(pos.equals(silhouette))return 0xd4b9db;
             return null;
         },dir->{
             var pos=BlockPos.containing(end);
@@ -174,9 +175,14 @@ public final class CameraFeed {
             if(m.getClass().getName().startsWith("com.cobblemon.")){
                 try{
                     var pokemon=m.getClass().getMethod("getPokemon").invoke(m);
-                    if(pokemon.getClass().getMethod("getOwnerUUID").invoke(pokemon)!=null)continue;
+                    var api=pokemon.getClass();
+                    if(!Boolean.TRUE.equals(api.getMethod("isWild").invoke(pokemon)) || api.getMethod("getOwnerUUID").invoke(pokemon)!=null)continue;
                     var species=pokemon.getClass().getMethod("getSpecies").invoke(pokemon);
-                    if(species.getClass().getMethod("getLabels").invoke(species) instanceof Collection<?> labels
+                    if(Boolean.TRUE.equals(api.getMethod("isLegendary").invoke(pokemon))
+                            || Boolean.TRUE.equals(api.getMethod("isMythical").invoke(pokemon))
+                            || Boolean.TRUE.equals(api.getMethod("isUltraBeast").invoke(pokemon))
+                            || CameraRarity.rare(level.getServer(),species)
+                            || species.getClass().getMethod("getLabels").invoke(species) instanceof Collection<?> labels
                             && labels.stream().anyMatch(s->Set.of("legendary","mythical","ultra_beast","rare").contains(s)))weight+=20;
                 }catch(ReflectiveOperationException unknown){continue;}
             }

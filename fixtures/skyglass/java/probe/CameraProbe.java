@@ -27,7 +27,7 @@ import com.mojang.authlib.GameProfile;
 @EventBusSubscriber(modid="wallprobe")
 public final class CameraProbe {
     static final BlockPos HUB=new BlockPos(2,81,1), DOOR=new BlockPos(3,81,1);
-    private static ServerPlayer join(net.minecraft.server.MinecraftServer server,String name,UUID uuid)throws Exception{
+    static ServerPlayer join(net.minecraft.server.MinecraftServer server,String name,UUID uuid)throws Exception{
         var level=server.overworld();var profile=new GameProfile(uuid,name);
         var p=new ServerPlayer(server,level,profile,ClientInformation.createDefault());
         var connection=new Connection(PacketFlow.SERVERBOUND){
@@ -89,13 +89,14 @@ public final class CameraProbe {
     }
     static void step(ServerTickEvent.Post event)throws Exception{
         var server=event.getServer();
+        if(Files.exists(Path.of("pokemon-camera"))){PokemonProbe.step(server);return;}
         var policy=ExpansionRules.get();policy.pocketStorage=true;policy.pocketEditing=true;policy.pocketSessionTicks=200;
         if(stage==99)return;
         if(Files.exists(Path.of("entry.txt"))){
             var lines=Files.readAllLines(Path.of("entry.txt"));var room=PocketService.ledger(server).get(UUID.fromString(lines.get(0)));
             var actor=join(server,lines.get(1),UUID.fromString(lines.get(2)));
             check(ExitGate.color(actor,room.id())==1 && PocketService.ownedTicketRequests()==0,"Restart color or empty room tickets");
-            Files.writeString(Path.of("CHECKS.txt"),"PASS client Skyglass noon, occluded, midnight and rainy noon frame observations. Outdoor camera source changes between gold and diamond, upward sky indication, replacement link rejection. Skygrid floor and panels, changing decor, private owner image and guest denial, persisted owner color, guest denial, lodestone backup return, arrival outside gate, owner walk-through, preserved decoration and final ticket cleanup.\n");
+            Files.writeString(Path.of("CHECKS.txt"),"PASS wall monitor north/east scene and framebuffer change, masked claim, missing camera source stayed unloaded, visible/hidden/invisible mob glances. PASS client Skyglass noon, occluded, midnight and rainy noon frame observations. Outdoor camera source changes between gold and diamond, upward sky indication, replacement link rejection. Skygrid floor and panels, changing decor, private owner image and guest denial, persisted owner color, guest denial, lodestone backup return, arrival outside gate, owner walk-through, preserved decoration and final ticket cleanup.\n");
             stage=99;server.halt(false);return;
         }
         if(server.getPlayerList().getPlayers().isEmpty())return;
@@ -141,6 +142,7 @@ public final class CameraProbe {
             if(!Files.exists(Path.of("../Client/night"))){outside.setDayTime(18000);return;}
             if(!Files.exists(Path.of("../Client/rain"))){outside.setDayTime(6000);outside.setWeatherParameters(0,12000,true,false);outside.setRainLevel(1);return;}
 
+            if(!WallProbe.checkWall(p,pos))return;
             ExitGate.cycle(guest,id);check(ExitGate.color(guest,id)==1,"Guest changed color");
             var stone=PocketService.exitPosition(room);
             var obstacle=stone.offset(0,0,-2);p.serverLevel().setBlockAndUpdate(obstacle,Blocks.CHERRY_PLANKS.defaultBlockState());
