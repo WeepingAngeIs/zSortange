@@ -1,0 +1,64 @@
+name: Placed backpack swaps
+on:
+  push:
+    branches: [experiment/disc-swap]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  disc-swap:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      BASELINE: anya-storage-plus-0.3.0-beta.7-roomchests.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-discswap.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-roomchests.1
+          run-id: 44895629383
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Build the playable from the verified backpack version
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = 237153f7dc8faf17e65f6a7ad286626c51a3efd5
+          (cd reference && sha256sum --check SHA256SUMS.txt)
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir -p upload
+          cp "build/libs/$PLAYABLE" upload/
+          gradle --no-daemon --max-workers=2 -I fixtures/disc-swap/fixture.gradle -PswapPlayable="$PWD/upload/$PLAYABLE" prepareSwapReview
+      - name: Check placed backpack clicks on the disposable server
+        run: |
+          set -euo pipefail
+          root="$PWD"
+          mkdir -p build/disc-swap/game
+          cd build/disc-swap/game
+          echo eula=true > eula.txt
+          printf 'server-ip=127.0.0.1\nserver-port=0\nonline-mode=false\nspawn-protection=0\n' > server.properties
+          timeout 300 bash "$(cat ../launch.txt)" > ../console.log 2>&1
+          cp checks.txt "$root/upload/CHECKS.txt"
+          cd "$root"
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Show fixture failures
+        if: failure()
+        run: tail -80 build/disc-swap/console.log || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-discswap.1
+          path: upload/
+          retention-days: 14

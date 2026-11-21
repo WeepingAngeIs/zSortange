@@ -25,13 +25,18 @@ public final class Upgrades {
     public static boolean installed(BagInventory bag,String id){for(Tag entry:installedItems(bag.stack))if(((CompoundTag)entry).getString("Id").equals(id))return true;return false;}
     public static boolean active(BagInventory bag,String id){return Config.get().backpacks&&Boolean.TRUE.equals(Config.get().upgrades.get(Config.upgradeFamily(id)))&&installed(bag,id);}
     static String installProblem(CompoundTag data,ListTag upgrades,String id){
+        String reason=discProblem(upgrades,id);
+        if(!reason.isEmpty())return reason;
+        return upgrades.size()>=data.getInt("UpgradeSlots")?"No free upgrade slots.":"";
+    }
+    static String discProblem(ListTag upgrades,String id){
         if(!Config.get().backpacks || !Boolean.TRUE.equals(Config.get().upgrades.get(Config.upgradeFamily(id))))return "This upgrade is disabled by the server.";
         for(Tag entry:upgrades){
             String other=((CompoundTag)entry).getString("Id");
             if(id.equals(other))return "This upgrade is already installed.";
             if(Config.upgradeFamily(id).equals(Config.upgradeFamily(other)))return "Remove the installed tier of this upgrade first.";
         }
-        return upgrades.size()>=data.getInt("UpgradeSlots")?"No free upgrade slots.":"";
+        return "";
     }
     static void addDisc(ListTag upgrades,String id,ItemStack disc,ServerPlayer player){
         CompoundTag entry=new CompoundTag();entry.putString("Id",id);entry.put("Stack",disc.save(player.registryAccess()));upgrades.add(entry);

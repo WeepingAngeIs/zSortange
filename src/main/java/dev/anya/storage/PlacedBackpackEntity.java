@@ -89,13 +89,36 @@ public final class PlacedBackpackEntity extends BlockEntity {
         if (result.output().isEmpty()) { hint(p,result.message()); return true; }
         // preview is pure. No callback or third-party permission hook between this check and the commit.
         if (!attached(p) || p.getItemInHand(hand)!=input || slot.getItem(0)!=bag || input.getCount()<result.cost()) return true;
+        int returnSlot=-1;
+        ItemStack refund=result.refund();
+        if(!refund.isEmpty()){
+            returnSlot=refundSlot(p,hand,input,result.cost(),refund);
+            if(returnSlot<0){hint(p,"Make room for "+refund.getHoverName().getString()+" first.");return true;}
+        }
         if (!p.getAbilities().instabuild) input.shrink(result.cost());
+        if(returnSlot>=0){
+            var destination=p.getInventory().getItem(returnSlot);
+            if(destination.isEmpty())p.getInventory().setItem(returnSlot,refund);
+            else destination.grow(1);
+        }
         slot.setItem(0,result.output());
         if (!p.getAbilities().instabuild)
             for (var remainder : result.remainders()) p.getInventory().placeItemBackInInventory(remainder.copy());
         p.getInventory().setChanged();
         hint(p,result.message());
         return true;
+    }
+
+    private static int refundSlot(ServerPlayer p,InteractionHand hand,ItemStack input,int cost,ItemStack refund){
+        var inventory=p.getInventory();
+        int held=hand==InteractionHand.MAIN_HAND?inventory.selected:40;
+        if(!p.getAbilities().instabuild && input.getCount()==cost)return held;
+        for(int i=0;i<inventory.items.size();i++){
+            var stack=inventory.getItem(i);
+            if(stack.isEmpty() || (ItemStack.isSameItemSameComponents(stack,refund)
+                    && stack.getCount()<inventory.getMaxStackSize(stack)))return i;
+        }
+        return -1;
     }
 
     boolean drop() {
