@@ -63,6 +63,8 @@ public final class Client {
         private static WeakReference<Player> tabletViewer = new WeakReference<>(null);
         private static java.util.function.BooleanSupplier externalSearch=()->false;
         public static void externalSearchFocus(java.util.function.BooleanSupplier focused){externalSearch=focused;}
+        private static java.util.function.IntSupplier externalBottom=()->0;
+        public static void externalBottomSpace(java.util.function.IntSupplier pixels){externalBottom=pixels;}
         private static GuardianBlink.Playlist tabletVisits = new GuardianBlink.Playlist();
         private final GuardianBlink tabletIntro;
         private final TabletBootScreen tabletBoot = new TabletBootScreen();
@@ -158,7 +160,7 @@ public final class Client {
             layout=dev.anya.storage.ui.StorageGrid.layout(width,height,menu.resultCount(),menu.storageView());
             if (showTabletFrame()) layout = TabletDevice.fitMenu(layout, width, height);
             boolean physical=menu.chestView();
-            if(physical)chest.reflow(width,height,input);
+            if(physical)chest.reflow(width,height,input,externalBottom.getAsInt());
             if(chestWasVisible!=physical){
                 if(input!=null){
                     input.setFocused(false);

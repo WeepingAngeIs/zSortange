@@ -12,6 +12,7 @@ import dev.emi.emi.api.widget.Bounds;
 public final class StorageEmiPlugin implements EmiPlugin {
     @Override
     public void register(EmiRegistry registry) {
+        Client.Screen.externalBottomSpace(() -> 24);
         Client.Screen.externalSearchFocus(dev.emi.emi.api.EmiApi::isSearchFocused);
         registry.addScreenBoundsProvider(Client.Screen.class, screen -> bounds(screen.emiMainBounds()));
         registry.addExclusionArea(Client.Screen.class, (screen, exclude) ->

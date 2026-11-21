@@ -38,10 +38,11 @@ import org.lwjgl.glfw.GLFW;
 public final class ChestCamera {
     private static final BlockPos CRATE=new BlockPos(0,80,0), CUBE=CRATE.east(2);
     private enum Step { JOIN, USE, CRATE, HOVER, TAKE, DEPOSIT, DRAWER, FILTER, UNFILTER, DRAWER_CLOSED, DISPLAY, OFF,
-        ON, EMPTY, RESIZE, COMPACT_DRAWER, COMPACT_WHEEL, COMPACT, SCROLLED, CUBE_USE, CUBE_COMPACT, WIDE, WHEEL, BOTTOM, RETURN_TOP,
+        ON, EMPTY, RESIZE, COMPACT_DRAWER, COMPACT_HOVER, COMPACT_WHEEL, COMPACT, SCROLLED, CUBE_USE, CUBE_COMPACT, HOTBAR, DEPOSIT_HOTBAR, WIDE, WHEEL, BOTTOM, RETURN_TOP,
         EMI_SEARCH, EMI_CELL, EMI_HOVER, EMI_RECIPE, RESUMED, POST_CLICK, FINISH, RECEIPT, DONE }
     private static Step step=Step.JOIN;
-    private static int ticks, filledTips, emptyTips, cubeId;
+    private static final int HOTBAR_SLOT=4, HOTBAR_ORDINAL=27+HOTBAR_SLOT;
+    private static int ticks, filledTips, emptyTips, compactTips, cubeId;
     private static CompletableFuture<Void> job;
     private static Box sidebar;
     private static final List<String> notes=new ArrayList<>(), shots=new ArrayList<>();
@@ -64,8 +65,10 @@ public final class ChestCamera {
         crate.setItem(0,new ItemStack(Items.APPLE,2));crate.setItem(49,new ItemStack(Items.IRON_INGOT,7));
         cube.setItem(60,new ItemStack(Items.DIAMOND,3));cube.setItem(215,new ItemStack(Items.GOLD_INGOT,5));
         p.setGameMode(GameType.SURVIVAL);p.getInventory().clearContent();p.getInventory().selected=8;
-        p.getInventory().setItem(9,new ItemStack(Items.EMERALD,3));p.inventoryMenu.broadcastChanges();
+        p.getInventory().setItem(9,new ItemStack(Items.EMERALD,3));
+        p.getInventory().setItem(HOTBAR_SLOT,new ItemStack(Items.LAPIS_LAZULI,4));p.inventoryMenu.broadcastChanges();
         p.teleportTo(level,1.5,80,3.25,180,12);
+        ChestProjectionPrivacy.verify(p);
     }
     private static void use(Minecraft mc,BlockPos pos){
         mc.gameMode.useItemOn(mc.player,InteractionHand.MAIN_HAND,
@@ -118,12 +121,31 @@ public final class ChestCamera {
             for(int j=0;j<i;j++)require(!overlap(cells.get(i),cells.get(j)),"Overlapping cells "+i+" and "+j);
         }
         for(var extra:screen.emiExtraBounds())require(inside(display,extra),"Offscreen exclusion "+extra);
+        if(withEmi()){
+            var search=EmiProbe.searchBounds();
+            require(inside(display,search),"EMI search field outside the actual window: "+search);
+            require(!overlap(main,search),"EMI search field overlaps the chest panel or footer: "+main+" / "+search);
+            for(int ordinal=0;ordinal<36;ordinal++){
+                var slot=screen.chestInventoryBounds(ordinal);
+                require(!overlap(slot,search) && !search.contains(slot.x()+slot.width()*.5,slot.y()+slot.height()*.5),
+                        "Player inventory cell "+ordinal+" overlaps EMI search: "+slot+" / "+search);
+            }
+            notes.add("EMI search "+search+" clear of the main panel and all 36 player slot rectangles.");
+        }
         notes.add((menu.cubeView()?"Cube":"Chest")+" at "+screen.width+"x"+screen.height+": "+menu.visibleColumns()+" columns x "+menu.visibleRows()+" rows, "+menu.shownSlots()+" visible slots.");
     }
     @SubscribeEvent public static void tooltip(RenderTooltipEvent.Pre e){
         if(!"1".equals(System.getenv("ANYA_CHEST_REVIEW")))return;
         if(step==Step.HOVER&&e.getItemStack().is(Items.IRON_INGOT))filledTips++;
         if(step==Step.EMPTY&&e.getItemStack().isEmpty()&&!e.getComponents().isEmpty())emptyTips++;
+    }
+    @SubscribeEvent public static void compactHover(RenderTooltipEvent.GatherComponents e){
+        if(step!=Step.COMPACT_HOVER || !"1".equals(System.getenv("ANYA_CHEST_REVIEW")))return;
+        var mc=Minecraft.getInstance();
+        if(mc.screen instanceof Client.Screen && mc.player.containerMenu instanceof StoreMenu menu && !e.getTooltipElements().isEmpty()){
+            String title=menu.getSlot(52).getItem().getHoverName().getString();
+            if(!title.isBlank() && e.getTooltipElements().getFirst().left().map(t->t.getString().equals(title)).orElse(false))compactTips++;
+        }
     }
     static void tick(Minecraft mc)throws Exception{
         if(step==Step.DONE)return;
@@ -175,6 +197,9 @@ public final class ChestCamera {
             case COMPACT_DRAWER->{if(screen.width>=370 || menu.shownSlots()>=54)return;
                 require(screen.chestDrawerOpen() && inside(screen.emiMainBounds(),screen.chestSettingsPanelBounds()),"Compact settings drawer escaped main bounds after resize");
                 if(withEmi())EmiProbe.clearOfSidebar(screen.chestSettingsPanelBounds());
+                point(mc,screen.chestControlBounds(52));next(Step.COMPACT_HOVER);}
+            case COMPACT_HOVER->{if(compactTips==0)return;
+                if(withEmi())require(!EmiProbe.hoveringSidebarItem(),"EMI sidebar hover under the drawer action");
                 shot(mc,"chest-compact-settings");wheel(mc,screen.chestControlBounds(52),-1);next(Step.COMPACT_WHEEL);}
             case COMPACT_WHEEL->{if(ticks<12)return;
                 require(menu.firstSlot()==0,"Wheel over the drawer scrolled the underlying chest");
@@ -187,8 +212,20 @@ public final class ChestCamera {
                 screen.onClose();next(Step.CUBE_USE);}
             case CUBE_USE->{if(mc.screen!=null)return;use(mc,CUBE);next(Step.CUBE_COMPACT);}
             case CUBE_COMPACT->{if(screen==null||!menu.cubeView() || menu.visibleColumns()!=9 || menu.capacity()!=216)return;
-                geometry(screen,menu);resize(mc,true);next(Step.WIDE);}
-            case WIDE->{if(screen.width<370 || menu.visibleColumns()!=12 || menu.shownSlots()<=60)return;
+                geometry(screen,menu);resize(mc,true);next(Step.HOTBAR);}
+            case HOTBAR->{if(screen.width!=480 || screen.height!=320 || menu.visibleColumns()!=12 || menu.shownSlots()<=60)return;
+                geometry(screen,menu);
+                require(menu.getSlot(54+HOTBAR_ORDINAL).getItem().is(Items.LAPIS_LAZULI),"Missing middle hotbar transfer stack");
+                click(mc,screen.chestInventoryBounds(HOTBAR_ORDINAL),0);next(Step.DEPOSIT_HOTBAR);}
+            case DEPOSIT_HOTBAR->{if(mc.player.getInventory().countItem(Items.LAPIS_LAZULI)!=0)return;
+                if(withEmi())require(!EmiProbe.searchFocused(),"Middle hotbar click focused EMI search");
+                server(mc,p->{var cube=block(p,CUBE);
+                    require(cube.countItem(Items.LAPIS_LAZULI)==4 && p.getInventory().getItem(HOTBAR_SLOT).isEmpty(),
+                            "Middle hotbar deposit did not reach the physical cube");});
+                shot(mc,"cube-hotbar-clear");
+                notes.add("At 480x320 GUI size, clicking the bottom middle hotbar slot deposited four lapis into the physical cube.");
+                GLFW.glfwSetWindowSize(mc.getWindow().getWindow(),960,720);next(Step.WIDE);}
+            case WIDE->{if(screen.width!=480 || screen.height!=360 || menu.visibleColumns()!=12 || menu.shownSlots()!=108)return;
                 require(menu.firstSlot()==0&&menu.getSlot(StorageGrid.chestSlot(60)).getItem().is(Items.DIAMOND),"Larger cube cell did not match physical slot 61");
                 cubeId=menu.containerId;geometry(screen,menu);shot(mc,"cube-wide");wheel(mc,screen.chestCellBounds(2),-1);next(Step.WHEEL);}
             case WHEEL->{if(menu.firstSlot()!=12)return;

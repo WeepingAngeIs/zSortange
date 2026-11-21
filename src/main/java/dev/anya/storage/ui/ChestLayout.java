@@ -7,13 +7,17 @@ public record ChestLayout(int columns,int rows,int width,int height,double left,
                           boolean outsideDrawer) {
     private static final int GRID_X=9, GRID_Y=42, TAB_WIDTH=22, DRAWER_WIDTH=100;
     public static ChestLayout fit(int screenWidth,int screenHeight,boolean cube,boolean privateView) {
+        return fit(screenWidth,screenHeight,cube,privateView,0);
+    }
+    public static ChestLayout fit(int screenWidth,int screenHeight,boolean cube,boolean privateView,int bottomSpace) {
+        int usableHeight=Math.max(1,screenHeight-Math.clamp(bottomSpace,0,screenHeight));
         int columns=cube && screenWidth>=370 ? StorageGrid.WIDE_COLUMNS : 9;
         int maximum=privateView?3:cube?StorageGrid.CHEST_ROWS:6;
-        int rows=Math.clamp((screenHeight-151)/18,2,maximum);
+        int rows=Math.clamp((usableHeight-151)/18,2,maximum);
         int width=columns*18+32, height=143+rows*18;
         double scale=Math.min(1,Math.min(Math.max(1,screenWidth-4)/(double)(width+2*TAB_WIDTH),
-                Math.max(1,screenHeight-6)/(double)height));
-        double left=(screenWidth-width*scale)/2,top=(screenHeight-height*scale)/2;
+                Math.max(1,usableHeight-6)/(double)height));
+        double left=(screenWidth-width*scale)/2,top=(usableHeight-height*scale)/2;
         return new ChestLayout(columns,rows,width,height,left,top,scale,
                 left>=(TAB_WIDTH+DRAWER_WIDTH+4)*scale);
     }
@@ -38,7 +42,7 @@ public record ChestLayout(int columns,int rows,int width,int height,double left,
     public Box scrollUp(){return new Box(width-17,GRID_Y,11,12);}
     public Box scrollDown(){return new Box(width-17,GRID_Y+rows*18-14,11,12);}
     public Box scroll(){return new Box(width-15,GRID_Y+14,7,rows*18-30);}
-    public Box tab(boolean actions){return actions?new Box(width-71,4,64,16):new Box(-TAB_WIDTH,42,TAB_WIDTH,23);}
+    public Box tab(boolean actions){return actions?new Box(width-80,4,74,16):new Box(-TAB_WIDTH,42,TAB_WIDTH,23);}
     public Box drawer(boolean actions){
         int x=outsideDrawer?(actions?width:-TAB_WIDTH-DRAWER_WIDTH):(actions?width-DRAWER_WIDTH-3:3);
         return new Box(x,Math.min(42,height-(actions?151:99)-3),DRAWER_WIDTH,actions?151:99);

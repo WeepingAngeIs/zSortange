@@ -4,6 +4,7 @@ import dev.anya.storage.Client;
 import dev.anya.storage.ui.StorageGrid.Box;
 import dev.emi.emi.api.EmiApi;
 import dev.emi.emi.api.stack.EmiStack;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.world.item.Items;
 
 /** Loaded only by the EMI client. No EMI symbols are linked by the plain-client fixture. */
@@ -14,6 +15,16 @@ final class EmiProbe {
     }
     static void search() {
         EmiApi.setSearchText("crafting table");
+    }
+    static Box searchBounds() {
+        // EMI's public API exposes search text and focus. Only the runtime owns the actual widget.
+        try {
+            var type=Class.forName("dev.emi.emi.screen.EmiScreenManager");
+            var search=(EditBox)type.getField("search").get(null);
+            if(!search.isVisible() || search.getWidth()<=0 || search.getHeight()<=0)
+                throw new IllegalStateException("Expected EMI's visible search field");
+            return new Box(search.getX(),search.getY(),search.getWidth(),search.getHeight());
+        }catch(ReflectiveOperationException error){throw new IllegalStateException("Could not inspect pinned EMI search field",error);}
     }
     private static boolean table(int x,int y) {
         var hit=EmiApi.getHoveredStack(x,y,false);
@@ -41,5 +52,10 @@ final class EmiProbe {
         var hit=EmiApi.getHoveredStack(false);
         return hit.isClickable() && hit.getStack().getEmiStacks().stream().anyMatch(s->s.getItemStack().is(Items.CRAFTING_TABLE));
     }
+    static boolean hoveringSidebarItem(){
+        var hit=EmiApi.getHoveredStack(false);
+        return !hit.isEmpty() && hit.isClickable();
+    }
+    static boolean searchFocused(){return EmiApi.isSearchFocused();}
     private EmiProbe(){}
 }

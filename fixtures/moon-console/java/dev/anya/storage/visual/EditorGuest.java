@@ -77,6 +77,7 @@ final class EditorGuest {
         guest.gameMode.useItemOn(guest,guest.serverLevel(),quartz,InteractionHand.MAIN_HAND,hit);
         EditorCamera.check(guest.serverLevel().isEmptyBlock(target)&&guest.getInventory().countItem(Items.QUARTZ_BLOCK)==2,
                 "Revoked Build refuses next input before spending material");
+        ChestProjectionPrivacy.verifyPocket(owner,guest,hub);
         hub.removeMember(guest.getUUID());
     }
     private static StoreMenu privatePanel(ItemStack tablet,boolean allowed) {

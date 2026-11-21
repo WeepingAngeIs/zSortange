@@ -17,6 +17,7 @@ public final class PocketView {
     private final long epoch,policy;
     private final PocketLeases.Kind kind;
     private final List<StorageEntity> chests,registry;
+    private final StorageEntity selectedChest;
     private final InteractionHand hand;
     private final ItemStack tablet;
     private final CustomData binding;
@@ -31,7 +32,7 @@ public final class PocketView {
     }
     private PocketView(ServerPlayer player,PocketLedger.Pocket pocket,PocketLeases.Kind kind,StorageEntity selected,InteractionHand hand)throws java.io.IOException{
         this.player=player;this.id=pocket.id();this.epoch=pocket.epoch();this.kind=kind;
-        this.hand=hand;
+        this.hand=hand;selectedChest=selected;
         tablet=hand==null ? ItemStack.EMPTY : player.getItemInHand(hand);
         binding=tablet.get(DataComponents.CUSTOM_DATA);
         anchor=pocket.anchor();
@@ -71,6 +72,16 @@ public final class PocketView {
             }
             // Claim hooks above can change the held item, current grant or chest registry.
             // Pin all of them again before exposing rows or committing a local transfer.
+            if(selectedChest!=null){
+                var pos=selectedChest.getBlockPos();
+                return player.serverLevel()==level && player.distanceToSqr(pos.getX()+.5,pos.getY()+.5,pos.getZ()+.5)<=64
+                        && player.isAlive() && !player.isSpectator() && PocketService.enabled()
+                        && r.contains(player.blockPosition().getX(),player.blockPosition().getY(),player.blockPosition().getZ())
+                        && Objects.equals(l,PocketService.lease(player.getUUID()))
+                        && PocketService.ledger(player.getServer()).get(id)==r && PocketService.home(player,r)==hub
+                        && hub.profileRevision==policy && hub.permits(player,BasePermissions.VISIT|rights)
+                        && !Transactions.quarantined(selectedChest) && registry.equals(PocketRoomLayout.present(level,r));
+            }
             return !localTablet() || (sameLocalVisit(r,PocketService.lease(player.getUUID()))
                     && PocketService.ledger(player.getServer()).get(id)==r && PocketService.home(player,r)==hub
                     && hub.profileRevision==policy && hub.permits(player,BasePermissions.VISIT|rights)

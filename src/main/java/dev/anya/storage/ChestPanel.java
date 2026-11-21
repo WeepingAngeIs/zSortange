@@ -36,8 +36,8 @@ final class ChestPanel {
 
     ChestPanel(Client.Screen screen, StoreMenu menu){this.screen=screen;this.menu=menu;}
     void reset(){drawer=Drawer.CLOSED;requestedRow=-1;focus=NONE;dragging=false;paintedRevision=-1;pendingText=null;}
-    void reflow(int width,int height,EditBox input){
-        ChestLayout next=ChestLayout.fit(width,height,menu.cubeView(),menu.privateView());
+    void reflow(int width,int height,EditBox input,int bottomSpace){
+        ChestLayout next=ChestLayout.fit(width,height,menu.cubeView(),menu.privateView(),bottomSpace);
         if(!next.equals(layout)){
             layout=next;
             requestedRow=menu.firstSlot()/layout.columns();
@@ -214,8 +214,11 @@ final class ChestPanel {
         enter(g);
         int w=layout.width(),h=layout.height();
         String title=(menu.cubeView()?Content.CUBE:Content.CRATE).get().getName().getString();
-        g.drawString(font,font.plainSubstrByWidth(title,w-(screen.cameoVisible()?116:83)),9,8,0xfff5edf5,false);
-        screen.chestCameo(g,w-105,5);
+        int titleWidth=layout.tab(true).x()-13-(screen.cameoVisible()?26:0);
+        float titleScale=Math.min(1,titleWidth/(float)Math.max(1,font.width(title)));
+        g.pose().pushPose();g.pose().translate(9,8,0);g.pose().scale(titleScale,titleScale,1);
+        g.drawString(font,title,0,0,0xfff5edf5,false);g.pose().popPose();
+        screen.chestCameo(g,layout.tab(true).x()-28,5);
         drawButton(g,font,SETTINGS,ControlGlyph.SETTINGS,settingsOpen(),hover);
         drawButton(g,font,DISPLAY,ControlGlyph.IMAGE,drawer==Drawer.DISPLAY,hover);
         input.render(g,x,y,partial);
@@ -233,7 +236,8 @@ final class ChestPanel {
         drawScroll(g,hover,colors);
         String count=menu.privateView()?"Private":menu.filteredView()?menu.resultCount()+" matches":menu.occupiedSlots()+" / "+menu.capacity()+" slots";
         int iy=layout.inventoryY();
-        g.drawString(font,"Inventory",9,iy-13,colors[2],false);
+        String inventory="Inventory · click to deposit";
+        g.drawString(font,font.width(inventory)+font.width(count)+24<=w?inventory:"Inventory",9,iy-13,colors[2],false);
         g.drawString(font,count,w-9-font.width(count),iy-13,colors[2],false);
         long remains=menu.transferRemainders();
         for(int i=0;i<36;i++){
@@ -243,7 +247,7 @@ final class ChestPanel {
             ItemStack s=menu.getSlot(id).getItem();
             if(!s.isEmpty()){g.renderItem(s,b.x(),b.y());g.renderItemDecorations(font,s,b.x(),b.y());}
         }
-        g.drawString(font,font.plainSubstrByWidth("Left: stack   Right: one   Inventory: deposit",w-18),9,h-12,0xffc8bccd,false);
+        g.drawString(font,"Left: stack · Right: one",9,h-12,0xffc8bccd,false);
         if(drawer!=Drawer.CLOSED)drawDrawer(g,font,hover,colors);
         g.pose().popPose();
         paintedRevision=menu.revision();

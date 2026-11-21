@@ -231,7 +231,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         if((openingFlags&CREATIVE_ACCESS)!=0 && (openingFlags&LOCAL_ROOM)==0 && (creative==null||!creative.held()))return false;
         if(hub!=null && (openingFlags&TABLET_ACCESS)!=0 && creative==null && (networkTablet==null||heldNetworkTablet(owner,hub)!=networkTablet))return false;
         if(hub!=null&&!Network.hubReason(owner,hub,creative).isEmpty())return false;
-        if(chest!=null&&(!chest.stillValid(owner)||!Safety.reason(owner,chest,null).isEmpty()))return false;
+        if(chest!=null && (!Safety.reason(owner,chest,null).isEmpty() || chest.getLevel()!=owner.serverLevel()
+                || !owner.serverLevel().hasChunkAt(chest.getBlockPos())
+                || owner.serverLevel().getBlockEntity(chest.getBlockPos())!=chest || !chest.stillValid(owner)))return false;
         if((page==Page.BASE||page==Page.ROUTE||page==Page.FEED_CONFIRM||page==Page.ACCESS)&&hub!=null&&!hub.ownedBy(owner))return false;
         if(page==Page.ACTIVITY&&(hub==null||(!hub.canReadActivity(owner)&&!hub.ownedBy(owner))))return false;
         return true;
@@ -240,9 +242,27 @@ public final class StoreMenu extends AbstractContainerMenu {
     @Override public boolean canDragTo(Slot slot){return false;}
     @Override public boolean canTakeItemForPickAll(ItemStack s,Slot slot){return false;}
     @Override public void clicked(int slot,int button,ClickType type,Player p){if(owner!=null)sendAllDataToRemote();}
+    private boolean physicalChestSession(){return owner!=null && (openingFlags&PHYSICAL_CHEST)!=0;}
+    private void concealPhysicalChest(){
+        // The full-sync packet can be requested before vanilla closes an invalid menu.
+        // Remove every result and control, including previews on pages opened from this chest.
+        entries.clear();buttons.clear();display.clearContent();resetControlSlots();
+        pending=null;pendingContainers=List.of();
+        if(!privateView())bump();
+        sync.set(4,1|4|PHYSICAL_CHEST|(openingFlags&PHYSICAL_CUBE));
+        for(int i=6;i<=12;i+=2)synchronizedInt(i,0);
+    }
+    @Override public void sendAllDataToRemote(){
+        if(physicalChestSession() && !stillValid(owner))concealPhysicalChest();
+        super.sendAllDataToRemote();
+    }
     @Override public void removed(Player p){if(chest!=null)chest.closeViewer();if(pocket!=null)pocket.close();if(creative!=null)CreativeTabletAccess.finish(owner,this);pending=null;super.removed(p);}
     @Override public void broadcastChanges(){
-        boolean active=owner!=null&&owner.containerMenu==this&&stillValid(owner);
+        boolean active=owner!=null&&owner.containerMenu==this;
+        if((active||physicalChestSession()) && !stillValid(owner)){
+            if(physicalChestSession())concealPhysicalChest();
+            active=false;
+        }
         if(active){
             long now=owner.serverLevel().getGameTime();
             if(accessChanged()||(isStoragePage()&&now-lastRefresh>=10)){render();bump();lastRefresh=now;}
@@ -253,9 +273,13 @@ public final class StoreMenu extends AbstractContainerMenu {
     private boolean accessChanged(){return page==Page.ACCESS&&hub!=null&&shownAccessRevision!=hub.profileRevision;}
     public void action(Packets.Action packet){
         if(owner==null||owner.containerMenu!=this||packet.menu()!=containerId||packet.session()!=session())return;
+        boolean physical=physicalChestSession();
+        if(physical && !stillValid(owner)){
+            concealPhysicalChest();owner.closeContainer();return;
+        }
         // A personal preference has no dependency on the inventory snapshot revision.
         if(packet.verb().equals("tooltips")){
-            if(!stillValid(owner) || (packet.value()!=0 && packet.value()!=1))return;
+            if((!physical && !stillValid(owner)) || (packet.value()!=0 && packet.value()!=1))return;
             var preferences=Profiles.of(owner);
             boolean hide=packet.value()==0;
             if(preferences.hideStorageTooltips!=hide){
@@ -265,7 +289,7 @@ public final class StoreMenu extends AbstractContainerMenu {
             super.broadcastChanges();return;
         }
         if(packet.revision()!=revision()){sendAllDataToRemote();return;}
-        if(!stillValid(owner)){owner.closeContainer();return;}
+        if(!physical && !stillValid(owner)){owner.closeContainer();return;}
         if(accessChanged()){render();bump();sendAllDataToRemote();return;}
         long now=owner.serverLevel().getGameTime();if(lastAction==now)return;lastAction=now;
         try {
