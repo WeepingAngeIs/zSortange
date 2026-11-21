@@ -1,0 +1,64 @@
+name: Operator settings page
+on:
+  push:
+    branches: [experiment/operator-settings]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  operator-settings:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      BASELINE: anya-storage-plus-0.3.0-beta.7-discswap.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-opsettings.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-discswap.1
+          run-id: 44896547174
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Build the playable from the verified backpack version
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = 46b76cec4f1cb10b511bd1ef78512239f023c410
+          (cd reference && sha256sum --check SHA256SUMS.txt)
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir -p upload
+          cp "build/libs/$PLAYABLE" upload/
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/operator-settings/fixture.gradle -PimagePlayable="$PWD/upload/$PLAYABLE" prepareImageServer prepareImageClient
+      - name: Check operator controls, persistence and authorization
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          ALSOFT_DRIVERS: 'null'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          python3 -B fixtures/operator-settings/run.py | tee upload/CHECKS.txt
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Show fixture failures
+        if: failure()
+        run: |
+          for f in build/operator-settings/{Server,Client}/{console,restart}.log; do
+            if test -f "$f"; then tail -45 "$f" | cut -c1-900; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-opsettings.1
+          path: upload/
+          retention-days: 14

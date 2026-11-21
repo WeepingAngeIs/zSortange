@@ -263,10 +263,16 @@ public final class Config {
         return "";
     }
     private static boolean canSave(ServerPlayer actor, long expectedRevision) {
-        if(!actor.hasPermissions(2)) { AnyaStorage.tell(actor,"Operator permission required."); return false; }
-        if(reloading) { AnyaStorage.tell(actor,"A settings reload is already in progress."); return false; }
-        if(expectedRevision!=live.revision) { AnyaStorage.tell(actor,"Another admin saved first. Reopen settings."); return false; }
-        return true;
+        String error=saveProblem(actor,expectedRevision);
+        if(!error.isEmpty())AnyaStorage.tell(actor,error);
+        return error.isEmpty();
+    }
+    static boolean reloadPending(){return reloading;}
+    static String saveProblem(ServerPlayer actor,long expectedRevision){
+        if(!actor.hasPermissions(2))return "Operator permission required.";
+        if(reloading)return "A settings reload is in progress.";
+        if(expectedRevision!=live.revision)return "Another operator saved first. Review the refreshed value.";
+        return "";
     }
     private static boolean onlyCupidSettingsChanged(Data before, Data after) {
         return onlyExpansionSettingsChanged(before, after, CUPID_SETTINGS);
@@ -287,6 +293,16 @@ public final class Config {
     }
     /** The callers hold the Config lock and have checked thread, permission, revision and reload state. */
     private static boolean applyDraft(ServerPlayer actor, Data draft) {
+        return applyDraft(actor,draft,message->AnyaStorage.tell(actor,message));
+    }
+    static synchronized boolean saveFromScreen(ServerPlayer actor,Data draft,java.util.function.Consumer<String> feedback){
+        if(!onServerThread(actor))return false;
+        String problem=saveProblem(actor,draft.revision);
+        if(!problem.isEmpty()){feedback.accept(problem);return false;}
+        if(JSON.toJsonTree(get()).equals(JSON.toJsonTree(draft)))return true;
+        return applyDraft(actor,draft,feedback);
+    }
+    private static boolean applyDraft(ServerPlayer actor,Data draft,java.util.function.Consumer<String> feedback){
         Data before=copy(live), next=copy(draft);
         boolean reload = !onlyExpansionSettingsChanged(before, next, RUNTIME_EXPANSION_SETTINGS);
         boolean pocketChanged = next.expansion != null && before.expansion.pocketStorage != next.expansion.pocketStorage;
@@ -304,12 +320,12 @@ public final class Config {
             // A mixed edit can still roll back after reload. Keep new pocket construction closed until it succeeds.
             pocketActivationPending = reload && pocketChanged && next.expansion.pocketStorage;
             live=next;
-        } catch(Exception e) { AnyaStorage.tell(actor,"Not saved: "+e.getMessage()); return false; }
+        } catch(Exception e) { feedback.accept("Not saved: "+e.getMessage()); return false; }
         if (pocketChanged && !next.expansion.pocketStorage) PocketService.storageDisabled(server);
         if(before.audit||next.audit) AnyaStorage.LOG.info("Storage config revision {} by {} [{}]",next.revision,actor.getGameProfile().getName(),actor.getUUID());
         if (!reload) {
             lastStatus="Applied revision "+next.revision;
-            AnyaStorage.tell(actor,lastStatus);
+            feedback.accept(lastStatus);
             return true;
         }
         reloading=true;
@@ -318,7 +334,7 @@ public final class Config {
                 if(error==null) {
                     pocketActivationPending=false; reloading=false;
                     lastStatus="Applied revision "+next.revision;
-                    AnyaStorage.tell(actor,lastStatus);
+                    feedback.accept(lastStatus);
                 }
                 else {
                     AnyaStorage.LOG.error("Storage recipe reload failed",error);
@@ -328,7 +344,7 @@ public final class Config {
                         server.reloadResources(List.copyOf(server.getPackRepository().getSelectedIds())).whenComplete((unused,recovery)->server.execute(()->{
                             reloading=recovery!=null;
                             lastStatus=recovery==null?"Reload failed; previous settings restored":"Recovery failed. Inspect logs and restart before edits";
-                            AnyaStorage.tell(actor,lastStatus);
+                            feedback.accept(lastStatus);
                         }));
                     } catch(Exception failure) { lastStatus="Recovery failed; restart required"; AnyaStorage.LOG.error(lastStatus,failure); }
                 }
@@ -336,7 +352,7 @@ public final class Config {
         } catch(Exception e) {
             lastStatus="Reload could not start; restart required";
             AnyaStorage.LOG.error(lastStatus,e);
-            AnyaStorage.tell(actor,lastStatus);
+            feedback.accept(lastStatus);
         }
         return true;
     }
