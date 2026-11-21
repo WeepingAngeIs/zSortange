@@ -21,6 +21,8 @@ import net.neoforged.bus.api.ICancellableEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.minecraft.world.level.block.*;
+import net.minecraft.world.item.context.BlockPlaceContext;
 import java.io.IOException;
 import java.util.*;
 
@@ -28,7 +30,16 @@ import java.util.*;
 public final class RoomEditor {
     // A Visit lease is checked separately; chest changes need all four rights at the home hub.
     static final int CHEST_EDIT_RIGHTS = BasePermissions.BUILD | BasePermissions.LEGACY;
-    private static final Set<Block> DECOR=Set.of(Blocks.STONE_BRICKS,Blocks.QUARTZ_BLOCK,Blocks.OAK_PLANKS,Blocks.CHERRY_PLANKS,Blocks.BLACK_CONCRETE,Blocks.PURPLE_CONCRETE,Blocks.CYAN_CONCRETE,Blocks.SEA_LANTERN);
+    /** Plain, single-cell vanilla construction implementations. Subclasses can add placement side effects. */
+    private static final Set<Class<?>> BUILDING_TYPES=Set.of(Block.class,RotatedPillarBlock.class,StairBlock.class,
+            SlabBlock.class,TransparentBlock.class,StainedGlassBlock.class,GlazedTerracottaBlock.class,
+            AmethystBlock.class,IronBarsBlock.class,StainedGlassPaneBlock.class,WallBlock.class,FenceBlock.class);
+    private static boolean buildingBlock(Block block){
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block).getNamespace().equals("minecraft")
+                && BUILDING_TYPES.contains(block.getClass()) && block.asItem() instanceof BlockItem item
+                && item.getClass()==BlockItem.class && !block.defaultBlockState().hasBlockEntity()
+                && !(block instanceof net.minecraft.world.level.block.GameMasterBlock);
+    }
     private static final Map<ServerPlayer,Long> LAST=new WeakHashMap<>();
     private static final Set<UUID> FAILED=new HashSet<>();
     private static final Map<UUID,Access> MODES=new HashMap<>();
@@ -48,7 +59,7 @@ public final class RoomEditor {
     public static boolean quarantined(UUID pocket){return FAILED.contains(pocket);}
     private static boolean editing;
     public static boolean enabled(){return PocketService.enabled()&&ExpansionRules.get().pocketEditing;}
-    public static boolean supported(Block block){return DECOR.contains(block)||block==Content.CRATE.get()||Furniture.isFurniture(block);}
+    public static boolean supported(Block block){return buildingBlock(block)||block==Content.CRATE.get()||Furniture.isFurniture(block);}
     static boolean canAddChest(int registeredChests, int configuredLimit) {
         return registeredChests >= 4 && registeredChests < Math.min(8, configuredLimit);
     }
@@ -205,10 +216,23 @@ public final class RoomEditor {
             denied=PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if(!denied.isEmpty())return "Chest editing additionally requires View, Deposit and Withdraw";
         }else if(!removal && p.serverLevel().getBlockState(pos.below()).is(Content.CRATE.get()))return "Leave the space above the chest clear.";
-        else if(!RoomBounds.decoration(x,y,z)||!(DECOR.contains(state.getBlock())||Furniture.isFurniture(state.getBlock())))return "Unsupported block or protected room/exit boundary";
+        else if(!RoomBounds.decoration(x,y,z))return "Keep the room shell, chest approaches and exit path clear.";
+        else if(!supported(state.getBlock()))return "This block needs special placement or removal handling.";
         if (state.is(Content.HATCH.get())) {
             denied = PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if (!denied.isEmpty()) return "Furniture needs Build, View, Deposit and Withdraw.";
+        }
+        // Vanilla may reshape adjoining fences, panes, walls or stairs after the target changes.
+        // Treat those neighbours as affected building locations before authorizing the write.
+        for(var direction:net.minecraft.core.Direction.values()){
+            var near=pos.relative(direction);
+            if(!p.serverLevel().hasChunkAt(near))return "A neighbouring build location is unloaded.";
+            var adjacent=p.serverLevel().getBlockState(near);
+            var block=adjacent.getBlock();
+            if(!(block instanceof FenceBlock || block instanceof IronBarsBlock || block instanceof WallBlock || block instanceof StairBlock))continue;
+            if(!RoomBounds.decoration(near.getX()-r.x(),near.getY(),near.getZ()-r.z()))return "This edit could reshape a protected neighbouring block.";
+            String neighbour=Safety.buildReason(p,p.serverLevel(),near,adjacent,removal);
+            if(!neighbour.isEmpty())return neighbour;
         }
         return Safety.buildReason(p,p.serverLevel(),pos,state,removal);
     }
@@ -225,14 +249,26 @@ public final class RoomEditor {
         if(removal)proposed=p.serverLevel().getBlockState(pos);
         else{
             ItemStack held=p.getMainHandItem();
-            if(!(held.getItem() instanceof BlockItem bi)||!supported(bi.getBlock())||!ItemStack.isSameItemSameComponents(held,new ItemStack(held.getItem())))throw new IOException("Use a plain supported block; component-bearing items are not consumed");
-            proposed=bi.getBlock().defaultBlockState();
-            if(proposed.hasProperty(StorageBlock.FACING))proposed=proposed.setValue(StorageBlock.FACING,p.getDirection().getOpposite());
+            if(!(held.getItem() instanceof BlockItem bi))throw new IOException("Hold a building block in your main hand.");
+            if(!supported(bi.getBlock()))throw new IOException("This block needs special placement handling. Your item was kept.");
+            if(!ItemStack.isSameItemSameComponents(held,new ItemStack(held.getItem())))throw new IOException("This item has custom data that room placement cannot preserve. Your item was kept.");
+            if(buildingBlock(bi.getBlock())){
+                var context=new BlockPlaceContext(p,net.minecraft.world.InteractionHand.MAIN_HAND,held,hit);
+                if(!context.getClickedPos().equals(pos))throw new IOException("Choose empty space. Combining slabs or replacing a block in place is not supported.");
+                proposed=bi.getBlock().getStateForPlacement(context);
+                if(proposed==null || !proposed.is(bi.getBlock()) || !proposed.canSurvive(p.serverLevel(),pos))
+                    throw new IOException("This block cannot stand in that spot.");
+            }else{
+                proposed=bi.getBlock().defaultBlockState();
+                if(proposed.hasProperty(StorageBlock.FACING))proposed=proposed.setValue(StorageBlock.FACING,p.getDirection().getOpposite());
+            }
         }
+        if(removal && (proposed.hasProperty(SlabBlock.TYPE) && proposed.getValue(SlabBlock.TYPE)==net.minecraft.world.level.block.state.properties.SlabType.DOUBLE
+                || !proposed.getFluidState().isEmpty()))throw new IOException("This spot contains two slabs or a fluid. Single-block removal cannot refund it safely.");
         String denied=permission(p,r,pos,proposed,removal);if(!denied.isEmpty())throw new IOException(denied);
         if (!access.current(p,rights(proposed)) || !sight(p,hit) || removal && p.serverLevel().getBlockState(pos) != proposed)
             throw new IOException("Room or target changed during the build check.");
-        var registry=PocketRoomLayout.present(p.serverLevel(),r);
+        var registry=proposed.is(Content.CRATE.get())?PocketRoomLayout.present(p.serverLevel(),r):List.<StorageEntity>of();
         if(!removal){
             if(!p.serverLevel().isEmptyBlock(pos)||!p.serverLevel().getFluidState(pos).isEmpty())throw new IOException("Target is occupied; replacement is not supported");
             if(!unobstructed(p,pos,proposed))throw new IOException("Do not build inside a player or entity");
@@ -377,7 +413,7 @@ public final class RoomEditor {
                 var r=record(p);
                 if (!removal && proposed.is(Content.CRATE.get()) && !canAddChest(registry.size(), ExpansionRules.get().pocketContainers)) return false;
                 return (removal || p.getInventory().selected==inputSlot) && r.equals(pocket)&&access.current(p,rights(proposed))&&permission(p,r,pos,proposed,removal).isEmpty()
-                        &&access.current(p,rights(proposed))&&sight(p,hit)&&registry.equals(PocketRoomLayout.present(access.level(),r))&&cell.originalUnchanged()
+                        &&access.current(p,rights(proposed))&&sight(p,hit)&&(!proposed.is(Content.CRATE.get())||registry.equals(PocketRoomLayout.present(access.level(),r)))&&cell.originalUnchanged()
                         && (cell.mode == null || canClick(p,hit.getBlockPos(),removal))
                         && (removal || unobstructed(p, pos, proposed));
             }catch(IOException|RuntimeException e){return false;}

@@ -94,6 +94,7 @@ public final class PocketPadPackets {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
+        RoomCover.register(event);
         var registrar = event.registrar("pad1").optional();
         // NeoForge play handlers run on the main thread by default.
         registrar.playToServer(Focus.TYPE, Focus.CODEC, (focus, context) -> {

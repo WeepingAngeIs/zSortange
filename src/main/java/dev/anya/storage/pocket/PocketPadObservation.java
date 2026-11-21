@@ -50,6 +50,7 @@ public final class PocketPadObservation {
         PocketContent.EntranceEntity entrance;
         StorageEntity hub;
         long coordinates;
+        final RoomCover cover=new RoomCover();
         final UUID[] originalChests = new UUID[4];
 
         Focus(ServerPlayer player, BlockPos pos, long token, long now) {
@@ -128,6 +129,13 @@ public final class PocketPadObservation {
                 focus.published = true;
                 focus.sent = now;
                 PocketPadPackets.send(player, focus.pos, focus.token, value,focus.coordinates);
+            }
+            if(value>=0 && focus.published && viewers.get(player)==focus){
+                long revision=focus.hub.profileRevision;
+                try{
+                    focus.cover.send(player,focus.pos,focus.token,focus.pocket,()->validHome(player,focus,focus.pocket,
+                            focus.hub,focus.entrance,focus.hub.getBlockPos(),revision));
+                }catch(RuntimeException unavailable){clear(player,focus);}
             }
         }
     }

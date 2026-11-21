@@ -35,7 +35,7 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
 
     @SubscribeEvent
     public static void setup(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> { PocketPadPackets.receiver = EntranceLayoutClient::receive; });
+        event.enqueueWork(() -> { PocketPadPackets.receiver = EntranceLayoutClient::receive;RoomCover.receiver=EntranceLayoutClient::cover; });
     }
 
     @SubscribeEvent
@@ -63,6 +63,7 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         EntranceFacePose.orient(pose, face, client.gameRenderer.getMainCamera().getYRot());
         if (EntranceLayoutClient.CHEST_LAYOUT_STILL) {
             drawChestLayout(EntranceLayoutClient.visibleMask(entrance), pose, buffers, face, overlay);
+            cover(entrance,pose,buffers,face,overlay);
             pose.popPose();
             EntranceFrameSounds.drewFace(entrance);
             return;
@@ -79,8 +80,15 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
                         .5f, 0, 281/512f, 22/256f, -.5015f, overlay);
             });
         }
+        if(plan)cover(entrance,pose,buffers,face,overlay);
         pose.popPose();
         EntranceFrameSounds.drewFace(entrance);
+    }
+
+    private static void cover(PocketContent.EntranceEntity entrance,PoseStack pose,MultiBufferSource buffers,Direction face,int overlay){
+        if(EntranceLayoutClient.visibleMask(entrance)<0)return;
+        var surface=RoomCoverImage.surface(EntranceLayoutClient.coverTick());
+        if(surface!=null)quad(pose,buffers.getBuffer(RenderType.entityCutout(surface)),face,0,0,1,1,0,0,1,1,-.502f,overlay);
     }
 
     private static void drawChestLayout(int mask, PoseStack pose, MultiBufferSource buffers, Direction face,

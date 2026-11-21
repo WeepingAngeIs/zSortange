@@ -67,6 +67,12 @@ public final class EntranceLayoutClient {
         clear(false);
     }
 
+    public static void cover(Connection source,RoomCover.Strip strip){
+        if(target==null || connection.getConnection()!=source || !target.getBlockPos().equals(strip.entrance())
+                || !validateFocus() || !focus.accepts(strip.token()) || focus.visibleMask(tick,System.nanoTime())<0)return;
+        RoomCoverImage.accept(strip,tick);
+    }
+    static long coverTick(){return tick;}
     static long coordinates;
     public static void receive(Connection source, PocketPadPackets.Update update) {
         if (target == null || connection.getConnection() != source
@@ -108,7 +114,7 @@ public final class EntranceLayoutClient {
         PocketContent.EntranceEntity previous = target;
         ClientPacketListener previousConnection = connection;
         long previousToken = focus.token();
-        focus.clear();
+        focus.clear();RoomCoverImage.clear();
         target = null;
         connection = null;
         if (previous != null && notify && previousConnection == Minecraft.getInstance().getConnection()
