@@ -39,7 +39,7 @@ final class MountProbe {
             var corner=center.add(right.scale(.42)).add(up.scale(.42));
             for(var shape:java.util.List.of(state.getShape(level,camera),state.getCollisionShape(level,camera,CollisionContext.empty()))){
                 var lens=shape.clip(center.add(forward.scale(2)),center,camera);
-                Orders.check(lens!=null && lens.getDirection()==face && lens.getLocation().distanceTo(center.add(forward.scale(.5)))<.001,
+                Orders.check(lens!=null && lens.getDirection()==face && lens.getLocation().distanceTo(center.add(forward.scale(3.5/16)))<.001,
                         "Lens selection/collision "+face);
                 Orders.check(shape.clip(corner.add(forward.scale(2)),corner.subtract(forward.scale(2)),camera)==null,"Cube corner hit "+face);
             }

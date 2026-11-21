@@ -18,7 +18,7 @@ gradle.beforeProject { p -> p.afterEvaluate {
     p.neoForge.addModdingDependenciesTo(runtime)
     p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(playable,fixture))
     def roles = ['Server','CamOwner','RoomBuilder']
-    if(flavor!='baseline') roles += 'RoomVisitor'
+    if(flavor=='candidate') roles += 'RoomVisitor'
     def tasks = []
     roles.each { role ->
         def dir = new File(root,role)

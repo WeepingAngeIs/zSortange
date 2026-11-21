@@ -25,11 +25,12 @@ import static probe.Orders.check;
 @EventBusSubscriber(modid="roomroles")
 public final class Scenario {
     private static final String OWNER="CamOwner", BUILDER="RoomBuilder", GUEST="RoomVisitor";
+    private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial"));
     private static final boolean BASELINE="baseline".equals(System.getProperty("roomroles.trial"));
     private static final BlockPos HUB=new BlockPos(7,81,-5), DOOR=HUB.east(2);
     private static final BlockPos CAMERA=new BlockPos(0,82,0), WALL=new BlockPos(6,82,5), UP=new BlockPos(-6,81,0);
     private static final Direction NORTH=Direction.NORTH, SOUTH=Direction.SOUTH;
-    private static final List<String> ROLES=BASELINE?List.of(OWNER,BUILDER):List.of(OWNER,BUILDER,GUEST);
+    private static final List<String> ROLES=BASELINE||STUDIO?List.of(OWNER,BUILDER):List.of(OWNER,BUILDER,GUEST);
     private static final List<Step> steps=new ArrayList<>();
     private static final Map<String,Orders.Order> pending=new HashMap<>();
     private static final Set<String> receivedClicks=new HashSet<>();
@@ -68,6 +69,9 @@ public final class Scenario {
     }
     private static void update(MinecraftServer instance)throws Exception{
         server=instance;
+        if(STUDIO && Files.exists(Orders.ROOT.resolve("restart"))){
+            StudioEvidence.reloaded(instance);finished=true;return;
+        }
         if(steps.isEmpty()){
             if(ROLES.stream().anyMatch(role->player(role)==null || player(role).tickCount<50))return;
             prepare();
@@ -82,6 +86,7 @@ public final class Scenario {
             Orders.write("step.txt",current);next.start().run();return;
         }
         if(now-started>600)throw new AssertionError("Timed out at "+current+" pending="+pending.keySet()+" received="+receivedClicks);
+        if(STUDIO&&current.equals("motion-on-indoor-monitor")&&(now-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
         for(var entry:pending.entrySet()){
             var role=entry.getKey();
             if(!Files.exists(Orders.ack(role,current)) || entry.getValue().action().equals("use")&&!receivedClicks.contains(role))return;
@@ -100,7 +105,7 @@ public final class Scenario {
         var owner=player(OWNER);hub=(StorageEntity)home.getBlockEntity(HUB);hub.owner=owner.getUUID();
         ((PocketContent.EntranceEntity)home.getBlockEntity(DOOR)).owner=owner.getUUID();
         hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD);
-        if(!BASELINE)hub.setMember(player(GUEST).getUUID(),BasePermissions.VISIT);
+        if(!BASELINE&&!STUDIO)hub.setMember(player(GUEST).getUUID(),BasePermissions.VISIT);
         int i=0;
         for(String name:ROLES){
             var p=player(name);
@@ -110,7 +115,7 @@ public final class Scenario {
         owner.getInventory().setItem(1,new ItemStack(Content.CUPID_TABLET.get()));
         frontUse("bind-tablet-to-hub",HUB,Content.CUPID_TABLET.get(),true);
         frontUse("bind-room-cube",DOOR,Content.CUPID_TABLET.get(),true);
-        if(!BASELINE)outsideCameraSteps();
+        if(STUDIO)studioOutside();else if(!BASELINE)outsideCameraSteps();
         for(String role:ROLES){
             String name="enter-"+role;
             step(name,()->front(role,DOOR,Items.AIR,false),()->{
@@ -123,6 +128,7 @@ public final class Scenario {
                 return true;
             });
         }
+        if(STUDIO){studioInside();return;}
         step("all-builders-inside-with-no-exterior-preview-viewers",()->{},()->{
             var viewers=PocketPadObservation.class.getDeclaredField("viewers");viewers.setAccessible(true);
             return ((Map<?,?>)viewers.get(null)).isEmpty();
@@ -179,6 +185,156 @@ public final class Scenario {
             return true;
         });
     }
+    private static void studioOutside(){
+        verify("slim-camera-six-attachments-selection-collision-and-source",()->{
+            equip(player(OWNER),Items.AIR);MountProbe.sixFaces(player(OWNER));
+            home.setBlockAndUpdate(CAMERA.south(),Blocks.SMOOTH_STONE.defaultBlockState());StudioEvidence.scenery(home);
+        });
+        step("place-dedicated-upward-sky-camera",()->floorUse(OWNER,UP,CameraDevices.SKY_CAMERA.get().asItem()),()->home.getBlockState(UP).is(CameraDevices.SKY_CAMERA.get()));
+        step("mount-slim-camera",()->northUse(CAMERA.south(),CameraDevices.CAMERA.get().asItem(),false),()->{
+            StudioEvidence.cameraId=StudioEvidence.tag(home,CAMERA).getUUID("Identity");return true;
+        });
+        step("skinny-wall-rails",()->order(OWNER,"photo",CAMERA,new Vec3(-.65,81,-1.1),Vec3.atCenterOf(CAMERA),Items.AIR,false,null,0),()->true);
+        step("select-camera-on-tablet",()->northUse(CAMERA,Content.CUPID_TABLET.get(),true),()->true);
+    }
+    private static BlockPos studioWall(){return roomPos(10,67,15);}
+    private static void uiStep(String name,String action){
+        step(name,()->{
+            var p=player(OWNER);
+            var cmd=new Orders.Order(current,"ui."+action,p.level().dimension().location().toString(),0,"",false,"",0,0,0,0);
+            pending.put(OWNER,cmd);Orders.write(OWNER+".json",Orders.JSON.toJson(cmd));
+        },()->true);
+    }
+    private static void viewStudio(String name,String role,String action,int color){
+        step(name,()->{
+            var pos=studioWall();var feet=new Vec3(pos.getX()+.5+(role.equals(BUILDER)?1.2:0),65,pos.getZ()-3);
+            order(role,action,pos,feet,Vec3.atCenterOf(pos).add(0,0,.435),Items.AIR,false,null,color);
+        },()->true);
+    }
+    private static void studioInside(){
+        // Resolve the room-relative coordinates at execution, after the actual player entries.
+        step("build-disposable-interior-backing-wall",()->{
+            var wall=studioWall();StudioEvidence.screen=wall;
+            for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)
+                inside().setBlockAndUpdate(wall.south().offset(x,y,0),PocketContent.PANEL.get().defaultBlockState());
+        },()->true);
+        studioHit("mount-flush-monitor",OWNER,0,1,CameraDevices.WALL.get().asItem(),false);
+        studioHit("link-flat-monitor",OWNER,0,0,Content.CUPID_TABLET.get(),true);
+        viewStudio("one-block-screen",OWNER,"anyview",-1);
+        studioHit("open-monitor-settings",OWNER,0,0,Items.AIR,false);
+        uiStep("widen-to-two","width");uiStep("widen-to-three","width");
+        uiStep("raise-to-two","height");uiStep("raise-to-three","height");
+        uiStep("watch-only-chosen-types","group");uiStep("watch-creepers","watch");uiStep("ignore-cows","ignore");
+        uiStep("photograph-monitor-controls","photo");uiStep("return-to-game","close");
+        verify("persist-settings-without-rebinding",()->{
+            StudioEvidence.settings(home);check(StudioEvidence.property(inside(),studioWall(),"width")==3
+                    &&StudioEvidence.property(inside(),studioWall(),"height")==3,"Actual wall geometry");
+        });
+        viewStudio("nine-block-screen",OWNER,"anyview",-1);
+        viewStudio("private-guest-screen",BUILDER,"private",0);
+        studioHit("right-click-outer-panel",OWNER,1,1,Items.AIR,false);
+        uiStep("close-outer-panel-settings","close");
+        studioHit("guest-clicks-outer-panel",BUILDER,1,1,Items.AIR,false);
+        viewStudio("guest-cannot-open-controls-or-view",BUILDER,"private",0);
+        motionSteps();studioCeilingAndWall();
+        verify("save-links-rules-and-size",()->StudioEvidence.checkpoint(server,inside(),studioWall()));
+    }
+    private static void studioHit(String name,String role,int dx,int dz,Item item,boolean sneak){
+        step(name,()->{
+            var target=studioWall().offset(dx,0,dz);var feet=new Vec3(target.getX()+.5,65,target.getZ()-2.35);
+            order(role,"use",target,feet,Vec3.atCenterOf(target).add(0,0,dz==0?.435:0),item,sneak,NORTH,0);
+        },()->true);
+    }
+    private static void motionSteps(){
+        step("stationary-creeper-does-not-trigger",()->StudioEvidence.spawn(home),()->{
+            check(StudioEvidence.tracked(home)==null,"Stationary triggered");return server.getTickCount()-started>38;
+        });
+        step("ignored-cow-and-unlisted-hostile-do-not-trigger",()->{},()->{
+            if((server.getTickCount()-started)%8==0){StudioEvidence.move(StudioEvidence.cow);StudioEvidence.move(StudioEvidence.skeleton);}
+            check(StudioEvidence.tracked(home)==null,"Filtered mob triggered");return server.getTickCount()-started>50;
+        });
+        step("blocked-claim-does-not-trigger",()->StudioEvidence.denied=CAMERA,()->{
+            if((server.getTickCount()-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
+            check(StudioEvidence.tracked(home)==null,"Motion disclosed through denied claim");return server.getTickCount()-started>40;
+        });
+        step("occluded-creeper-not-detected",()->{
+            StudioEvidence.denied=null;
+            for(int z=-3;z<=0;z++)for(int y=81;y<=83;y++)home.setBlockAndUpdate(new BlockPos(2,y,z),Blocks.STONE.defaultBlockState());
+        },()->{
+            if((server.getTickCount()-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
+            check(StudioEvidence.tracked(home)==null,"Detected mob behind wall");return server.getTickCount()-started>45;
+        });
+        step("visible-motion-swivels-to-watched-creeper",()->{
+            for(int z=-3;z<=0;z++)for(int y=81;y<=83;y++)home.removeBlock(new BlockPos(2,y,z),false);
+        },()->{
+            if((server.getTickCount()-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
+            return StudioEvidence.creeper.getUUID().equals(StudioEvidence.tracked(home))&&StudioEvidence.property(home,CAMERA,"pan")==1;
+        });
+        viewStudio("motion-on-indoor-monitor",OWNER,"motion",0xd4b9db);
+        step("motion-ends-and-camera-returns-to-rest",()->{},()->StudioEvidence.tracked(home)==null&&StudioEvidence.property(home,CAMERA,"pan")==0);
+        studioHit("open-size-controls-for-obstruction",OWNER,0,0,Items.AIR,false);
+        uiStep("narrow-screen","width");
+        verify("put-a-block-in-next-column",()->inside().setBlockAndUpdate(studioWall().west(),Blocks.AMETHYST_BLOCK.defaultBlockState()));
+        uiStep("reject-expansion-over-build","blocked");
+        verify("obstacle-kept-and-size-unchanged",()->{
+            check(StudioEvidence.property(inside(),studioWall(),"width")==1&&inside().getBlockState(studioWall().west()).is(Blocks.AMETHYST_BLOCK),"Resize overwrote build");
+            inside().removeBlock(studioWall().west(),false);
+        });
+        uiStep("restore-two-wide","width");uiStep("restore-three-wide","width");uiStep("finish-controls","close");
+    }
+
+    private static BlockPos cinema(){return roomPos(0,67,7);}
+    private static void studioCeilingAndWall(){
+        step("mount-cinema-on-inner-room-wall",()->{
+            var a=cinema();order(OWNER,"use",a.west(),Vec3.atBottomCenterOf(a).add(2,-2,0),
+                    Vec3.atCenterOf(a.west()).add(.49,0,0),CameraDevices.CINEMA.get().asItem(),false,Direction.EAST,0);
+        },()->inside().getBlockState(cinema()).is(CameraDevices.CINEMA.get()));
+        step("link-cinema",()->{
+            var a=cinema();order(OWNER,"use",a,Vec3.atBottomCenterOf(a).add(2,-2,0),Vec3.atCenterOf(a).add(-.46,0,0),
+                    Content.CUPID_TABLET.get(),true,Direction.EAST,0);
+        },()->StudioEvidence.tag(inside(),cinema()).hasUUID("Camera"));
+        step("open-cinema-settings",()->{
+            var a=cinema();order(OWNER,"use",a,Vec3.atBottomCenterOf(a).add(2,-2,0),Vec3.atCenterOf(a).add(-.46,0,0),Items.AIR,false,Direction.EAST,0);
+        },()->true);
+        uiStep("fit-cinema-to-whole-wall","fit");
+        verify("whole-room-wall-kept-shell-and-anchor",()->{
+            check(StudioEvidence.property(inside(),cinema(),"width")==32&&StudioEvidence.property(inside(),cinema(),"height")==32,
+                    "Expected 32 by 32, actually "+StudioEvidence.tag(inside(),cinema()).getCompound("Panel"));
+            check(!inside().isEmptyBlock(cinema().west())&&inside().isEmptyBlock(cinema().above(15)),"Fit changed real blocks");
+        });
+        uiStep("close-cinema-controls","close");
+        step("cinema-wall-live",()->{
+            var a=cinema();var feet=Vec3.atBottomCenterOf(roomPos(20,65,8));
+            order(OWNER,"cinema",a,feet,Vec3.atCenterOf(roomPos(0,75,8)),Items.AIR,false,null,-1);
+        },()->true);
+        step("raise-tablet-inside-skygrid",()->{
+            var a=roomPos(18,65,13);order(OWNER,"tablet",a,Vec3.atBottomCenterOf(a),Vec3.atCenterOf(a).add(0,3,-4),
+                    Content.CUPID_TABLET.get(),false,null,-1);
+        },()->player(OWNER).containerMenu instanceof StoreMenu);
+        uiStep("open-skygrid-cosmetics","cosmetics");uiStep("turn-on-live-ceiling","ceiling");
+        uiStep("photograph-skygrid-tablet","photo");uiStep("lower-tablet","close");
+        verify("daylight-outdoor-sky",()->{home.setDayTime(6000);home.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);});
+        ceiling("ceiling-without-flyover","clear",0x4000000);
+        step("guest-returns-to-outdoor-camera",()->PocketService.recover(player(BUILDER)),()->player(BUILDER).level()==home);
+        verify("second-player-flies-over-upward-lens",()->{
+            var other=player(BUILDER);other.getAbilities().mayfly=true;other.getAbilities().flying=true;other.onUpdateAbilities();
+            other.connection.teleport(UP.getX()+.5,UP.getY()+3.2,UP.getZ()+.5,0,0);
+        });
+        ceiling("ceiling-player-overhead","fly",-1);
+        verify("flyer-moves-off-camera",()->player(BUILDER).connection.teleport(UP.getX()+12,UP.getY()+3.2,UP.getZ()+.5,0,0));
+        ceiling("ceiling-after-flyover","clear",0x4000000);
+        verify("occlude-outdoor-lens",()->home.setBlockAndUpdate(UP.above(),Blocks.GOLD_BLOCK.defaultBlockState()));
+        ceiling("ceiling-source-roof","clear",MapColor.GOLD.col);
+        verify("switch-to-outdoor-midnight",()->{home.removeBlock(UP.above(),false);home.setDayTime(18000);});
+        ceiling("ceiling-night","clear",0x5000000);
+    }
+    private static void ceiling(String name,String action,int color){
+        step(name,()->{
+            var feet=Vec3.atBottomCenterOf(roomPos(16,65,14));
+            order(OWNER,"sky."+action,roomPos(16,97,14),feet,feet.add(0,32,.015),Items.AIR,false,null,color);
+        },()->true);
+    }
+
     private static void outsideCameraSteps(){
         verify("six-attachment-faces-selection-collision-legacy-facing-and-lens-rays",()->{
             equip(player(OWNER),Items.AIR);

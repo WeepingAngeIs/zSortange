@@ -1,0 +1,66 @@
+name: Skygrid cameras, wall monitors and live ceiling
+on:
+  push:
+    branches: [experiment/camera-studio]
+permissions:
+  contents: read
+jobs:
+  camera-room:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-cctv.2.jar
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build the camera candidate and prepare two disposable players
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          cp "build/libs/$PLAYABLE" upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=studio -ProlePlayable="$PWD/upload/$PLAYABLE" prepareRoleTrial
+      - name: Check the slim mount, motion filters, room wall and live flyover
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri python3-pil
+          python3 -B fixtures/camera-roles/run.py studio | tee upload/CHECKS.txt
+          /usr/bin/python3 -B fixtures/camera-roles/studio_captures.py "upload/$PLAYABLE" | tee -a upload/CHECKS.txt
+          mkdir -p upload/captures
+          cp build/role-check/studio/control/{*.png,*.ok,pixel-samples.json} upload/captures/
+      - name: Show the exact step on failure
+        if: failure()
+        run: |
+          for f in build/role-check/studio/control/{step.txt,*status,FAIL-*} build/role-check/studio/*/{console,restart}.log; do
+            if test -f "$f"; then echo "$f"; tail -30 "$f" | cut -c1-800; fi
+          done
+      - name: Preserve partial fixture observations
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camera-studio-diagnostics
+          path: |
+            build/role-check/studio/control/
+            build/role-check/studio/*/console.log
+            build/role-check/studio/*/restart.log
+          retention-days: 3
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-cctv.2
+          path: upload/
+          retention-days: 14

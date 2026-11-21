@@ -295,7 +295,7 @@ public final class PocketService {
             if(valid&&pending==null&&l.kind()==PocketLeases.Kind.REMOTE)valid=p.containerMenu instanceof StoreMenu m&&m.hasPocket(l.pocket());
             if(valid)valid=LEASES.renew(l.player(),r.epoch(),clock,80);
             if(!valid)endLease(l.player(),p);
-            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT){SkygridWalls.visit(p,r,clock);RoomHologram.visit(p,r,clock);ExitGate.visit(p,r,clock);}
+            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT){SkygridWalls.visit(p,r,clock);SkyCeiling.visit(p,r,clock);RoomHologram.visit(p,r,clock);ExitGate.visit(p,r,clock);}
         }
         LEASES.expire(clock);syncTickets(server);
         // One pocket receives preparation work per tick, never one budget per viewer.
@@ -414,7 +414,7 @@ public final class PocketService {
         LEASES.release(player);
         RoomEditor.endVisit(player);
         RoomPlans.endVisit(currentServer,player);
-        SkygridWalls.end(player,currentServer);ExitGate.end(player);
+        SkygridWalls.end(player,currentServer);SkyCeiling.end(player,currentServer);ExitGate.end(player);
         RoomHologram.end(currentServer,player);
     }
     public static void closeView(ServerPlayer p){var l=LEASES.get(p.getUUID());if(l!=null&&l.kind()==PocketLeases.Kind.REMOTE)release(p.getUUID());}

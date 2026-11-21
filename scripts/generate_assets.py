@@ -80,7 +80,7 @@ for source in ('item_help_parts.json', 'item_help_devices.json'):
     if lang.keys() & help_lines.keys():
         raise ValueError(f'Duplicate language keys in {source}')
     lang.update(help_lines)
-for name,title in [('outdoor_camera','Outdoor Camera'),('wall_monitor','Wall Monitor'),('skyglass','Skyglass')]:
+for name,title in [('outdoor_camera','Outdoor Camera'),('wall_monitor','Wall Monitor'),('wide_wall_monitor','Wide Wall Monitor'),('cinema_wall_monitor','Cinema Wall Monitor'),('sky_camera','Sky Camera'),('skyglass','Skyglass')]:
     lang[f'block.{MOD}.{name}']=title
 js(f'assets/{MOD}/lang/en_us.json',lang)
 def shaped(name,group,pattern,key,count=1):
@@ -157,8 +157,18 @@ for panel in ('skygrid_panel','skygrid_floor','skygrid_light'):
     js(f'assets/{MOD}/blockstates/{panel}.json',{'variants':{'':{'model':f'{MOD}:block/{panel}'}}})
     js(f'assets/{MOD}/models/block/{panel}.json',{'parent':'minecraft:block/cube_all','textures':{'all':f'{MOD}:block/{panel}'}})
 
+# Each display tier is a Survival upgrade of the previous physical monitor.
+for device,pattern,parts in [
+    ('outdoor_camera',[' CI','GRA',' II'],{'C':'copper_ingot','I':'iron_nugget','G':'glass_pane','R':'redstone','A':'amethyst_shard'}),
+    ('sky_camera',[' G ','ACA',' R '],{'G':'tinted_glass','A':'amethyst_shard','C':f'{MOD}:outdoor_camera','R':'redstone'}),
+    ('wall_monitor',['IGI','CRC'],{'I':'iron_ingot','G':'glass_pane','C':'copper_ingot','R':'redstone'}),
+    ('wide_wall_monitor',['CGC','AMA','CGC'],{'C':'copper_ingot','G':'tinted_glass','A':'amethyst_shard','M':f'{MOD}:wall_monitor'}),
+    ('cinema_wall_monitor',['DGD','AMA','CRC'],{'D':'diamond','G':'tinted_glass','A':'amethyst_shard','M':f'{MOD}:wide_wall_monitor','C':'copper_ingot','R':'redstone_block'})]:
+    js(f'data/{MOD}/recipe/{device}.json',{'type':'minecraft:crafting_shaped','category':'redstone','pattern':pattern,
+        'key':{k:{'item':v if ':' in v else 'minecraft:'+v} for k,v in parts.items()},'result':{'id':f'{MOD}:{device}','count':1}})
+
 # The sensor and screens share the Skygrid casing. North is the active face before blockstate rotation.
-for device in ('outdoor_camera','wall_monitor','skyglass'):
+for device in ('outdoor_camera','sky_camera','wall_monitor','wide_wall_monitor','cinema_wall_monitor','skyglass'):
     pixels=[]
     for y in range(16):
         for x in range(16):
@@ -168,12 +178,20 @@ for device in ('outdoor_camera','wall_monitor','skyglass'):
                 radius=(x-7.5)**2+(y-7.5)**2
                 if radius<27: color=(91,102,132) if radius>15 else (34,52,80)
                 if (x,y) in [(6,5),(7,5)]: color=(160,203,223)
+            elif 'wall_monitor' in device and rim==1:
+                color={'wall_monitor':(167,131,159),'wide_wall_monitor':(127,184,192),'cinema_wall_monitor':(209,166,205)}[device]
             elif y==13 and x in (3,4,5): color=(174,153,186)
             pixels.append((*color,255))
     png(f'assets/{MOD}/textures/block/{device}.png',16,16,pixels)
     if device=='outdoor_camera':
         import camera_model
         camera_model.generate(js,png,MOD)
+    elif device=='sky_camera':
+        import camera_model
+        camera_model.sky_camera(js,MOD)
+    elif 'wall_monitor' in device:
+        import camera_model
+        camera_model.wall_monitor(js,MOD,device)
     else:
         casing=f'{MOD}:block/skygrid_panel'
         js(f'assets/{MOD}/models/block/{device}.json',{'parent':'minecraft:block/cube','textures':{

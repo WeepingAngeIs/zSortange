@@ -28,7 +28,17 @@ final class NativeRoomBuild {
         var lease=PocketService.lease(p.getUUID());
         if(lease==null || !RoomEditor.active(p) || !p.getAbilities().mayBuild || p.isSpectator() || !p.serverLevel().hasChunkAt(pos))return false;
         var room=PocketService.loadedPocket(p.getServer(),lease.pocket());
-        if(room==null || !RoomBounds.decoration(pos.getX()-room.x(),pos.getY(),pos.getZ()-room.z())
+        boolean wallFace=false;
+        if(room!=null&&state.getBlock() instanceof WallMonitorBlock){
+            // BlockPlaceContext has not resolved FACING yet in the initial item-use event.
+            for(var direction:net.minecraft.core.Direction.Plane.HORIZONTAL){
+                if(WallMonitorBlock.shellFace(room,pos,direction)&&p.serverLevel().hasChunkAt(pos.relative(direction.getOpposite()))
+                        &&p.serverLevel().getBlockState(pos.relative(direction.getOpposite())).isFaceSturdy(p.serverLevel(),pos.relative(direction.getOpposite()),direction)){
+                    wallFace=true;break;
+                }
+            }
+        }
+        if(room==null || !wallFace&&!RoomBounds.decoration(pos.getX()-room.x(),pos.getY(),pos.getZ()-room.z())
                 || p.serverLevel().getBlockState(pos.below()).is(Content.CRATE.get()))return false;
         int rights=BasePermissions.BUILD | (storage?BasePermissions.LEGACY:0);
         return PocketService.authorize(p,room,PocketLeases.Kind.VISIT,false,rights).isEmpty()

@@ -1,15 +1,16 @@
 """Original CCTV bracket and swiveling body. Model coordinates are sixteenths, with its lens facing north."""
 FACES = ("north", "south", "east", "west", "up", "down")
 MOUNT = (
-    ("wall plate", [5,2,14], [11,8,16], "mount"),
-    ("arm", [7,3,7], [9,5,14], "mount"),
-    ("pivot", [6.5,5,6.5], [9.5,5.75,9.5], "mount"),
+    ("wall plate", [6.125,5,15.5], [9.875,6.875,16], "mount"),
+    ("left rail", [6.75,5.5,7.5], [7.375,6.125,15.5], "mount"),
+    ("right rail", [8.625,5.5,7.5], [9.25,6.125,15.5], "mount"),
+    ("pivot", [6.75,6.125,7.5], [9.25,7,8.5], "mount"),
 )
 HEAD = (
-    ("housing", [4.5,5.75,2.5], [11.5,10.25,11], "body"),
-    ("sun shield", [4,10.25,.5], [12,11,11], "shield"),
-    ("lens barrel", [5.5,6,1], [10.5,10,2.5], "mount"),
-    ("front glass", [6,6.5,0], [10,9.5,1], "mount"),
+    ("housing", [6,7,5.875], [10,9.125,10.5], "body"),
+    ("sun shield", [5.875,9.125,5.125], [10.125,9.5,10.625], "shield"),
+    ("lens barrel", [6.625,7.125,5], [9.375,8.875,5.875], "mount"),
+    ("front glass", [6.875,7.25,4.5], [9.125,8.75,5], "mount"),
 )
 
 
@@ -66,3 +67,27 @@ def generate(js, png, mod):
                           "apply":{"model":f"{mod}:block/cctv_head", **rotations[aim]}})
     js(f"{base}/blockstates/outdoor_camera.json",{"multipart":parts})
 
+
+
+def wall_monitor(js, mod, device):
+    base=f"assets/{mod}"
+    model=f"{mod}:block/{device}"
+    textures={"case":f"{mod}:block/cctv_mount","glass":f"{mod}:block/{device}","particle":f"{mod}:block/cctv_mount"}
+    faces={side:{"texture":"#case","uv":[0,0,16,16]} for side in FACES}
+    faces["north"]={"texture":"#glass","uv":[0,0,16,16]}
+    js(f"{base}/models/block/{device}.json",{"parent":"minecraft:block/block","textures":textures,
+           "elements":[{"from":[0,0,15],"to":[16,16,16],"faces":faces}]})
+    variants={f"facing={face}":{"model":model,"y":angle} for face,angle in (("north",0),("east",90),("south",180),("west",270))}
+    variants.update({f"facing={face}":{"model":model,"x":angle} for face,angle in (("up",270),("down",90))})
+    js(f"{base}/blockstates/{device}.json",{"variants":variants})
+    js(f"{base}/models/item/{device}.json",{"parent":model})
+
+def sky_camera(js,mod):
+    base=f"assets/{mod}";model=f"{mod}:block/sky_camera"
+    faces={s:{"texture":"#case","uv":[0,0,16,16]} for s in FACES}
+    glass={**faces,"up":{"texture":"#glass","uv":[0,0,16,16]}}
+    js(f"{base}/models/block/sky_camera.json",{"parent":"minecraft:block/block",
+       "textures":{"case":f"{mod}:block/cctv_shield","glass":f"{mod}:block/outdoor_camera","particle":f"{mod}:block/cctv_mount"},
+       "elements":[{"from":[4.5,0,4.5],"to":[11.5,3.5,11.5],"faces":faces},{"from":[5.5,3.5,5.5],"to":[10.5,4.5,10.5],"faces":glass}]})
+    js(f"{base}/blockstates/sky_camera.json",{"variants":{"":{"model":model}}})
+    js(f"{base}/models/item/sky_camera.json",{"parent":model})

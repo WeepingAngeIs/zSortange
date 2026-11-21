@@ -21,17 +21,19 @@ final class OutdoorCameraBlock extends CameraDevices.DeviceBlock {
     private static final Map<Direction,VoxelShape[]> SHAPES = new EnumMap<>(Direction.class);
     static {
         for (Direction mount : Direction.values()) {
-            VoxelShape plate = boxFacing(mount, 5,2,14, 11,8,16);
-            VoxelShape arm = boxFacing(mount, 7,3,7, 9,5,14);
-            VoxelShape pivot = boxFacing(mount, 6.5,5,6.5, 9.5,5.75,9.5);
+            VoxelShape bracket = Shapes.or(
+                    boxFacing(mount,6.125,5,15.5, 9.875,6.875,16),
+                    boxFacing(mount,6.75,5.5,7.5, 7.375,6.125,15.5),
+                    boxFacing(mount,8.625,5.5,7.5, 9.25,6.125,15.5),
+                    boxFacing(mount,6.75,6.125,7.5, 9.25,7,8.5));
             VoxelShape[] poses = new VoxelShape[3];
             for (int pan=0; pan<poses.length; pan++) {
                 Direction face = lensDirection(mount,pan);
-                poses[pan] = Shapes.or(plate, arm, pivot,
-                        boxFacing(face,4.5,5.75,2.5, 11.5,10.25,11),
-                        boxFacing(face,4,10.25,.5, 12,11,11),
-                        boxFacing(face,5.5,6,1, 10.5,10,2.5),
-                        boxFacing(face,6,6.5,0, 10,9.5,1)).optimize();
+                poses[pan] = Shapes.or(bracket,
+                        boxFacing(face,6,7,5.875, 10,9.125,10.5),
+                        boxFacing(face,5.875,9.125,5.125, 10.125,9.5,10.625),
+                        boxFacing(face,6.625,7.125,5, 9.375,8.875,5.875),
+                        boxFacing(face,6.875,7.25,4.5, 9.125,8.75,5)).optimize();
             }
             SHAPES.put(mount,poses);
         }
@@ -40,6 +42,11 @@ final class OutdoorCameraBlock extends CameraDevices.DeviceBlock {
     OutdoorCameraBlock() {
         registerDefaultState(defaultBlockState().setValue(PAN,0));
     }
+    @Override public <T extends net.minecraft.world.level.block.entity.BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T>
+    getTicker(net.minecraft.world.level.Level level,BlockState state,net.minecraft.world.level.block.entity.BlockEntityType<T> type){
+        if(!(level instanceof net.minecraft.server.level.ServerLevel server)||type!=CameraDevices.TYPE.get())return null;
+        return (world,pos,block,entity)->CameraTracking.tick(server,(CameraDevices.Device)entity);
+    }
     @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block,BlockState> builder) {
         super.createBlockStateDefinition(builder);
         builder.add(PAN);
@@ -47,7 +54,11 @@ final class OutdoorCameraBlock extends CameraDevices.DeviceBlock {
     static Direction lensDirection(BlockState state) {
         return lensDirection(state.getValue(BlockStateProperties.FACING),state.getValue(PAN));
     }
-    private static Direction lensDirection(Direction mount,int pan) {
+    static Vec3 lensEye(BlockPos pos, BlockState state) {
+        // The front glass is 3.5 model units ahead of the block center.
+        return Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(lensDirection(state).getNormal()).scale(3.5 / 16 + .015625));
+    }
+    static Direction lensDirection(Direction mount,int pan) {
         if (!mount.getAxis().isHorizontal()) return mount;
         return switch (pan) {
             case 1 -> mount.getClockWise();

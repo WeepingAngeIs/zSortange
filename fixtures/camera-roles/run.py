@@ -16,14 +16,14 @@ server = root / "Server"
     "server-ip=127.0.0.1\nserver-port=25574\nonline-mode=false\ngamemode=survival\n"
     "spawn-protection=0\nlevel-type=minecraft:flat\nview-distance=4\nsimulation-distance=3\n")
 roles = ["CamOwner","RoomBuilder"]
-if sys.argv[1] != "baseline":
+if sys.argv[1] == "candidate":
     roles.append("RoomVisitor")
 
 processes = {}
 logs = []
 def start(name, display):
     folder = root / name
-    console = (folder / "console.log").open("w")
+    console = (folder / ("restart.log" if (control / "restart").exists() else "console.log")).open("w")
     logs.append(console)
     command = ["bash", (folder / "launch.txt").read_text().strip()]
     env = os.environ.copy()
@@ -54,7 +54,7 @@ try:
     for role in roles:
         start(role, True)
         time.sleep(1)
-    deadline = time.monotonic()+380
+    deadline = time.monotonic()+(630 if sys.argv[1]=="studio" else 380)
     while not (control / "PASS.txt").exists():
         failures = list(control.glob("FAIL-*"))
         if failures:
@@ -79,3 +79,17 @@ finally:
     for log in logs:
         log.close()
 
+
+if sys.argv[1] == "studio":
+    (control / "restart").touch()
+    start("Server",False)
+    try:
+        result=processes["Server"].wait(timeout=120)
+        if result or not (control/"restored").exists():
+            raise RuntimeError("Dedicated restart failed: "+(server/"restart.log").read_text(errors="replace")[-2500:])
+        print((control/"restored").read_text())
+    finally:
+        if processes["Server"].poll() is None:
+            processes["Server"].terminate()
+        for log in logs:
+            log.close()

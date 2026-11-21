@@ -29,7 +29,7 @@ import java.util.function.Consumer;
 
 /** Display-only slots. The only accepted input is a session/revision-checked intent packet. */
 public final class StoreMenu extends AbstractContainerMenu {
-    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES, ACCESS, ACTIVITY, FIELD_KIT, KEEP_RULES;
+    private enum Page { NETWORK, BAG, CHEST, ADMIN, LIMITS, TIERS, TIER, ORES, RECIPES, UPGRADE_GATES, PREFS, BASE, ROUTE, UPGRADES, DIAGNOSTICS, PRESETS, CONFIG_CONFIRM, SORT_CONFIRM, FEED_CONFIRM, CATEGORIES, WARDROBE, EXPANSION, IMAGES, ACCESS, ACTIVITY, FIELD_KIT, KEEP_RULES, SKYGRID_COSMETICS;
         boolean isStorage() { return this == NETWORK || this == BAG || this == CHEST; }
     }
     private enum Opening { PLAIN, REMOTE, TABLET, CHEST, BACKPACK, CREATIVE }
@@ -56,7 +56,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private Config.Data draft;
     private String input="",selectedTier="netherite";
     private int offset,viewportRows=5,viewportColumns=9;
-    private UUID selectedImage,deleteImage,selectedMember;
+    private UUID selectedImage,deleteImage,selectedMember,selectedMonitor;
     private boolean clearLogConfirm;
     private String lastAppearance="";
     private boolean favoritesOnly;
@@ -227,6 +227,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     @Override public boolean stillValid(Player player){
         if(owner==null)return true;if(player!=owner||!owner.isAlive()||owner.isSpectator())return false;
         if(adminPage()&&!owner.hasPermissions(2))return false;
+        if(page==Page.SKYGRID_COSMETICS&&!roomCosmeticsAllowed())return false;
         if(bag!=null&&!bag.valid())return false;
         if(pocket!=null&&!pocket.valid())return false;
         if((openingFlags&CREATIVE_ACCESS)!=0 && (openingFlags&LOCAL_ROOM)==0 && (creative==null||!creative.held()))return false;
@@ -346,6 +347,7 @@ public final class StoreMenu extends AbstractContainerMenu {
                 int value=packet.value();if(value<0||value>16_000_000)return;
                 viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
             }
+            else if(packet.verb().equals("room_cosmetics")&&isStoragePage()&&roomCosmeticsAllowed()){navigate(Page.SKYGRID_COSMETICS);}
             else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
             else if(isStoragePage() && pocket!=null && pocket.localTablet() && (packet.verb().equals("wallpaper") || packet.verb().equals("wall_photo"))){
                 dev.anya.storage.pocket.SkygridWalls.cycle(owner,pocket.id(),packet.verb().equals("wall_photo"));
@@ -387,7 +389,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         sync.set(4,(bag!=null?2:0)|(openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
         switch(page){
-            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();case ACCESS->access();case ACTIVITY->activity();case FIELD_KIT->fieldKit();case KEEP_RULES->keepRules();
+            case NETWORK,BAG,CHEST->storage();case ADMIN->admin();case LIMITS->limits();case TIERS->tiers();case TIER->tier();case ORES->ores();case RECIPES->recipes();case UPGRADE_GATES->upgradeGates();case PREFS->prefs();case BASE->base();case ROUTE->routing();case UPGRADES->upgrades();case DIAGNOSTICS->diagnostics();case PRESETS->presets();case CONFIG_CONFIRM->configConfirm();case SORT_CONFIRM->sortConfirm();case FEED_CONFIRM->feedConfirm();case CATEGORIES->categories();case WARDROBE->wardrobe();case EXPANSION->expansion();case IMAGES->images();case ACCESS->access();case ACTIVITY->activity();case FIELD_KIT->fieldKit();case KEEP_RULES->keepRules();case SKYGRID_COSMETICS->roomCosmetics();
         }
     }
     private void navigate(Page next){
@@ -639,6 +641,25 @@ public final class StoreMenu extends AbstractContainerMenu {
         var plan=new Transactions.Plan(all,transferGuard(targets,rights));
         logWithdrawal(FieldKit.undo(owner,scope(),storage,main,plan));
         markLeftovers(main,0);
+    }
+    private boolean roomCosmeticsAllowed(){
+        return pocket!=null&&pocket.localTablet()&&PocketService.visitingOwner(owner,pocket.id());
+    }
+    private void roomCosmetics(){
+        if(!roomCosmeticsAllowed())return;
+        var id=pocket.id();boolean live=dev.anya.storage.pocket.SkyCeiling.enabled(owner,id);
+        var device=dev.anya.storage.pocket.RoomDisplays.choose(owner,id,selectedMonitor,false);selectedMonitor=device.id();
+        button(45,ControlGlyph.BACK,"Back to storage",c->navigate(storagePage()));
+        button(46,ControlGlyph.SYMBOL,"Wall theme",c->dev.anya.storage.pocket.SkygridWalls.cycle(owner,id,false),"Cycle the room's wall panels.");
+        button(47,ControlGlyph.IMAGE,"Wall image",c->dev.anya.storage.pocket.SkygridWalls.cycle(owner,id,true),"Choose one of your images or turn the image off.");
+        button(48,ControlGlyph.SYMBOL,"Exit color",c->dev.anya.storage.pocket.ExitGate.cycle(owner,id));
+        button(49,ControlGlyph.MODELS,"Live ceiling "+(live?"ON":"OFF"),c->dev.anya.storage.pocket.SkyCeiling.set(owner,id,!live),
+                "Place your Sky Camera outdoors. Turn this on to view it overhead.");
+        button(50,ControlGlyph.INFO,"Select monitor",c->selectedMonitor=dev.anya.storage.pocket.RoomDisplays.choose(owner,id,selectedMonitor,true).id(),device.label());
+        button(51,ControlGlyph.IMAGE,"Fit to wall",device.id()==null?null:c->dev.anya.storage.pocket.RoomDisplays.change(owner,id,device.id(),true),device.label());
+        button(52,ControlGlyph.MODELS,"Link camera",device.id()==null?null:c->dev.anya.storage.pocket.RoomDisplays.change(owner,id,device.id(),false),
+                "Sneak-use your tablet on an outdoor camera first.",device.label());
+        button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());
     }
     private void fieldKit(){
         var prefs=Profiles.of(owner).fieldKit;
