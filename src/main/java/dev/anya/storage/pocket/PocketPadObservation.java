@@ -49,6 +49,7 @@ public final class PocketPadObservation {
         PocketLedger.Pocket pocket;
         PocketContent.EntranceEntity entrance;
         StorageEntity hub;
+        long coordinates;
         final UUID[] originalChests = new UUID[4];
 
         Focus(ServerPlayer player, BlockPos pos, long token, long now) {
@@ -126,7 +127,7 @@ public final class PocketPadObservation {
             } else if (!focus.published || now - focus.sent >= HEARTBEAT) {
                 focus.published = true;
                 focus.sent = now;
-                PocketPadPackets.send(player, focus.pos, focus.token, value);
+                PocketPadPackets.send(player, focus.pos, focus.token, value,focus.coordinates);
             }
         }
     }
@@ -163,7 +164,9 @@ public final class PocketPadObservation {
         var room = PocketService.dimension(player.getServer());
         if (room == null) return -1;
         if (!new LoadedPocketBlocks(room).fullPlot(pocket)) return -1;
-        var positions = PocketRoomLayout.positions(pocket);
+        java.util.List<BlockPos> positions;
+        try{positions=PocketRoomLayout.locations(new LoadedPocketBlocks(room),pocket);}
+        catch(java.io.IOException unavailable){return -1;}
         // An empty pad is private too. Supply the visitor and actual destination dimension to each claim hook.
         for (BlockPos pad : positions) if (!Safety.locationReason(player, room, pad).isEmpty()) return -1;
         // Addon hooks ran above. Discard earlier world references and recheck before reading the layout.
@@ -171,7 +174,13 @@ public final class PocketPadObservation {
         if (!roomBlocks.fullPlot(pocket) || !validHome(player, focus, pocket, hub, entrance, hubPos, policy)) return -1;
         // A recovery quarantine on any sampled chest column also closes the exterior preview.
         if (!StillRepairGuard.permits(pocket.id(), positions)) return -1;
+        try{if(!positions.equals(PocketRoomLayout.locations(roomBlocks,pocket)))return -1;}
+        catch(java.io.IOException unavailable){return -1;}
         int mask = 0;
+        long coordinates=0;
+        var oldPads=PocketRoomLayout.pads(pocket);
+        int reserved=0;
+        for(var pos:positions){int slot=oldPads.indexOf(pos);if(slot>=0)reserved|=1<<slot;}
         var identities = new HashSet<UUID>();
         for (int i = 0; i < positions.size(); i++) {
             BlockPos pos = positions.get(i);
@@ -188,12 +197,20 @@ public final class PocketPadObservation {
                 if (focus.pocket != null && !id.equals(focus.originalChests[i])) return -1;
                 focus.originalChests[i] = id;
             }
-            mask |= 1 << i;
+            int bit=i;
+            if(i>=4){
+                int slot=oldPads.indexOf(pos);
+                if(slot<0){slot=Integer.numberOfTrailingZeros(~reserved);reserved|=1<<slot;}
+                bit=4+slot;
+                coordinates|=(long)((pos.getX()-pocket.x())|((pos.getZ()-pocket.z())<<5))<<(10*slot);
+            }
+            mask |= 1 << bit;
         }
         if (!roomBlocks.complete() || !validHome(player, focus, pocket, hub, entrance, hubPos, policy)) return -1;
         focus.pocket = pocket;
         focus.entrance = entrance;
         focus.hub = hub;
+        focus.coordinates=coordinates;
         return mask;
     }
 

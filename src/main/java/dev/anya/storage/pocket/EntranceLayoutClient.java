@@ -67,10 +67,11 @@ public final class EntranceLayoutClient {
         clear(false);
     }
 
+    static long coordinates;
     public static void receive(Connection source, PocketPadPackets.Update update) {
         if (target == null || connection.getConnection() != source
                 || !target.getBlockPos().equals(update.pos()) || !validateFocus()) return;
-        if (focus.applyMask(update.token(), update.mask(), tick, System.nanoTime()) && focus.token() == 0) clear(false);
+        if (focus.applyMask(update.token(), update.mask(), tick, System.nanoTime())) {coordinates=update.coordinates();if(focus.token()==0)clear(false);}
     }
 
     /** Source compatibility for the archived marker fixture. Its packets have no authority on the glass. */

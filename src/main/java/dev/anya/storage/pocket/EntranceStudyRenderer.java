@@ -74,12 +74,10 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         // The diagram and its repeated chest sprites share one public atlas and one render type.
         quad(pose, material, face, 0, 0, 1, 1, 0, 0, plan ? .5f : 1, 1, -.501f, overlay);
         if (plan) {
-            for (int i = 0; i < PAD_X.length; i++) {
-                if ((mask & (1 << i)) == 0) continue;
-                int left = PAD_X[i] - 12, top = PAD_Y[i] - 17;
+            ChestLayoutProjection.placed(mask,EntranceLayoutClient.coordinates,(i,left,top)->{
                 quad(pose, material, face, left/256f, top/256f, (left+25)/256f, (top+22)/256f,
                         .5f, 0, 281/512f, 22/256f, -.5015f, overlay);
-            }
+            });
         }
         pose.popPose();
         EntranceFrameSounds.drewFace(entrance);
@@ -98,7 +96,7 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         quad(pose, atlas, face, 0, 0, 1, 1, 0, 0, size / width, 1, -.501f, overlay);
         int sx = ChestLayoutProjection.STAMP_X, sy = ChestLayoutProjection.STAMP_Y;
         int sw = ChestLayoutProjection.STAMP_WIDTH, sh = ChestLayoutProjection.STAMP_HEIGHT;
-        ChestLayoutProjection.forEachChest(mask, (bit, left, top) ->
+        ChestLayoutProjection.placed(mask,EntranceLayoutClient.coordinates, (bit, left, top) ->
                 quad(pose, atlas, face, left / size, top / size, (left + sw) / size, (top + sh) / size,
                         sx / width, sy / size, (sx + sw) / width, (sy + sh) / size, -.5015f, overlay));
 

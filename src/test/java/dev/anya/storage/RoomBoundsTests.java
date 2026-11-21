@@ -8,7 +8,7 @@ public final class RoomBoundsTests {
             boolean d=RoomBounds.decoration(x,y,z),p=RoomBounds.chestPad(x,y,z);checks+=3;
             if(d&&(x<2||x>29||z<2||z>29||y<65||y>72))throw new AssertionError("Escaped build inset");
             if(d&&x>=14&&x<=18&&z>=19)throw new AssertionError("Exit corridor obstruction");
-            if(p&&d)throw new AssertionError("Decor occupies a container pad");
+            if(p&&!d)throw new AssertionError("Legacy floor spot inaccessible");
             if(d)editable++;if(p)pads++;
         }
         if(pads!=4||editable<=0)throw new AssertionError("Bad geometry budget");

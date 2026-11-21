@@ -24,8 +24,6 @@ public final class RoomBounds {
         if(x>=14&&x<=18&&z>=19)return false;
         // The original four chests and their lids/approach retain a protected air envelope.
         if(x>=4&&x<=20&&z>=4&&z<=8&&y<=68)return false;
-        // A pad and its approach cannot be hidden inside decorative blocks.
-        for(int pad:PAD_X)if(Math.abs(x-pad)<=1&&Math.abs(z-PAD_Z)<=1&&y<=68)return false;
         return true;
     }
     private RoomBounds(){}

@@ -51,7 +51,7 @@ public final class PocketGameTests {
             for (int mask = -1; mask <= 255; mask++) {
                 var sent = new PocketPadPackets.Update(pos, token, mask);
                 PocketPadPackets.Update.CODEC.encode(buf, sent);
-                check(h, buf.readableBytes() == (mask == -1 ? 17 : 18), "Only a granted diagram carries a pad byte");
+                check(h, buf.readableBytes() == (mask == -1 ? 17 : 19), "Only a granted diagram carries a pad byte");
                 check(h, sent.equals(PocketPadPackets.Update.CODEC.decode(buf)) && !buf.isReadable(),
                         "Clear and all eight-bit layouts round-trip exactly");
                 buf.clear();

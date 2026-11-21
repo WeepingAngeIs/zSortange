@@ -1,0 +1,64 @@
+name: Home Void floor placement and visits
+on:
+  push:
+    branches: [experiment/room-chests]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  room-chests:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      BASELINE: anya-storage-plus-0.3.0-beta.7-imagedrop.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-roomchests.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-imagedrop.1
+          run-id: 44887280835
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Build the playable from the verified backpack version
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = 2d6abfd1ca59e7206d1af4b77d38a829cf0eafb4
+          (cd reference && sha256sum --check SHA256SUMS.txt)
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir -p upload
+          cp "build/libs/$PLAYABLE" upload/
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/room-chests/fixture.gradle -PimagePlayable="$PWD/upload/$PLAYABLE" prepareImageServer prepareImageClient
+      - name: Check floor placement, physical visit and reload
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          ALSOFT_DRIVERS: 'null'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          python3 -B fixtures/room-chests/run.py | tee upload/CHECKS.txt
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Show fixture failures
+        if: failure()
+        run: |
+          for f in build/room-chests/{Server,Client}/{console,restart}.log; do
+            if test -f "$f"; then tail -45 "$f" | cut -c1-900; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-roomchests.1
+          path: upload/
+          retention-days: 14

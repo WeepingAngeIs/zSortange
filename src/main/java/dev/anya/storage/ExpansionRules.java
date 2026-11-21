@@ -18,7 +18,7 @@ public final class ExpansionRules {
         public int imagesPerPlayer=4, imagesTotal=128, imageWorldMiB=16;
         public String pocketCoreMaterial="minecraft:diamond";
         public int pocketSessionTicks=6000;
-        public boolean pocketEditing=false;
+        public boolean pocketEditing=false, editingOnFirstEnable=false;
         public boolean pocketStorage=false, pocketActivityLog=false, pocketLogNames=false;
         public int pocketLimit=64, activePocketLimit=4, pocketContainers=32, pocketLogEntries=100;
         /** Percentage of authorized Cupid Tablet openings with an intro. */

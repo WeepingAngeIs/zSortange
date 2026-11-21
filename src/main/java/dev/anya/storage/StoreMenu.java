@@ -464,9 +464,9 @@ public final class StoreMenu extends AbstractContainerMenu {
             return;
         }
         boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
-        String upgradeHint = "Visit through the linked Void Cube and click Room upgrades in chat.";
+        String upgradeHint = "Enter through your linked Home Void Cube and open the tablet to turn on Edit Mode.";
         String upgradeAccess = "Room editing must be enabled. Requires Build, View, Deposit and Withdraw.";
-        String upgradeCommand = "While visiting, you can also run /anya pocket build plan.";
+        String upgradeCommand = "Hold a plain Labelled Storage Chest and right-click a clear floor spot.";
         Consumer<Click> action = c -> {
             if (PocketService.inPocket(owner.level())) PocketService.recover(owner);
             else AnyaStorage.tell(owner, "Home-radius storage only. Visit is a separate permission. Physical pocket: "
@@ -476,7 +476,7 @@ public final class StoreMenu extends AbstractContainerMenu {
             // The client also draws the first line of this server-owned control beneath the slot total.
             int occupiedPads = chestCount - RoomBounds.starterChestCount();
             button(POCKET_ACTION_SLOT, ControlGlyph.POCKET_EDIT, "Room upgrades", action,
-                    occupiedPads + "/" + RoomBounds.PAD_X.size() + " upgrade pads occupied",
+                    occupiedPads + "/" + Math.max(0,Math.min(8,ExpansionRules.get().pocketContainers)-4) + " extra chests placed",
                     upgradeHint, upgradeAccess, upgradeCommand);
         } else {
             button(POCKET_ACTION_SLOT, ControlGlyph.EXIT, "Pocket exit / information", action);

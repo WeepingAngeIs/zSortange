@@ -29,6 +29,16 @@ public final class ChestLayoutProjection {
         forEachRow(mask, RoomBounds.STARTER_CHEST_X.size(), RoomBounds.PAD_X, RoomBounds.PAD_Z, stamp);
     }
 
+    static void placed(int mask,long coords,Stamp stamp){
+        if(!validMask(mask))return;
+        forEachRow(mask,0,RoomBounds.STARTER_CHEST_X,RoomBounds.STARTER_CHEST_Z,stamp);
+        for(int i=0;i<4;i++)if((mask&(16<<i))!=0){
+            int cell=(int)(coords>>>(10*i)),x=cell&31,z=(cell>>5)&31;
+            stamp.draw(i+4,Math.clamp(56+6*x-2*z-STAMP_WIDTH/2,0,FACE_SIZE-STAMP_WIDTH),
+                    96+x+3*z-STAMP_HEIGHT+1);
+        }
+    }
+
     private static void forEachRow(int mask, int firstBit, List<Integer> roomXs, int roomZ, Stamp stamp) {
         for (int i = 0; i < roomXs.size(); i++) {
             int bit = firstBit + i;

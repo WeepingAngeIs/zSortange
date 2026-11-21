@@ -19,6 +19,13 @@ public final class PocketLeases {
         if(now>=deadline)return false;
         leases.put(player,new Lease(player,pocket,kind,epoch,Math.min(Math.addExact(now,ttl),deadline),deadline));return true;
     }
+    private long visitGeneration;
+    /** Pending requests retain their deadline. Only a completed physical arrival lifts it. */
+    synchronized void arrived(UUID player){
+        Lease l=leases.get(player);
+        if(l==null||l.kind()!=Kind.VISIT)throw new IllegalStateException("Missing visit");
+        leases.put(player,new Lease(player,l.pocket(),l.kind(),l.epoch(),l.expires(),Long.MAX_VALUE-visitGeneration++));
+    }
     public synchronized boolean renew(UUID player,long epoch,long now,long ttl){
         Lease l=leases.get(player);if(l==null||l.epoch()!=epoch||now>=l.expires()||now>=l.deadline()){leases.remove(player);return false;}
         leases.put(player,new Lease(l.player(),l.pocket(),l.kind(),l.epoch(),Math.min(now+ttl,l.deadline()),l.deadline()));return true;

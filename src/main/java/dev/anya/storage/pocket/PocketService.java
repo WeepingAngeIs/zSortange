@@ -271,8 +271,8 @@ public final class PocketService {
         if(!safe(target,p,point))throw new IOException("Pocket landing is obstructed; the return record is retained");
         teleport(p,target,point,0,0);
         if(!inPocket(p.level()))throw new IOException("Dimension transition was rejected; recovery record retained");
-        savePlayer(p);AnyaStorage.tell(p,"Experimental pocket: 32x32 bounded plot, four real protected chests. Right-click the lodestone or /anya pocket exit. Use /anya pocket build for the separately gated editing subset. The exit and original chests remain protected.");
-        ChestPadGuide.offerUpgradesOnArrival(p, pocket);
+        LEASES.arrived(p.getUUID());
+        savePlayer(p);AnyaStorage.tell(p,"Welcome to Home Void. Open your linked tablet here to turn on Edit Mode. Right-click the floor to place a chest. Right-click the exit lodestone to go home.");
     }
     public static void tick(MinecraftServer server){
         clock++;lastPreparedBlocks=0;

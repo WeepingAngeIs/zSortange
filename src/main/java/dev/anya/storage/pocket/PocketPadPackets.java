@@ -32,12 +32,15 @@ public final class PocketPadPackets {
     }
 
     /** A clear carries no pad byte. No pocket identity, contents, destination or player names are sent. */
-    public record Update(BlockPos pos, long token, int mask) implements CustomPacketPayload {
-        public static final Type<Update> TYPE = new Type<>(id("pad_layout"));
+    public record Update(BlockPos pos, long token, int mask,long coordinates) implements CustomPacketPayload {
+        public static final Type<Update> TYPE = new Type<>(id("chest_floor_layout"));
         public static final StreamCodec<RegistryFriendlyByteBuf, Update> CODEC = StreamCodec.ofMember(
-                Update::write, buf -> new Update(buf.readBlockPos(), buf.readLong(),
-                        buf.readBoolean() ? buf.readUnsignedByte() : -1));
+                Update::write, buf -> {
+                    var pos=buf.readBlockPos();long token=buf.readLong();
+                    return buf.readBoolean()?new Update(pos,token,buf.readUnsignedByte(),buf.readVarLong()):new Update(pos,token,-1);
+                });
 
+        public Update(BlockPos pos,long token,int mask){this(pos,token,mask,0);}
         public Update {
             if (mask < -1 || mask > 255) throw new IllegalArgumentException("Invalid pocket pad mask");
         }
@@ -46,7 +49,7 @@ public final class PocketPadPackets {
             buf.writeBlockPos(pos);
             buf.writeLong(token);
             buf.writeBoolean(mask >= 0);
-            if (mask >= 0) buf.writeByte(mask);
+            if (mask >= 0){buf.writeByte(mask);buf.writeVarLong(coordinates);}
         }
 
         @Override public Type<Update> type() { return TYPE; }
@@ -104,8 +107,11 @@ public final class PocketPadPackets {
     }
 
     static void send(ServerPlayer player, BlockPos pos, long token, int mask) {
+        send(player,pos,token,mask,0);
+    }
+    static void send(ServerPlayer player,BlockPos pos,long token,int mask,long coordinates){
         if (player.connection.hasChannel(Update.TYPE)) {
-            PacketDistributor.sendToPlayer(player, new Update(pos, token, mask));
+            PacketDistributor.sendToPlayer(player, new Update(pos, token, mask, coordinates));
         }
     }
 

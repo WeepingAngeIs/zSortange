@@ -52,7 +52,7 @@ public final class RoomEditor {
     static boolean canAddChest(int registeredChests, int configuredLimit) {
         return registeredChests >= 4 && registeredChests < Math.min(8, configuredLimit);
     }
-    public static String help(){return "Room editing enabled = "+enabled()+". Open your linked tablet inside the room to turn on editing. Right-click with a plain supported block in your main hand to place it. Left-click to return a block to your inventory. Labelled Storage Chests use four reserved pads.";}
+    public static String help(){return "Room editing enabled = "+enabled()+". Open your linked tablet inside the room to turn on editing. Right-click with a plain supported block in your main hand to place it. Left-click to return a block to your inventory. Place a plain Labelled Storage Chest on clear room floor.";}
     // Server commands use the current pose, never a previous-tick interpolated camera.
     public static BlockHitResult looking(ServerPlayer p){
         BlockHitResult hit = loadedHit(p);
@@ -199,10 +199,13 @@ public final class RoomEditor {
         int x=pos.getX()-r.x(),y=pos.getY(),z=pos.getZ()-r.z();
         boolean chest=state.is(Content.CRATE.get());
         if(chest){
-            if(!RoomBounds.chestPad(x,y,z))return "Supported chests may only occupy the four optional pads";
+            if(y!=RoomBounds.CHEST_Y || !RoomBounds.decoration(x,y,z))return "Choose room floor away from the walls, starter chests and exit path.";
+            if(!removal && (!p.serverLevel().getBlockState(pos.below()).isFaceSturdy(p.serverLevel(),pos.below(),net.minecraft.core.Direction.UP)
+                    || !p.serverLevel().isEmptyBlock(pos.above())))return "Choose a solid floor spot with clear space above the chest.";
             denied=PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if(!denied.isEmpty())return "Chest editing additionally requires View, Deposit and Withdraw";
-        }else if(!RoomBounds.decoration(x,y,z)||!(DECOR.contains(state.getBlock())||Furniture.isFurniture(state.getBlock())))return "Unsupported block or protected room/exit boundary";
+        }else if(!removal && p.serverLevel().getBlockState(pos.below()).is(Content.CRATE.get()))return "Leave the space above the chest clear.";
+        else if(!RoomBounds.decoration(x,y,z)||!(DECOR.contains(state.getBlock())||Furniture.isFurniture(state.getBlock())))return "Unsupported block or protected room/exit boundary";
         if (state.is(Content.HATCH.get())) {
             denied = PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if (!denied.isEmpty()) return "Furniture needs Build, View, Deposit and Withdraw.";

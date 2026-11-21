@@ -47,7 +47,7 @@ public final class GuideGameTests {
         var builder=pages.stream().filter(p->p.title().equals("Build without granting storage")).findFirst().orElseThrow();
         String editing=ExpansionRules.get().pocketEditing?"enabled for this test server":"OFF";
         h.assertTrue(builder.body().contains("Room editing is "+editing)&&builder.body().contains("both Visit and Build"),"guide uses live edit gate and independent delegated rights");
-        var pads=pages.stream().filter(p->p.title().equals("Optional chest pads")).findFirst().orElseThrow();
+        var pads=pages.stream().filter(p->p.title().equals("Place a room chest")).findFirst().orElseThrow();
         h.assertTrue(pads.body().contains("ONLY when empty")&&pads.body().contains("original four chests cannot be removed"),"guide preserves occupied and mandatory chest restrictions");
         h.succeed();
     }

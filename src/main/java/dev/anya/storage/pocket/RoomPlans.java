@@ -16,10 +16,10 @@ import net.minecraft.server.level.ServerPlayer;
 
 public final class RoomPlans {
     static final int LIMIT = 8;
-    static final String ONE_CHEST = "Add one chest pad at a time. Apply your plan or undo the chest mark before marking another pad.";
+    static final String ONE_CHEST = "Add one chest at a time. Apply your plan or undo the chest mark before marking another chest.";
     private static final int LIFETIME = 20 * 60 * 5;
     private static final Map<UUID,Draft> drafts = new HashMap<>();
-    private static final String HELP = "Hold a plain furnishing, aim at a surface and use /anya pocket build plan add. Walk through the outlines. You can add one chest pad per plan. Use undo, cancel or apply. Stand within reach of all marked spots to apply.";
+    private static final String HELP = "Hold a plain furnishing, aim at a surface and use /anya pocket build plan add. Walk through the outlines. You can add one chest per plan. Use undo, cancel or apply. Stand within reach of all marked spots to apply.";
 
     static final class Draft {
         final LinkedHashMap<BlockPos,RoomEditor.Mark> marks = new LinkedHashMap<>();

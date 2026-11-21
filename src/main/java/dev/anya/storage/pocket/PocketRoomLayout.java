@@ -23,20 +23,34 @@ public final class PocketRoomLayout {
         return positions;
     }
     public static boolean registeredPosition(PocketLedger.Pocket r,BlockPos p){
-        return PocketService.chestPositions(r).contains(p)||pads(r).contains(p);
+        return PocketService.chestPositions(r).contains(p)||p.getY()==RoomBounds.CHEST_Y && RoomBounds.decoration(p.getX()-r.x(),p.getY(),p.getZ()-r.z());
     }
     public static List<StorageEntity> present(ServerLevel level,PocketLedger.Pocket r)throws IOException{
         if(level==null)throw new IOException("Pocket is not ready");
-        return present(r,level::hasChunkAt,level::isEmptyBlock,level::getBlockEntity);
+        return scan(r,locations(new LoadedPocketBlocks(level),r),level::hasChunkAt,level::isEmptyBlock,level::getBlockEntity,StorageEntity::storageIdentity);
+    }
+    static List<BlockPos> locations(LoadedPocketBlocks blocks,PocketLedger.Pocket room)throws IOException{
+        var all=new ArrayList<>(PocketService.chestPositions(room));
+        var extras=new TreeSet<BlockPos>();
+        for(int x=room.x()>>4;x<=(room.x()+31)>>4;x++)for(int z=room.z()>>4;z<=(room.z()+31)>>4;z++){
+            var chunk=blocks.chunk(x,z);
+            if(chunk==null)throw new IOException("The room is still loading.");
+            for(var pos:chunk.getBlockEntitiesPos()){
+                if(!all.contains(pos)&&registeredPosition(room,pos)&&blocks.getBlockState(pos).is(Content.CRATE.get()))extras.add(pos);
+            }
+        }
+        if(extras.size()>4)throw new IOException("Unexpected chest count; room contents preserved.");
+        all.addAll(extras);
+        return all;
     }
     static List<StorageEntity> present(PocketLedger.Pocket r, Predicate<BlockPos> loaded,
             Predicate<BlockPos> empty, Function<BlockPos,BlockEntity> entityAt)throws IOException{
-        return scan(r,loaded,empty,entityAt,StorageEntity::storageIdentity);
+        return scan(r,positions(r),loaded,empty,entityAt,StorageEntity::storageIdentity);
     }
 
     /** Verify the loaded layout for display without assigning identities or materializing block entities. */
     static List<StorageEntity> observe(LoadedPocketBlocks blocks, PocketLedger.Pocket room) throws IOException {
-        var chests = scan(room, pos -> blocks.chunk(pos.getX() >> 4, pos.getZ() >> 4) != null,
+        var chests = scan(room, locations(blocks,room), pos -> blocks.chunk(pos.getX() >> 4, pos.getZ() >> 4) != null,
                 pos -> blocks.getBlockState(pos).isAir() && blocks.getFluidState(pos).isEmpty(),
                 blocks::getBlockEntity, StorageEntity::existingStorageIdentity);
         for (var chest : chests) {
@@ -48,12 +62,11 @@ public final class PocketRoomLayout {
         return chests;
     }
 
-    private static List<StorageEntity> scan(PocketLedger.Pocket r, Predicate<BlockPos> loaded,
+    private static List<StorageEntity> scan(PocketLedger.Pocket r,List<BlockPos> positions, Predicate<BlockPos> loaded,
             Predicate<BlockPos> empty, Function<BlockPos,BlockEntity> entityAt,
             Function<StorageEntity,UUID> identityOf)throws IOException{
         if(r.stage()!=PocketLedger.Stage.READY)throw new IOException("Pocket is not ready");
         List<StorageEntity> found=new ArrayList<>();Set<UUID> identities=new HashSet<>();
-        var positions = positions(r);
         for(int i=0;i<positions.size();i++){
             BlockPos p=positions.get(i);
             if(!loaded.test(p))throw new IOException("Registered chest chunk is not loaded");

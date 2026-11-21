@@ -183,7 +183,7 @@ public final class Config {
         try {
             if(Files.exists(path)) {
                 live=read(path);
-            } else { live=new Data(); persist(live); }
+            } else { live=new Data(); live.expansion.editingOnFirstEnable=true; persist(live); }
             lastStatus="Loaded revision "+live.revision;
         } catch(Exception e) { throw new IllegalStateException("Cannot load storage config; original file has not been reset",e); }
     }
