@@ -276,7 +276,8 @@ public final class Client {
             }
             if(button==0&&x>=12&&x<90){
                 if(y>=153&&y<171&&menu.localRoomPanel()){
-                    if(menu.roomEditAllowed()){press(90);send("room_plan","",0);}
+                    if(menu.guestControl()){press(90);send("remove_guests","",0);}
+                    else if(menu.roomEditAllowed()){press(90);send("room_plan","",0);}
                     return true;
                 }
                 if(y>=153&&y<171&&menu.backpackView()){press(90);send("appearance","",0);return true;}
@@ -482,7 +483,8 @@ public final class Client {
                 else{g.pose().pushPose();g.pose().translate(17,43,0);g.pose().scale(4.2f,4.2f,1);g.renderItem(ClientLooks.shell(texture),0,0);g.pose().popPose();}
                 g.drawString(font,font.plainSubstrByWidth(Looks.title(texture),78),12,131,colors[2],false);
             }
-            if(menu.localRoomPanel())option(g,90,ControlGlyph.POCKET_EDIT,"Room plan",153,menu.roomEditAllowed()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
+            if(menu.guestControl())option(g,90,ControlGlyph.REMOVE_MEMBER,"Remove guests",153,ControlGlyph.State.NORMAL,x,y);
+            else if(menu.localRoomPanel())option(g,90,ControlGlyph.POCKET_EDIT,"Room plan",153,menu.roomEditAllowed()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
             else option(g,90,ControlGlyph.WARDROBE,"Wardrobe",153,menu.backpackView()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
             option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
             option(g,92,ControlGlyph.IMAGE,"Images",199,ClientInteriors.imagesVisible()?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);

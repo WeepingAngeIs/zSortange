@@ -42,7 +42,7 @@ public final class ExpansionRules {
         range(o.tabletOpeningChancePercent,0,100,"Tablet opening chance (%)");
         range(o.chestCameoChancePercent,0,100,"Chest cameo chance (%)");
         range(o.activityLogEntries,1,128,"Base activity log entries");
-        require(dormantLoad || !o.pocketEditing || o.pocketStorage, "Enable Pocket storage before enabling room editing.");
+        require(dormantLoad || o.editingOnFirstEnable || !o.pocketEditing || o.pocketStorage, "Enable Pocket storage before enabling room editing.");
         require(Config.validId(o.pocketCoreMaterial),"Pocket core material must be a registry ID");
         range(o.pocketSessionTicks,200,12000,"Pocket session ticks");
         finite(o.stoneArmor,0,4,"Stone armor");finite(o.diamondArmor,0,6,"Diamond armor");

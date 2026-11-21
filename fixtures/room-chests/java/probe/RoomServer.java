@@ -15,23 +15,45 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.*;
 import java.nio.file.*;
 import java.util.*;
+import io.netty.channel.embedded.EmbeddedChannel;
+import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
+import net.minecraft.network.protocol.*;
+import net.minecraft.server.network.CommonListenerCookie;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
+import com.mojang.authlib.GameProfile;
 
 @Mod("roomprobe")
 @EventBusSubscriber(modid="roomprobe")
 public final class RoomServer {
     static final BlockPos HUB=new BlockPos(2,81,1), DOOR=new BlockPos(3,81,1);
+    private static ServerPlayer join(net.minecraft.server.MinecraftServer server,String name)throws Exception{
+        var level=server.overworld();var profile=new GameProfile(UUID.randomUUID(),name);
+        var p=new ServerPlayer(server,level,profile,ClientInformation.createDefault());
+        var connection=new Connection(PacketFlow.SERVERBOUND){
+            @Override public boolean isMemoryConnection(){return true;}
+            @Override public void send(Packet<?> packet,PacketSendListener callback,boolean flush){}
+        };
+        var channel=new EmbeddedChannel(connection);NetworkRegistry.configureMockConnection(connection);
+        server.getPlayerList().placeNewPlayer(connection,p,CommonListenerCookie.createInitial(profile,false));
+        return p;
+    }
+    static ServerPlayer guest;
     static int stage,start;
     static UUID id,identity;
     static void check(boolean ok,String why){if(!ok)throw new AssertionError(why);}
     static void click(ServerPlayer p,BlockPos target,boolean remove){
-        double y=target.getY()+(remove?0:1);
-        float angle=(float)Math.toDegrees(Math.atan2(y+p.getEyeHeight()-target.getY()-(remove?.5:.99),2));
-        p.connection.teleport(target.getX()+.5,y,target.getZ()+2.5,180,angle);
-        var hit=RoomEditor.looking(p);check(hit.getBlockPos().equals(target),"Fixture aim "+target+" hit "+hit);
+        double x=target.getX()+.5,y=target.getY()+2.2,z=target.getZ()+.5;
+        p.connection.teleport(x,y,z,0,90);
+        p.setXRot(90);p.setYRot(0);p.setYHeadRot(0);
+        var hit=RoomEditor.looking(p);check(hit.getBlockPos().equals(target),"Fixture aim "+target+" hit "+hit.getBlockPos()+" at "+p.position()+" direction "+p.getViewVector(1));
         if(remove)NeoForge.EVENT_BUS.post(new PlayerInteractEvent.LeftClickBlock(p,target,hit.getDirection(),PlayerInteractEvent.LeftClickBlock.Action.START));
         else NeoForge.EVENT_BUS.post(new PlayerInteractEvent.RightClickBlock(p,InteractionHand.MAIN_HAND,target,hit));
     }
     @SubscribeEvent public static void tick(ServerTickEvent.Post event)throws Exception{
+        try{step(event);}catch(Throwable error){Files.writeString(Path.of("FAILED"),error.toString());throw error;}
+    }
+    static void step(ServerTickEvent.Post event)throws Exception{
         var server=event.getServer();
         var policy=ExpansionRules.get();policy.pocketStorage=true;policy.pocketEditing=true;policy.pocketSessionTicks=200;
         if(stage==99)return;
@@ -67,7 +89,7 @@ public final class RoomServer {
         var room=PocketService.ledger(server).get(id);var pos=new BlockPos(room.x()+9,65,room.z()+17);
         if(stage==1){
             if(p.tickCount%10!=0)return;
-            var reason=RoomEditor.setMode(p,true);check(reason.isEmpty(),reason);
+            check(RoomEditor.active(p),"Owner should build on arrival");
             p.setItemInHand(InteractionHand.MAIN_HAND,new ItemStack(Content.CRATE.get(),2));
             click(p,pos.below(),false);var c=(StorageEntity)p.serverLevel().getBlockEntity(pos);
             check(c!=null&&p.getMainHandItem().getCount()==1,"Normal right click did not place one chest");
@@ -81,7 +103,19 @@ public final class RoomServer {
             stage++;
         }else if(stage==4 && server.getTickCount()-start>240){
             check(PocketService.lease(p.getUUID())!=null&&RoomEditor.active(p),"Visit after former timeout");
-            PocketService.recover(p);stage++;
+            guest=join(server,"RoomGuestTwo");
+            var home=server.overworld();guest.teleportTo(home,3.5,81,3.5,180,0);
+            var hub=(StorageEntity)home.getBlockEntity(HUB);hub.setMember(guest.getUUID(),BasePermissions.VISIT);
+            PocketService.enter(guest,(PocketContent.EntranceEntity)home.getBlockEntity(DOOR));stage=6;
+        }else if(stage==6 && PocketService.inPocket(guest.level())){
+            check(!RoomEditor.active(guest),"Guest granted automatic editing");
+            PocketService.removeGuests(guest,id);check(PocketService.lease(p.getUUID())!=null,"Guest removed owner");
+            PocketService.removeGuests(p,id);stage=7;
+        }else if(stage==7 && !PocketService.inPocket(guest.level())){
+            check(PocketService.lease(p.getUUID())!=null && PocketService.ownedTicketRequests()>0,"Owner lost room loading");
+            var hub=(StorageEntity)server.overworld().getBlockEntity(HUB);
+            check(hub.memberMask(guest.getUUID())==BasePermissions.VISIT && PocketService.lease(guest.getUUID())==null,"Guest grant or lease");
+            server.getPlayerList().remove(guest);PocketService.recover(p);stage=5;
         }
     }
 }

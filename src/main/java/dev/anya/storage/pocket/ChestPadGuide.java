@@ -1,7 +1,5 @@
 package dev.anya.storage.pocket;
 
-import java.io.IOException;
-import dev.anya.storage.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -18,7 +16,7 @@ final class ChestPadGuide {
     static void show(ServerPlayer player){
         String denial=RoomEditor.modeDenial(player);
         player.displayClientMessage(Component.literal(denial.isEmpty()
-            ?"Turn on Edit Mode in your linked tablet. Hold a plain Labelled Storage Chest and right-click clear room floor."
+            ?(RoomEditor.active(player)?"Hold a plain Labelled Storage Chest and right-click clear room floor.":"Turn on Edit Mode in your linked tablet, then right-click clear floor with a plain Labelled Storage Chest.")
             :denial),true);
     }
     private ChestPadGuide(){}

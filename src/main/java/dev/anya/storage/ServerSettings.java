@@ -165,14 +165,13 @@ public final class ServerSettings {
         add(entries, "expansion.pocketCoreMaterial", Kind.REGISTRY_ID, "Legacy pocket core", "Core for data packs using the legacy entrance recipe type. The standard recipe uses diamonds and Ancient Debris.",
                 null, null, d -> d.expansion.pocketCoreMaterial, (d, v) -> d.expansion.pocketCoreMaterial = v,
                 ServerSettings::parseRegistryId);
-        integer(entries, "expansion.pocketSessionTicks", "Remote pocket session length", "Pocket session limit in server ticks.", 200, 12000,
+        integer(entries, "expansion.pocketSessionTicks", "Remote pocket session length", "Time limit for remote access and pending entry. Physical visits continue while authorized.", 200, 12000,
                 d -> d.expansion.pocketSessionTicks, (d, v) -> d.expansion.pocketSessionTicks = v);
         flag(entries, "expansion.pocketEditing", "Pocket room editing", "Requires active pocket storage.",
                 d -> d.expansion.pocketEditing, (d, v) -> {d.expansion.pocketEditing=v;d.expansion.editingOnFirstEnable=false;});
         flag(entries, "expansion.pocketStorage", "Pocket storage", "Requires the pocket dimension. Turning it off also turns off room editing.",
                 d -> d.expansion.pocketStorage, (d, v) -> {
                     if(v && !d.expansion.pocketStorage && d.expansion.editingOnFirstEnable){
-                        d.expansion.pocketEditing=true;
                         d.expansion.editingOnFirstEnable=false;
                     }
                     d.expansion.pocketStorage = v;

@@ -36,7 +36,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
     private final SimpleContainer display=new SimpleContainer(54+StorageGrid.CHEST_EXTRA_SLOTS);
-    private final ContainerData sync=new SimpleContainerData(22);
+    private final ContainerData sync=new SimpleContainerData(23);
     private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256, CREATIVE_ACCESS=512, TABLET_ACCESS=1024;
     private static final int LOCAL_ROOM=2048, EDIT_ALLOWED=4096, EDIT_ACTIVE=8192;
     private static final int PHYSICAL_CHEST=16384, PHYSICAL_CUBE=32768;
@@ -200,6 +200,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     boolean usesCreativeSession(CreativeTabletAccess.Session session){return creative==session;}
     public boolean remoteOpening(){return (sync.get(4)&REMOTE_OPEN)!=0;}
     public boolean showsStorageCameo(){return (sync.get(4)&STORAGE_CAMEO)!=0;}
+    public boolean guestControl(){return localRoomPanel() && sync.get(22)!=0;}
     public boolean backpackView(){return (sync.get(4)&2)!=0;}
     public boolean accessView(){return (sync.get(4)&16)!=0;}
     public boolean privateView(){return (sync.get(4)&4)!=0;}
@@ -346,6 +347,9 @@ public final class StoreMenu extends AbstractContainerMenu {
                 viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
             }
             else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
+            else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("remove_guests") && packet.value()==0){
+                PocketService.removeGuests(owner,pocket.id());
+            }
             else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("room_edit")){
                 if(packet.value()!=0 && packet.value()!=1)return;
                 boolean desired=packet.value()==1;
@@ -431,6 +435,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         int roomFlags=0;
         if(pocket!=null && pocket.localTablet()){
             roomFlags=LOCAL_ROOM;
+            sync.set(22,PocketService.visitingOwner(owner,pocket.id())?1:0);
             if(RoomEditor.active(owner))roomFlags|=EDIT_ACTIVE;
             if(RoomEditor.modeDenial(owner).isEmpty())roomFlags|=EDIT_ALLOWED;
         }
@@ -464,7 +469,7 @@ public final class StoreMenu extends AbstractContainerMenu {
             return;
         }
         boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
-        String upgradeHint = "Enter through your linked Home Void Cube and open the tablet to turn on Edit Mode.";
+        String upgradeHint = "Enter through your linked Home Void Cube. Owners can build on arrival when room editing is enabled.";
         String upgradeAccess = "Room editing must be enabled. Requires Build, View, Deposit and Withdraw.";
         String upgradeCommand = "Hold a plain Labelled Storage Chest and right-click a clear floor spot.";
         Consumer<Click> action = c -> {

@@ -272,7 +272,14 @@ public final class PocketService {
         teleport(p,target,point,0,0);
         if(!inPocket(p.level()))throw new IOException("Dimension transition was rejected; recovery record retained");
         LEASES.arrived(p.getUUID());
-        savePlayer(p);AnyaStorage.tell(p,"Welcome to Home Void. Open your linked tablet here to turn on Edit Mode. Right-click the floor to place a chest. Right-click the exit lodestone to go home.");
+        savePlayer(p);
+        boolean owner=pocket.owner().equals(p.getUUID());
+        String help;
+        if(owner){
+            String reason=RoomEditor.setMode(p,true);
+            help=reason.isEmpty()?"Right-click a clear floor spot to place a chest. Left-click an empty extra chest to pick it up.":reason;
+        }else help="If you have Build access, open your linked tablet here to turn on Edit Mode.";
+        AnyaStorage.tell(p,"Welcome to Home Void. "+help+" Right-click the exit lodestone to go home.");
     }
     public static void tick(MinecraftServer server){
         clock++;lastPreparedBlocks=0;
@@ -375,6 +382,24 @@ public final class PocketService {
         }
     }
 
+    public static boolean visitingOwner(ServerPlayer p,UUID roomId){
+        var lease=lease(p.getUUID());
+        if(!inPocket(p.level())||lease==null||lease.kind()!=PocketLeases.Kind.VISIT||!lease.pocket().equals(roomId))return false;
+        var room=loadedPocket(p.getServer(),roomId);
+        return room!=null && room.owner().equals(p.getUUID()) && room.contains(p.getBlockX(),p.getBlockY(),p.getBlockZ())
+                && authorize(p,room,PocketLeases.Kind.VISIT,false,0).isEmpty();
+    }
+    public static void removeGuests(ServerPlayer owner,UUID roomId){
+        if(!visitingOwner(owner,roomId))return;
+        int count=0;
+        for(var visitor:LEASES.snapshot()){
+            if(visitor.kind()!=PocketLeases.Kind.VISIT || !visitor.pocket().equals(roomId)
+                    || visitor.player().equals(owner.getUUID()) || PENDING.containsKey(visitor.player()))continue;
+            ServerPlayer guest=owner.getServer().getPlayerList().getPlayer(visitor.player());
+            if(guest!=null && inPocket(guest.level())){recover(guest);count++;}
+        }
+        owner.displayClientMessage(net.minecraft.network.chat.Component.literal(count==0?"No guests are visiting.":"Returning visiting guests home."),true);
+    }
     public static void recover(ServerPlayer p){p.closeContainer();release(p.getUUID());RECOVERY.put(p.getUUID(),p);RETRY.remove(p.getUUID());}
     public static void login(ServerPlayer p){
         try{if(inPocket(p.level())||ledger(p.getServer()).returning(p.getUUID())!=null)recover(p);}catch(IOException e){if(inPocket(p.level()))recover(p);else error(p,e);}
