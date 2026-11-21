@@ -1053,9 +1053,9 @@ public final class StoreMenu extends AbstractContainerMenu {
         footer(bag!=null||hub!=null||chest!=null||pocket!=null?Page.FIELD_KIT:owner.hasPermissions(2)?Page.ADMIN:Page.PREFS);
     }
     public BagInventory imageBag(){return owner!=null&&bag!=null&&bag.valid()?bag:null;}
-    public boolean wardrobeOpen(){return page==Page.WARDROBE;}
+    public boolean imageDropOpen(){return bag!=null && (page==Page.WARDROBE || page==Page.BAG);}
     public boolean moderatingImage(UUID id){return owner!=null&&owner.hasPermissions(2)&&page==Page.IMAGES&&Objects.equals(selectedImage,id);}
-    public void refreshAppearance(){if(owner!=null){render();bump();lastAppearance="";syncAppearance();sendAllDataToRemote();}}
+    public void showUploadedInterior(){if(owner!=null){navigate(Page.BAG);render();bump();lastAppearance="";syncAppearance();sendAllDataToRemote();}}
     private void syncAppearance(){
         Looks.Look look=bag==null?new Looks.Look("plain","elemental","oak","atelier"):Looks.of(bag.stack);
         CompoundTag data=bag==null?new CompoundTag():BagInventory.data(bag.stack);
@@ -1087,7 +1087,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(45,ControlGlyph.BACK,"Back to backpack",c->navigate(Page.BAG));
         boolean worn=BagInventory.data(bag.stack).getUUID("BagId").equals(Profiles.of(owner).wornBag);
         button(46,ControlGlyph.WEAR,bag.playerSlot<0?State.DISABLED:worn?State.ON:State.OFF,bag.playerSlot==BackpackAccess.GROUND_SLOT?"Pick up this backpack to wear it":bag.playerSlot<0?"Equipped in Accessories back slot":worn?"Unequip worn backpack":"Wear this backpack",c->{if(bag.playerSlot>=0)Wearables.toggle(owner,bag.stack);},"References this inventory item; no duplicate copy is created.","Only one backpack can grant benefits. Duplicate IDs disable benefits.","Dropping, death or losing the item removes the bonus.");
-        button(48,ControlGlyph.PERSONAL_IMAGES,"My private image library",c->navigate(Page.IMAGES),"Drag ONE PNG file onto this Wardrobe screen to upload.","32..256 px per side; RGB/RGBA 8-bit; at most 64 KiB.","No URLs, filenames or local paths are sent to the server.","Uploads are OFF until your operator permits them.");
+        button(48,ControlGlyph.PERSONAL_IMAGES,"My private image library",c->navigate(Page.IMAGES),"Drop one PNG onto your backpack or Wardrobe to apply it privately.","32..256 px per side; RGB/RGBA 8-bit; at most 64 KiB.","No URLs, filenames or local paths are sent to the server.","Server upload permissions apply.");
         button(49,ControlGlyph.INTERIOR,"Built-in interior: "+Looks.title(look.interior()),c->{CompoundTag t=BagInventory.data(bag.stack);int i=Looks.INTERIORS.indexOf(look.interior());if(c.shift)t.remove("Interior");else t.putString("Interior",Looks.INTERIORS.get(Math.floorMod(i+(c.button==1?-1:1),Looks.INTERIORS.size())));t.remove("InteriorImage");BagInventory.data(bag.stack,t);bag.hostChanged();},"Cycles built-in interiors. Shift-click restores automatic theming.","Custom images can be reattached from your library.");
         button(51,ControlGlyph.IMAGE_PRIVACY,"Image privacy",null,"Owner-only by default, including before moderation approval.","Other viewers need approval, sharing enabled and an explicit UUID grant.","Operators may inspect/reject images in the moderation library.","Images never appear on the public backpack model.","Recipients could still save screenshots or copies they already received.");
         button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());

@@ -17,21 +17,29 @@ public final class ClientInteriors {
     private record Cached(ResourceLocation texture,long until,int width,int height){}
     private static final LinkedHashMap<UUID,Cached> cache=new LinkedHashMap<>(16,.75f,true);
     private static final Map<UUID,ByteArrayOutputStream> incoming=new HashMap<>();
+    private static UUID preview, pendingBag;
     private static byte[] upload;
+    public static boolean imagesVisible(){
+        return ClientLooks.options.images || (current!=null && current.image().equals(preview));
+    }
+    public static void toggleImages(){
+        boolean enabled=!imagesVisible();
+        preview=null;ClientLooks.options.images=enabled;ClientLooks.saveOptions();
+    }
     private static int uploadMenu,uploadSession;
     private static long requestAt,uploadUntil;
     public static ExpansionPackets.Look current;
     public static void message(String s){var p=Minecraft.getInstance().player;if(p!=null)p.displayClientMessage(Component.literal("[Anya Interiors] "+s),false);}
-    public static void drop(List<Path> paths){
-        if(current==null||!current.wardrobe()||!ClientLooks.options.images){message("Open the backpack Wardrobe and enable private images first.");return;}
+    public static void drop(List<Path> paths,StoreMenu menu){
+        if(current==null||current.menu()!=menu.containerId||current.session()!=menu.session()||current.uuid().equals(ExpansionPackets.NONE)||!(menu.storageView()||current.wardrobe()))return;
+        if(pendingBag!=null && System.currentTimeMillis()<uploadUntil){message("Your previous image is still being processed.");return;}
         if(paths.size()!=1){message("Drop exactly one PNG file.");return;}
         Path path=paths.getFirst();
         try{
             if(!path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png")||!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)||Files.size(path)>PngSanitizer.MAX_INPUT)throw new IOException("Choose a regular PNG file up to 64 KiB.");
             byte[] bytes;try(InputStream in=Files.newInputStream(path)){bytes=in.readNBytes(PngSanitizer.MAX_INPUT+1);}
-            PngSanitizer.sanitize(bytes);upload=bytes;uploadMenu=current.menu();uploadSession=current.session();uploadUntil=System.currentTimeMillis()+30000;
+            PngSanitizer.sanitize(bytes);upload=bytes;pendingBag=current.uuid();uploadMenu=current.menu();uploadSession=current.session();uploadUntil=System.currentTimeMillis()+30000;
             send(new ExpansionPackets.ImageWire(uploadMenu,uploadSession,0,current.uuid(),0,bytes.length,new byte[0]));
-            message("Requesting a private upload. The server may require operator permission.");
         }catch(IOException e){message("PNG rejected. Use non-interlaced 8-bit RGB/RGBA, 32..256 pixels per side, at most 64 KiB.");upload=null;}
     }
     public static void accept(ExpansionPackets.ImageReply p){
@@ -40,11 +48,17 @@ public final class ClientInteriors {
             for(int at=0,seq=0;at<upload.length;at+=16384,seq++)send(new ExpansionPackets.ImageWire(uploadMenu,uploadSession,1,p.id(),seq,upload.length,Arrays.copyOfRange(upload,at,Math.min(upload.length,at+16384))));
             upload=null;return;
         }
-        if(p.kind()==2){upload=null;message(p.info());return;}
+        if(p.kind()==2){upload=null;pendingBag=null;message(p.info());return;}
         if(p.kind()==3){forget(p.id());return;}
         if(p.kind()==4){Cached old=cache.get(p.id());if(old!=null)cache.put(p.id(),new Cached(old.texture,System.currentTimeMillis()+10000,old.width,old.height));return;}
-        if(p.kind()==5){message(p.info());requestAt=0;return;}
-        if(p.kind()!=1||!ClientLooks.options.images||current==null||!current.image().equals(p.id())||p.parts()<1||p.parts()>8||p.part()<0||p.part()>=p.parts())return;
+        if(p.kind()==5){
+            if(current!=null && current.menu()==uploadMenu && current.session()==uploadSession &&
+                    current.uuid().equals(pendingBag) && current.image().equals(p.id())){
+                preview=p.id();requestAt=0;
+            }
+            pendingBag=null;return;
+        }
+        if(p.kind()!=1||!imagesVisible()||current==null||!current.image().equals(p.id())||p.parts()<1||p.parts()>8||p.part()<0||p.part()>=p.parts())return;
         try{
             if(p.part()==0){if(incoming.size()>=2)incoming.clear();incoming.put(p.id(),new ByteArrayOutputStream());}
             ByteArrayOutputStream data=incoming.get(p.id());if(data==null||data.size()!=p.part()*16384||data.size()+p.bytes().length>PngSanitizer.MAX_OUTPUT){incoming.remove(p.id());return;}
@@ -61,13 +75,13 @@ public final class ClientInteriors {
     public static void look(ExpansionPackets.Look look){current=look;requestAt=0;}
     public static void tick(){
         long now=System.currentTimeMillis();if(upload!=null&&now>uploadUntil)upload=null;
-        if(!ClientLooks.options.images||current==null||current.image().equals(ExpansionPackets.NONE)||now<requestAt)return;
+        if(!imagesVisible()||current==null||current.image().equals(ExpansionPackets.NONE)||now<requestAt)return;
         requestAt=now+5000;boolean has=cache.containsKey(current.image());send(new ExpansionPackets.ImageWire(current.menu(),current.session(),2,current.image(),has?1:0,0,new byte[0]));
     }
-    public static ResourceLocation texture(){if(!ClientLooks.options.images||current==null)return null;Cached c=cache.get(current.image());return c!=null&&c.until>System.currentTimeMillis()?c.texture:null;}
+    public static ResourceLocation texture(){if(!imagesVisible()||current==null)return null;Cached c=cache.get(current.image());return c!=null&&c.until>System.currentTimeMillis()?c.texture:null;}
     public static int[] size(){Cached c=current==null?null:cache.get(current.image());return c==null?new int[]{1,1}:new int[]{c.width,c.height};}
     private static void send(ExpansionPackets.ImageWire p){if(Minecraft.getInstance().getConnection()!=null)PacketDistributor.sendToServer(p);}
     private static void forget(UUID id){Cached c=cache.remove(id);incoming.remove(id);if(c!=null)Minecraft.getInstance().getTextureManager().release(c.texture);}
-    public static void clear(){for(UUID id:new ArrayList<>(cache.keySet()))forget(id);incoming.clear();upload=null;current=null;requestAt=0;}
+    public static void clear(){for(UUID id:new ArrayList<>(cache.keySet()))forget(id);incoming.clear();upload=null;pendingBag=null;preview=null;current=null;requestAt=0;}
     private ClientInteriors(){}
 }

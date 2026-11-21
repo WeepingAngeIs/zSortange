@@ -13,7 +13,7 @@ public final class ExpansionRules {
         public boolean monsterBackpacks=false;
         public double monsterChance=.015, monsterDropChance=.25;
         public List<String> monsterSpecies=new ArrayList<>(List.of("minecraft:zombie","minecraft:husk","minecraft:skeleton","minecraft:stray"));
-        public boolean imagesEnabled=false, imageUploadsForAll=false, imageSharing=false, imageModeration=true;
+        public boolean imagesEnabled=true, imageUploadsForAll=true, imageSharing=false, imageModeration=true;
         public List<String> imageUploaders=new ArrayList<>();
         public int imagesPerPlayer=4, imagesTotal=128, imageWorldMiB=16;
         public String pocketCoreMaterial="minecraft:diamond";

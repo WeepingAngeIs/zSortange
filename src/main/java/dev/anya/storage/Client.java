@@ -281,7 +281,7 @@ public final class Client {
                 }
                 if(y>=153&&y<171&&menu.backpackView()){press(90);send("appearance","",0);return true;}
                 if(y>=176&&y<194){press(91);ClientLooks.options.particles=!ClientLooks.options.particles;ClientLooks.saveOptions();return true;}
-                if(y>=199&&y<217){press(92);ClientLooks.options.images=!ClientLooks.options.images;ClientLooks.saveOptions();return true;}
+                if(y>=199&&y<217){press(92);ClientInteriors.toggleImages();return true;}
                 if(y>=222&&y<240){press(93);ClientLooks.options.models=!ClientLooks.options.models;ClientLooks.saveOptions();return true;}
             }
             if(menu.storageView()&&layout.scroll().contains(x,y)&&button==0){dragging=true;scrollbar(y);return true;}
@@ -314,7 +314,7 @@ public final class Client {
             if(menu.storageView()&&(key==264||key==265)){scrollTo(menu.firstSlot()/9+(key==264?1:-1));return true;}
             return false;
         }
-        @Override public void onFilesDrop(List<Path> paths){if(!blockTabletInput()&&menu.backpackView())ClientInteriors.drop(paths);}
+        @Override public void onFilesDrop(List<Path> paths){if(!blockTabletInput()&&menu.backpackView())ClientInteriors.drop(paths,menu);}
         @Override public void onClose() {
             if (closeRequested || minecraft == null || minecraft.screen != this) return;
             closeRequested = true;
@@ -485,7 +485,7 @@ public final class Client {
             if(menu.localRoomPanel())option(g,90,ControlGlyph.POCKET_EDIT,"Room plan",153,menu.roomEditAllowed()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
             else option(g,90,ControlGlyph.WARDROBE,"Wardrobe",153,menu.backpackView()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
             option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
-            option(g,92,ControlGlyph.IMAGE,"Images",199,ClientLooks.options.images?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            option(g,92,ControlGlyph.IMAGE,"Images",199,ClientInteriors.imagesVisible()?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
             option(g,93,ControlGlyph.MODELS,"Models",222,ClientLooks.options.models?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
             int hover=slotAt(x,y);
             for(int i=0;i<shown();i++){

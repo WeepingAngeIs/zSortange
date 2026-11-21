@@ -208,7 +208,9 @@ HOST = {
             public static int clears, drops, ticks;
             public static void clear(){clears++;}
             public static void tick(){ticks++;}
-            public static void drop(java.util.List<java.nio.file.Path> paths){drops++;}
+            public static void drop(java.util.List<java.nio.file.Path> paths,dev.anya.storage.StoreMenu menu){drops++;}
+            public static boolean imagesVisible(){return false;}
+            public static void toggleImages(){}
         }
     """,
     "net.neoforged.neoforge.network.PacketDistributor": """

@@ -71,7 +71,7 @@ public final class InteriorImages {
     private static boolean permitted(ServerPlayer p){var r=ExpansionRules.get();return r.imagesEnabled&&(p.hasPermissions(2)||r.imageUploadsForAll||r.imageUploaders.contains(p.getUUID().toString()));}
     private static void begin(ServerPlayer p,StoreMenu menu,ExpansionPackets.ImageWire w)throws IOException{
         BagInventory bag=menu.imageBag();long now=System.currentTimeMillis();
-        if(!permitted(p)||bag==null||!menu.wardrobeOpen()||!bag.valid())throw new IOException("Upload requires permission and an open backpack Wardrobe");
+        if(!permitted(p)||bag==null||!menu.imageDropOpen()||!bag.valid())throw new IOException("Upload requires permission and an open backpack or Wardrobe");
         if(w.total()<45||w.total()>PngSanitizer.MAX_INPUT||w.bytes().length!=0||!BagInventory.data(bag.stack).getUUID("BagId").equals(w.token()))throw new IOException("Invalid upload request");
         if(uploads.containsKey(p.getUUID())||uploads.size()>=8||worker.getQueue().remainingCapacity()==0)throw new IOException("Image service busy; no upload reserved");
         if(now-startTimes.getOrDefault(p.getUUID(),0L)<60000||now-globalStart<1000)throw new IOException("Upload limit: one image per player per minute");
@@ -82,7 +82,7 @@ public final class InteriorImages {
     private static void part(ServerPlayer p,StoreMenu menu,ExpansionPackets.ImageWire w)throws IOException{
         Upload u=uploads.get(p.getUUID());if(u==null)throw new IOException("Upload reservation expired");
         BagInventory bag=menu.imageBag();
-        if(!permitted(p)||bag==null||!menu.wardrobeOpen()||!bag.valid()||!BagInventory.data(bag.stack).getUUID("BagId").equals(u.bag)||u.menu!=w.menu()||u.session!=w.session()||!u.id.equals(w.token())||u.until<System.currentTimeMillis()||w.sequence()!=u.sequence||w.bytes().length==0||w.bytes().length!=Math.min(16384,u.data.length-u.received))throw new IOException("Upload sequence rejected");
+        if(!permitted(p)||bag==null||!menu.imageDropOpen()||!bag.valid()||!BagInventory.data(bag.stack).getUUID("BagId").equals(u.bag)||u.menu!=w.menu()||u.session!=w.session()||!u.id.equals(w.token())||u.until<System.currentTimeMillis()||w.sequence()!=u.sequence||w.bytes().length==0||w.bytes().length!=Math.min(16384,u.data.length-u.received))throw new IOException("Upload sequence rejected");
         System.arraycopy(w.bytes(),0,u.data,u.received,w.bytes().length);u.received+=w.bytes().length;u.sequence++;
         if(u.received!=u.data.length)return;
         uploads.remove(p.getUUID());UUID user=p.getUUID();MinecraftServer active=server;
@@ -91,12 +91,12 @@ public final class InteriorImages {
             active.execute(()->{
                 if(server!=active)return;ServerPlayer online=active.getPlayerList().getPlayer(user);if(online==null)return;
                 try{
-                    if(!permitted(online)||!(online.containerMenu instanceof StoreMenu current)||current.containerId!=u.menu||current.session()!=u.session||!current.wardrobeOpen()||!current.stillValid(online))throw new IOException("Upload cancelled because the backpack menu changed");
+                    if(!permitted(online)||!(online.containerMenu instanceof StoreMenu current)||current.containerId!=u.menu||current.session()!=u.session||!current.imageDropOpen()||!current.stillValid(online))throw new IOException("Upload cancelled because the backpack menu changed");
                     BagInventory currentBag=current.imageBag();if(currentBag==null||!BagInventory.data(currentBag.stack).getUUID("BagId").equals(u.bag))throw new IOException("Backpack changed; image was not saved");
                     quota(user,image.png().length);Entry entry=new Entry();entry.id=UUID.randomUUID();entry.owner=user;entry.created=System.currentTimeMillis();entry.width=image.width();entry.height=image.height();entry.bytes=image.png().length;entry.approved=!ExpansionRules.get().imageModeration;
                     write(entry.id,image.png());entries.put(entry.id,entry);
                     try{persist();}catch(IOException e){entries.remove(entry.id);Files.deleteIfExists(file(entry.id));throw e;}
-                    attach(online,currentBag,entry.id);current.refreshAppearance();reply(online,5,entry.id,0,0,"Saved privately. Shared visibility requires approval and explicit permission.",new byte[0]);
+                    attach(online,currentBag,entry.id);current.showUploadedInterior();reply(online,5,entry.id,0,0,"Applied to your backpack privately.",new byte[0]);
                 }catch(IOException e){reply(online,2,u.id,0,0,safe(e.getMessage()),new byte[0]);}
             });
         });}catch(RejectedExecutionException e){throw new IOException("PNG validation queue full");}

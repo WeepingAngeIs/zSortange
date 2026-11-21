@@ -150,6 +150,14 @@ public final class Config {
             }
         }
         Data data=JSON.fromJson(object,Data.class);
+        // A legacy file may omit either field. Only a freshly generated config opts in by default.
+        if (data.expansion!=null) {
+            JsonObject saved=object.get("expansion") instanceof JsonObject settings?settings:new JsonObject();
+            if(!saved.has("imagesEnabled"))data.expansion.imagesEnabled=false;
+            if(!saved.has("imageUploadsForAll"))data.expansion.imageUploadsForAll=false;
+            checkBoolean(saved,"imagesEnabled");
+            checkBoolean(saved,"imageUploadsForAll");
+        }
         validate(data,true);
         return data;
     }

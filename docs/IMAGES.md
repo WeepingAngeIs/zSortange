@@ -1,12 +1,8 @@
 # Server-stored backpack interiors: security and privacy
 
-This is a NEW feature in 0.3.0-beta.1. It was not present in beta.1 (0.2.0). Uploads default OFF; built-in interiors do not depend on them.
+Drop one PNG onto your open backpack or its Wardrobe. A successful drop opens the backpack and previews the image, even with Images off. The preview lasts for this menu session. Your display preference remains yours.
 
-## Enable deliberately
-
-An operator opens `/anya storage`, expansion policy, and enables `imagesEnabled`. Keep `imageUploadsForAll=false` to allow only operators and UUIDs in `imageUploaders`. Keep `imageSharing=false` for private-only interiors. `imageModeration=true` is the default. Review and apply the draft.
-
-A permitted player opens a backpack's **Style/Wardrobe** screen and drags exactly one local PNG onto the game window. No filename, filesystem path or URL is sent to the server. There is no URL fetch command, remote downloader or arbitrary-path server API. The client refuses a symlink or oversized source file.
+New server configurations allow private uploads. Existing saved switches and uploader lists retain their meaning. Older configurations missing either upload switch retain its earlier disabled default. A saved false value cannot distinguish a deliberate restriction from a previous default. On those servers an operator can enable custom images and grant upload access once in storage settings. Sharing starts disabled and requires explicit permission.
 
 ## Hard format limits
 

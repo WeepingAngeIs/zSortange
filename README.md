@@ -29,7 +29,7 @@ New in beta.2: independent home-hub View/Deposit/Withdraw/Log permissions, priva
 - Leather starter plus eight leaf-species starters, craftable elemental bindings and nine cosmetic patches using existing vanilla materials. No ore generation.
 - One selected worn backpack, modest configurable armor/fire-reduction/swim/knockback effects, and bounded client-only cosmetic particles.
 - Twenty-two blocky model/texture variants, six built-in interior themes, custom upgrade icons and an in-game wardrobe. Bow Cat and Midnight Cat are original cat designs, not branded/licensed character assets.
-- NEW private, server-stored interior PNG uploads with strict validation, quotas, rate limits, explicit viewers and operator moderation. Uploads and sharing default OFF.
+- NEW private, server-stored interior PNG uploads with strict validation, quotas, rate limits, explicit viewers and operator moderation. New configurations allow private uploads. Sharing defaults off.
 - Optional decorative monster backpacks with fresh empty drops, default OFF. They never occupy or overwrite an equipment slot.
 - **Ancient Technology**, an illustrated tutorial item with live server recipes/settings, chapter navigation, a durable one-time automatic grant and explicit recovery.
 
