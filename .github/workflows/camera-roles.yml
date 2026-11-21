@@ -60,6 +60,16 @@ jobs:
           cp build/role-check/candidate/control/{*.png,*.ok,pixel-samples.json} upload/captures/
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Preserve observations from an incomplete fixture
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: camera-role-diagnostics
+          path: |
+            upload/BASELINE.txt
+            build/role-check/*/control/
+          retention-days: 3
+          if-no-files-found: ignore
       - name: Show the current fixture step on failure
         if: failure()
         run: |

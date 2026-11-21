@@ -26,13 +26,20 @@ def start(name, display):
     console = (folder / "console.log").open("w")
     logs.append(console)
     command = ["bash", (folder / "launch.txt").read_text().strip()]
+    env = os.environ.copy()
     if display:
+        # Concurrent clients must not extract and load the same native library.
+        tmp = (folder / "native-tmp").resolve()
+        native = (folder / "lwjgl").resolve()
+        tmp.mkdir()
+        native.mkdir()
+        env["JAVA_TOOL_OPTIONS"] = f"-Djava.io.tmpdir={tmp} -Dorg.lwjgl.system.SharedLibraryExtractPath={native}"
         command = ["xvfb-run", "-a"] + command
         (folder / "options.txt").write_text(
             "onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\n"
             "renderDistance:4\nsimulationDistance:3\nmaxFps:35\n")
     processes[name] = subprocess.Popen(command, cwd=folder, stdin=subprocess.PIPE,
-                                        stdout=console, stderr=subprocess.STDOUT, text=True)
+                                        stdout=console, stderr=subprocess.STDOUT, text=True, env=env)
 
 try:
     start("Server", False)
