@@ -128,17 +128,13 @@ public final class StorageItem extends Item {
         AnyaStorage.tell(p,"No Anya backpack in your native back slot, main inventory or offhand.");
     }
     @Override public void appendHoverText(ItemStack stack,TooltipContext context,List<Component> lines,TooltipFlag flag){
-        if(kind.equals("backpack")){CompoundTag tag=BagInventory.data(stack);
-            if(stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME))lines.add(getName(stack));
-            lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use in air: upgrades"));lines.add(Component.literal("Sneak-use on the ground to place. Apply upgrades by hand; sneak-use empty-handed to pick up."));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Accessories back slot supported when installed. Wardrobe remains available."));}
-        else {
-            if(stack.is(Content.REMOTE.get()))lines.add(Component.literal("Becomes a Cupid Tablet when carried. Your existing binding carries over."));
-            lines.add(Component.literal(isCreativeTablet(stack) ? "Sneak-use on a permitted hub to bind. Use in air from any distance or dimension."
-                    : "Sneak-use on a hub to bind. Use in air within its radius to open storage."));
-            lines.add(Component.literal("Sneak-use on a Home Void Cube to link pocket storage."));
-            lines.add(Component.literal("Right-click a linked cube to visit with permission."));
-            lines.add(Component.literal("Inside your linked room, use the tablet in air. Edit Mode requires Build permission."));
-            lines.add(Component.literal("Owners can sneak-use on a chest to edit its routing."));
-        }
+        if (!kind.equals("backpack")) return;
+        if (stack.has(net.minecraft.core.component.DataComponents.CUSTOM_NAME)) lines.add(getName(stack));
+        CompoundTag tag = BagInventory.data(stack);
+        int capacity = tag.contains("Capacity") ? tag.getInt("Capacity") : 27;
+        int upgrades = tag.contains("UpgradeSlots") ? tag.getInt("UpgradeSlots") : 1;
+        lines.add(Component.translatable("tooltip.anyastorage.backpack.stats", capacity, upgrades));
+        var look = dev.anya.storage.appearance.Looks.of(stack);
+        lines.add(Component.translatable("tooltip.anyastorage.backpack.appearance", look.element(), look.skin()));
     }
 }

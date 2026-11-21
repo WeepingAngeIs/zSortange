@@ -5,7 +5,6 @@ import dev.anya.storage.*;
 import net.minecraft.core.*;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.*;
@@ -27,15 +26,7 @@ import java.util.function.Supplier;
 /** Separate entrance, not the existing 216-slot UwU inventory cube. */
 public final class PocketContent {
     public static final DeferredBlock<EntranceBlock> ENTRANCE=Content.BLOCKS.register("home_void_cube",()->new EntranceBlock(BlockBehaviour.Properties.of().strength(8,3600000).lightLevel(s->6).pushReaction(PushReaction.BLOCK)));
-    public static final DeferredItem<BlockItem> ITEM=Content.ITEMS.register("home_void_cube",()->new BlockItem(ENTRANCE.get(),new Item.Properties().stacksTo(1)){
-        @Override public void appendHoverText(ItemStack stack,TooltipContext context,List<Component> lines,TooltipFlag flag){
-            lines.add(Component.literal("Experimental home entrance, not an inventory cube."));
-            lines.add(Component.literal("Look directly at any face to see the starter-room illustration."));
-            lines.add(Component.literal("With View access, a loaded pocket can show its chest layout."));
-            lines.add(Component.literal("Sneak-use a bound tablet to link. Right-click to visit."));
-            lines.add(Component.literal("Requires experimental server opt-in. See Ancient Technology for live status."));
-        }
-    });
+    public static final DeferredItem<BlockItem> ITEM=Content.ITEMS.register("home_void_cube",()->new BlockItem(ENTRANCE.get(),new Item.Properties().stacksTo(1)));
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES=DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE,AnyaStorage.ID);
     private static final DeferredRegister<RecipeSerializer<?>> RECIPES=DeferredRegister.create(Registries.RECIPE_SERIALIZER,AnyaStorage.ID);
     public static final Supplier<BlockEntityType<EntranceEntity>> ENTITY=ENTITIES.register("home_void_cube",()->BlockEntityType.Builder.of(EntranceEntity::new,ENTRANCE.get()).build(null));

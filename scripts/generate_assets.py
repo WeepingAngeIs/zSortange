@@ -62,6 +62,11 @@ lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles
 lang.update({'subtitles.anyastorage.cube_open':'UwU storage cube opens','subtitles.anyastorage.cube_close':'UwU storage cube closes'})
 lang.update({'subtitles.anyastorage.frame_on':'Pocket window powers on','subtitles.anyastorage.frame_off':'Pocket window powers down'})
 lang.update({f'block.{MOD}.hub':'Anya Storage Hub',f'block.{MOD}.chest':'Labelled Storage Chest',f'block.{MOD}.uwu_cube':'UwU Storage Cube',f'key.{MOD}.quick':'QuickStack matching items',f'key.{MOD}.dump':'Dump broader matching items',f'key.{MOD}.undo_dump':'Undo last nearby dump',f'key.{MOD}.bag':'Open first backpack',f'key.categories.{MOD}':'Anya Storage'})
+for source in ('item_help_parts.json', 'item_help_devices.json'):
+    help_lines = json.loads(Path(__file__).with_name(source).read_text(encoding='utf-8'))
+    if lang.keys() & help_lines.keys():
+        raise ValueError(f'Duplicate language keys in {source}')
+    lang.update(help_lines)
 js(f'assets/{MOD}/lang/en_us.json',lang)
 def shaped(name,group,pattern,key,count=1):
     js(f'data/{MOD}/recipe/{name}.json',{'type':'minecraft:crafting_shaped','category':'misc','neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':group}],'pattern':pattern,'key':{k:({'tag':v[1:]} if v.startswith('#') else {'item':v}) for k,v in key.items()},'result':{'id':f'{MOD}:{name}','count':count}})

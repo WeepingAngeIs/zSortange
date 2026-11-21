@@ -1,0 +1,62 @@
+name: Ordinary storage item tooltips
+on:
+  push:
+    branches: [experiment/item-hover-guide]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ordinary-item-help-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Get the verified roomeditor.2 comparison JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-roomeditor.2
+          path: reference
+          github-token: ${{ github.token }}
+          run-id: 44851560504
+      - name: Verify reference
+        run: |
+          echo 'b2b5e5ee94d95e74ba4d46cd2d5b4db5ef18506875111d88b054c30000e1f5a8  reference/anya-storage-plus-0.3.0-beta.7-roomeditor.2.jar' | sha256sum --check
+          test "$(cat reference/SOURCE_COMMIT.txt)" = 75ecb498e09aedc37f7fe349b265f8ff250db526
+      - name: Build the playable mod
+        run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle jar durableAuditClasspath
+      - name: Check ordinary hover text and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar=$(realpath build/libs/anya-storage-plus-*-itemhelp.1.jar)
+          baseline=reference/anya-storage-plus-0.3.0-beta.7-roomeditor.2.jar
+          mkdir -p upload build/hover-check
+          python3 -B fixtures/item-help/check.py "$jar" "$baseline" | tee upload/CHECKS.txt
+          cp="$jar:$(cat build/durable-audit/classpath.txt)"
+          javac --release 21 -proc:none -cp "$cp" -d build/hover-check fixtures/item-help/HoverCheck.java
+          java -cp "build/hover-check:$cp" dev.anya.storage.HoverCheck "$jar" | tee -a upload/CHECKS.txt
+          cp "$jar" upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-itemhelp.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14
