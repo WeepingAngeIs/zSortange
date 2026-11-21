@@ -58,9 +58,13 @@ lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
 lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
 lang[f'item.{MOD}.creative_tablet']='UwU Tablet'
 lang[f'item.{MOD}.remote']='Cupid Tablet (Former Remote)'
-for family in ('pickup', 'compacting'):
-    name = 'advanced_' + family + '_upgrade'
-    lang[f'item.{MOD}.{name}'] = 'Advanced ' + family.title() + ' Upgrade'
+for name, title in {
+    'advanced_pickup_upgrade': 'Advanced Pickup Upgrade',
+    'advanced_compacting_upgrade': 'Advanced Compacting Upgrade',
+    'manual_smelting_upgrade': 'Manual Smelter Upgrade',
+    'auto_smelting_upgrade': 'Auto Smelter Upgrade',
+}.items():
+    lang[f'item.{MOD}.{name}'] = title
     js(f'assets/{MOD}/models/item/{name}.json', {'parent':'minecraft:item/generated','textures':{'layer0':f'{MOD}:item/{name}'}})
 lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
 lang.update({'subtitles.anyastorage.cube_open':'UwU storage cube opens','subtitles.anyastorage.cube_close':'UwU storage cube closes'})
@@ -86,6 +90,14 @@ shaped('cupid_tablet','terminals',['IGI','ARA','IEI'],{
 shaped('storage_core','endgame',['DDD','DND','DDD'],{'D':'minecraft:diamond_block','N':'minecraft:netherite_block'})
 for u,ingredient in [('pickup','hopper'),('feeding','golden_carrot'),('refill','dropper'),('crafting','crafting_table'),('smelting','furnace'),('compacting','piston'),('resupply','iron_pickaxe')]:
     shaped(u+'_upgrade','upgrade.'+u,['PIP','IRI','PIP'],{'P':'minecraft:paper','I':'minecraft:'+ingredient,'R':'minecraft:redstone'})
+shaped('manual_smelting_upgrade','upgrade.smelting',['CFC',' T '],
+       {'C':'minecraft:copper_ingot','F':'minecraft:furnace','T':'minecraft:redstone_torch'})
+js(f'data/{MOD}/recipe/auto_smelting_upgrade.json', {
+    'type':'minecraft:crafting_shapeless', 'category':'equipment',
+    'neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':'upgrade.smelting'}],
+    'ingredients':[{'item':f'{MOD}:manual_smelting_upgrade'}, {'item':'minecraft:clock'}, {'item':'minecraft:powered_rail'}],
+    'result':{'id':f'{MOD}:auto_smelting_upgrade','count':1},
+})
 for family, parts in {
     'pickup': ['amethyst_shard', 'name_tag', 'copper_ingot'],
     'compacting': ['piston', 'comparator', 'amethyst_shard'],

@@ -901,17 +901,36 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private void upgrades(){
         if(bag==null)return;
-        for(int i=0;i<Config.DISC_IDS.size();i++){String id=Config.DISC_IDS.get(i);boolean installed=Upgrades.installed(bag,id);button(10+i,ControlGlyph.setting(Config.upgradeFamily(id)),installed?State.ON:State.OFF,id.replace('_',' ')+(installed?" [INSTALLED]":" [EMPTY]"),c->{boolean remove=c.button==1;if(Upgrades.change(bag,id,remove)){int slot=bag.playerSlot;StoreMenu.bag(owner,new BagInventory(owner,slot),true);}},"Left: install from your inventory.","Right: uninstall and return the exact upgrade item.","Server enabled: "+Config.get().upgrades.get(Config.upgradeFamily(id)));}
+        for(int i=0;i<Config.DISC_IDS.size();i++){
+            String id=Config.DISC_IDS.get(i), family=Config.upgradeFamily(id);
+            boolean installed=Upgrades.installed(bag,id);
+            String label=switch(id){
+                case "manual_smelting","auto_smelting" -> new ItemStack(Content.UPGRADES.get(id).get()).getHoverName().getString();
+                default -> id.replace('_',' ');
+            };
+            button(10+i,ControlGlyph.setting(family),installed?State.ON:State.OFF,label+(installed?" [INSTALLED]":" [EMPTY]"),click->{
+                if(Upgrades.change(bag,id,click.button==1))StoreMenu.bag(owner,new BagInventory(owner,bag.playerSlot),true);
+            },"Left: install from your inventory.","Right: uninstall and return the exact upgrade item.",
+                    "Server enabled: "+Config.get().upgrades.get(family));
+        }
         button(27,ControlGlyph.WARDROBE,"Wardrobe / wear / interiors",c->navigate(Page.WARDROBE),"Element, cosmetic skin and storage tier are independent.");
         button(21,ControlGlyph.UPGRADE_LIST,"Installed upgrade slots",null,Upgrades.installedItems(bag.stack).size()+" / "+BagInventory.data(bag.stack).getInt("UpgradeSlots"),"Automatic upgrades use the first upgraded backpack.","Automation pauses while a container screen is open.");
         button(23,ControlGlyph.PICKUP_FILTER,"Pickup filter",null,"Auto-stores items after normal vanilla pickup.","Empty filter: only existing identical stacks.",BagInventory.data(bag.stack).getList("PickupFilter",Tag.TAG_STRING).toString());
+        if(Upgrades.active(bag,"manual_smelting")){
+            boolean pendingCook=Upgrades.manualSmeltPending(bag);
+            button(24,ControlGlyph.SMELTING,pendingCook?State.READ_ONLY:State.NORMAL,
+                    pendingCook?"One furnace cook queued":"Start one furnace cook",
+                    pendingCook?null:click->owner.displayClientMessage(Component.literal(Upgrades.startSmelt(bag)),true),
+                    "Add an input to the smelting filter and put it in the bag.",
+                    "Carry the bag with menus closed. Fuel: plain coal or charcoal.");
+        }
         button(25,ControlGlyph.SMELT_FILTER,"Smelting filter / fuel",null,"No filter means no automatic smelting.","Fuel: ordinary coal/charcoal stored inside the bag.","Fuel ticks: "+BagInventory.data(bag.stack).getInt("FuelTicks"),BagInventory.data(bag.stack).getList("SmeltFilter",Tag.TAG_STRING).toString());
         button(30,ControlGlyph.FEEDING,"Feeding behavior",null,"Only ordinary safe vanilla food is eaten.","Named/component-modified food is excluded.","Refill tops up existing hotbar stacks without sweeping them.");
         button(45,ControlGlyph.BACK,"Back to backpack",c->navigate(Page.BAG));button(46,ControlGlyph.CRAFT,"Portable crafting",c->Upgrades.craft(bag));
         button(47,ControlGlyph.COMPACT,Upgrades.active(bag,"advanced_compacting")?"Compact up to eight batches of one recipe":"Compact one safe recipe",c->AnyaStorage.tell(owner,Upgrades.compact(bag)));button(48,ControlGlyph.RESUPPLY,"Supply a tool to an empty selected hotbar slot",c->Upgrades.resupply(bag));
         button(49,ControlGlyph.EDIT_PICKUP,"Toggle pickup filter: "+input,c->Upgrades.filter(bag,"PickupFilter",input),Upgrades.active(bag,"advanced_pickup")?"Type an item ID or #namespace:tag, or click an inventory item below.":"Type an item ID or click an inventory item below.");
         button(50,ControlGlyph.EDIT_SMELT,"Toggle smelt filter: "+input,c->Upgrades.filter(bag,"SmeltFilter",input));
-        button(51,ControlGlyph.STOP_SMELT,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");tag.remove("SmeltFilter");BagInventory.data(bag.stack,tag);bag.hostChanged();});
+        button(51,ControlGlyph.STOP_SMELT,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");BagInventory.data(bag.stack,tag);Upgrades.stopSmelt(bag);});
         button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());
     }
     private void explainSlot(int slot,boolean dump){

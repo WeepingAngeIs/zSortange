@@ -4,7 +4,21 @@
 
 **Done** means the described function exists in Anya. **Verified in modules.1** means the hosted checks below exercised it. **Next** identifies proposed development, **Optional** marks a later design choice, and **Blocked** names a missing dependency or deliberate exclusion. The version-pinned reference inventories the upstream Sophisticated Storage 1.6.18.2229 / Core 1.5.35.2473 upgrades, optional providers and recipes. [Storage upgrade reference](STORAGE_UPGRADE_REFERENCE.md)
 
-## What to craft first
+## Furnace progression in smelter.1
+
+This candidate extends the combined modules.1 build at `c94d19253e38`. [Baseline receipt](https://github.com/WeepingAngeIs/zSortange/actions/runs/44869692420)
+
+| Backpack module | Craft | Operation |
+|---|---|---|
+| Manual Smelter Upgrade | Place copper ingot, furnace, copper ingot in a row with one redstone torch directly below the furnace. | Put plain coal or charcoal and a listed ingredient in the bag. In Upgrades, add the ingredient ID to the smelting filter and press **Start one furnace cook**. Close the menu and carry the bag. One ingredient cooks and the bag waits for your next request. |
+| Auto Smelter Upgrade | Remove the manual disc from the bag and combine it with one clock and one powered rail in any arrangement. Install the resulting disc in a free socket. | The carried bag continues cooking while menus are closed. Add exact item IDs to the filter in your preferred order. The first listed ingredient with an available furnace recipe has priority. |
+| Original Smelting Upgrade | Its original item ID, installed disc and crafting recipe are supported. | Continues automatic cooking in bag-slot order. Old paid progress, fuel and fractional XP resume when the recipe and ingredient match. |
+
+The three discs share one smelting-family socket and the existing server switch. A full destination pauses cooking and fuel use. The manual job records its selected slot, exact ingredient and server recipe. Changing the queued ingredient or its recipe cancels that request. Removing its disc or clearing the filter cancels the request and keeps the remaining fuel and earned fractional XP. The bag uses the server’s furnace cooking time, output and remainders.
+
+Smoking and blasting remain separate planned families. Each will use its own recipe type and require its manual disc to craft its automatic disc. No new family settings are needed for this furnace batch.
+
+## First batch in modules.1
 
 | Status | Module and recipe | What the player gets |
 |---|---|---|
@@ -32,7 +46,7 @@ The first two rows describe recipes in the checked JAR. Later arrows are propose
 | Refill · carried bag | **Done** `refill_upgrade` (dropper). Tops up existing matching hotbar stacks with matching components. **Optional** per-slot reserve targets. | Refill + comparator and chiseled bookshelf → advanced refill with selected hotbar slots and minimum bag reserve. |
 | Tool resupply · bag, manual | **Done** `resupply_upgrade` (iron pickaxe). Moves one stored tool or sword into an empty selected hotbar slot. **Optional** preferred tool/condition. | Resupply + tripwire hook and grindstone → advanced resupply with tool class and minimum durability. Ordinary tool identity and enchantments travel with the item. |
 | Crafting workstation · bag | **Done** `crafting_upgrade` (crafting table). Opens the vanilla portable crafting menu, using the player inventory. **Optional** bag-backed ingredient planning. | Crafting + written recipe template (new blank plan item) and a hopper → advanced crafting with explicit ingredient preview and confirmed transfer from this bag, including remainders. |
-| Smelting · carried bag | **Done** `smelting_upgrade` (furnace) already runs automatically for explicitly filtered inputs, with coal/charcoal, real recipe cook times, result/remainder space and fractional XP. **Next** distinguish manual/auto cleanly. | Keep the existing ID and grandfather old automatic behavior. Introduce a manual furnace module for new progression. Manual furnace + clock and powered rail → automatic furnace with input/fuel rules. Both use the saved progress contract below. |
+| Smelting · carried bag | **Implemented in smelter.1.** Manual cooks one deliberately queued ingredient. Auto continuously chooses by filter priority. The original automatic disc still chooses by bag-slot order. | Manual Smelter Upgrade + clock + powered rail → Auto Smelter Upgrade. All three use the same smelting switch and keep their exact disc on removal. |
 | Smoking · bag | **Next** separate smoker recipe type and manual station. Current smelting does not expose a smoker station. | Manual smoker module made with a smoker → automatic smoker using the manual module, clock and copper grate. Same fuel/remainder safeguards, smoker-specific recipes. |
 | Blasting · bag | **Next** separate blast-furnace recipe type and manual station. | Manual blast module made with a blast furnace → automatic blast module using the manual module, clock and blast-resistant lining (obsidian). No furnace/smoker recipe substitution. |
 | Item filter · authorized placed item host | **Next** dedicated input/output filtering. Existing hub exact-item/category routes and bag pickup filters already work within their own paths. | Basic filter uses an explicit item allowlist and one direction. Basic filter + comparator and name tag → advanced independent inbound/outbound item and tag rules. An empty filter cannot silently broaden access. |
@@ -62,9 +76,9 @@ The first two rows describe recipes in the checked JAR. Later arrows are propose
 
 ## Save compatibility and acceptance
 
-1. **Old automatic smelters keep working.** Persist an explicit behavior/version when introducing manual crafting. Interpret unmarked installed legacy `smelting` entries as automatic and keep their exact disc, filter, fuel, recipe identity, input components, remaining progress and fractional XP. Existing loose `smelting_upgrade` items must continue to install with their documented legacy behavior. Give the new manual path a distinct ID. A deliberate upgrade conversion can transfer state transactionally without double cooking or losing fuel.
+1. **Old automatic smelters.** The furnace batch recognizes unmarked legacy jobs by their installed disc, saved recipe ID and exact ingredient components. It records the current recipe definition when a job advances. The manual disc has its own ID and requires an explicit request. The original loose disc still installs as automatic. Cooking progress does not move from one tier into a different recipe.
 2. **Protect existing packs.** Old schema-2 files were validated against an exact upgrade-key set. The first two advanced discs reuse their existing family switches. Old configurations load with the same seven keys. Treat a disabled basic family as disabled across new tiers unless a documented operator migration explicitly chooses otherwise. Preserve unknown/inactive installed disc data for recovery. Refuse conflicting tier installations and capacity changes that would invalidate contents.
-### Verified in the hosted run
+### Verified in the original modules.1 hosted run
 
 - **Packaged JAR.** The runner checked the two shapeless recipe definitions, exact basic disc and three parts, family gates, item models and distinct 32×32 icons. It compared original recipes, skins and gameplay resources with the verified itemhelp.1 artifact and exercised the JAR's hover helper for all 36 items and both backpack placeholders.
 - **One required server GameTest passed** on Java 21, Minecraft 1.21.1 and NeoForge 21.1.249. It saved and reloaded the actual item through Minecraft's registry-aware serializer, kept its `BagId` and filter data, and returned the exact named disc on removal. It tested duplicate bag identity, unknown/stale tags, pickup after switching to basic, and the ground-attachment check for accepting an advanced disc and rejecting a second family tier.

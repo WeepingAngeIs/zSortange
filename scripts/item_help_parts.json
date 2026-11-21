@@ -48,5 +48,10 @@
   "tooltip.anyastorage.advanced_pickup_upgrade.1": "Moves matching items from your inventory into your backpack. Its pickup filter also accepts #item tags.",
   "tooltip.anyastorage.advanced_pickup_upgrade.2": "Use one free upgrade slot. Remove Basic Pickup first if it is installed.",
   "tooltip.anyastorage.advanced_compacting_upgrade.1": "Press Compact to pack up to eight groups of nine of the same material in one click.",
-  "tooltip.anyastorage.advanced_compacting_upgrade.2": "Use one free upgrade slot. Remove Basic Compacting first if it is installed."
+  "tooltip.anyastorage.advanced_compacting_upgrade.2": "Use one free upgrade slot. Remove Basic Compacting first if it is installed.",
+  "tooltip.anyastorage.manual_smelting_upgrade.1": "In Upgrades, add allowed item IDs to the smelting filter, then start one furnace cook.",
+  "tooltip.anyastorage.manual_smelting_upgrade.2": "Put the input and coal or charcoal in the bag. Carry it with menus closed to cook.",
+  "tooltip.anyastorage.auto_smelting_upgrade.1": "Continuously smelts items from the bag in smelting-filter order. Add your first choice first.",
+  "tooltip.anyastorage.auto_smelting_upgrade.2": "Install in a backpack with coal or charcoal inside. Carry it with menus closed to cook.",
+  "tooltip.anyastorage.auto_smelting_upgrade.3": "Craft from a Manual Smelter Upgrade, a clock and a powered rail."
 }

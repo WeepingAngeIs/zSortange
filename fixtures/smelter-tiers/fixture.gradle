@@ -1,0 +1,35 @@
+// The fixture compiles against the frozen playable and runs as a separate mod.
+gradle.beforeProject { p -> p.afterEvaluate {
+    def playable = p.file(p.property('smelterPlayable'))
+    def probe = p.sourceSets.create('smelterProbe')
+    probe.java.srcDir p.file('fixtures/smelter-tiers/java')
+    probe.resources.srcDir p.file('fixtures/smelter-tiers/resources')
+    p.neoForge.addModdingDependenciesTo(probe)
+    p.dependencies.add(probe.compileOnlyConfigurationName, p.files(playable))
+    def fixture = p.tasks.register('smelterProbeJar', Jar) {
+        dependsOn probe.classesTaskName
+        from probe.output
+        archiveBaseName = 'hosted-smelter-fixture'
+        destinationDirectory = p.layout.buildDirectory.dir('smelter-tier/fixture')
+    }
+    def runtime = p.sourceSets.create('smelterRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(playable))
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(fixture))
+    p.neoForge.runs.create('smelterReview') {
+        server()
+        programArgument '--nogui'
+        sourceSet = runtime
+        loadedMods = []
+        gameDirectory = p.file('build/smelter-tier/game')
+        jvmArguments.addAll '-Xmx1600m', '-Xms256m'
+        systemProperty 'anya.smelterPlayable', playable.absolutePath
+    }
+    p.tasks.register('prepareSmelterReview') {
+        dependsOn fixture, 'createSmelterReviewLaunchScript'
+        doLast {
+            def launch = p.tasks.named('createSmelterReviewLaunchScript').get().launchScript.get().asFile
+            p.file('build/smelter-tier/launch.txt').text = launch.absolutePath
+        }
+    }
+}}

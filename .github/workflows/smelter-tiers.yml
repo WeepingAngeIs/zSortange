@@ -1,0 +1,80 @@
+name: Backpack Smelter to Auto Smelter
+on:
+  push:
+    branches: [experiment/smelter-tiers]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: smelter-tiers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    env:
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-smelter.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Retrieve the verified combined modules.1
+        uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-modules.1
+          path: reference
+          github-token: ${{ github.token }}
+          run-id: 44869692420
+      - name: Build and compare both tiers to the verified baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = c94d19253e3897795a60d6993b75131a12bb696f
+          (cd reference && sha256sum --check SHA256SUMS.txt)
+          gradle --no-daemon --console=plain --max-workers=2 -I scripts/durable-audit-init.gradle jar durableAuditClasspath
+          mkdir -p upload build/smelter-tier/hover
+          cp "build/libs/$PLAYABLE" upload/
+          if ! /usr/bin/python3 -c 'import PIL.Image'; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          fi
+          jar=$(realpath "upload/$PLAYABLE")
+          /usr/bin/python3 -B fixtures/smelter-tiers/check_package.py "$jar" reference/*.jar | tee upload/CHECKS.txt
+          vanilla="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$vanilla"
+          cp="$jar:$(cat build/durable-audit/classpath.txt):$vanilla"
+          javac --release 21 -proc:none -cp "$cp" -d build/smelter-tier/hover fixtures/item-help/HoverCheck.java
+          java -cp "build/smelter-tier/hover:$cp" dev.anya.storage.HoverCheck "$jar" | tee build/smelter-tier/hover.txt
+          grep -F '38 items and rendered both backpack value placeholders' build/smelter-tier/hover.txt >> upload/CHECKS.txt
+      - name: Cook, save and restart a disposable dedicated server
+        run: |
+          set -euo pipefail
+          python3 -u -B fixtures/smelter-tiers/run.py "upload/$PLAYABLE"
+          cat build/smelter-tier/CHECKS.txt >> upload/CHECKS.txt
+          cp docs/MODULE_PROGRESSION.md docs/STORAGE_UPGRADE_REFERENCE.md upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt && sha256sum --check SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: hosted-smelter-diagnostics
+          path: |
+            build/smelter-tier/*.log
+            build/smelter-tier/game/crash-reports/*.txt
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-smelter.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14

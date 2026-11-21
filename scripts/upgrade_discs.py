@@ -13,6 +13,9 @@ DISCS = {
         '#######','# # # #','#######','# # # #','#######',' #   # ')),
     'smelting': ('ba583a','5e303d','ffa862','ffeab2', (
         '   ##  ','  ###  ','  ### #',' ######','#######','##++###',' ##++# ')),
+    # A little furnace with one glowing billet, set inside a smooth manual-tier rim.
+    'manual_smelting': ('ae86bb','483952','ffb1d3','c7f2ff', (
+        '#######','#     #','#######','#     #','# +++ #','#     #','#######')),
     'compacting': ('7d69b8','3f355f','c7a8ee','f3dcff', (
         '#######','  ###  ',' ##### ','       ','>#####<',' ##### ','#######')),
     'resupply': ('417da9','253f60','8dd6eb','e0fbff', (
@@ -89,6 +92,8 @@ def generate(write):
     # Two raised tabs identify the advanced tier in monochrome as well.
     advanced = {
         'advanced_pickup': ('  ###  ', ' ## ## ', ' ##### ', '  ###  ', '   #   ', '       ', '+     +', ' +++++ '),
+        # Clock hands above a heating element, housed in the twin-tab automatic casing.
+        'auto_smelting': ('  ###  ', ' # # # ', '#  #  #', '#  ++ #', ' #   # ', '  ###  ', '       ', ' +++++ '),
         'advanced_compacting': ('  ###  ', '   #   ', '+++++++', '       ', ' ## ## ', ' ## ## ', '       ', '+++++++'),
     }
     for key, rows in advanced.items():

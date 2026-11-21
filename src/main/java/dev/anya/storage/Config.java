@@ -25,11 +25,12 @@ public final class Config {
     public static final List<String> GROUPS = List.of("backpacks", "hubs", "terminals", "containers", "upgrades", "endgame");
     public static final List<String> UPGRADE_IDS = List.of("pickup", "feeding", "refill", "crafting", "smelting", "compacting", "resupply");
     public static final List<String> DISC_IDS = java.util.stream.Stream.concat(UPGRADE_IDS.stream(),
-            java.util.stream.Stream.of("advanced_pickup","advanced_compacting")).toList();
-    static String upgradeFamily(String id) {
+            java.util.stream.Stream.of("advanced_pickup","advanced_compacting","manual_smelting","auto_smelting")).toList();
+    public static String upgradeFamily(String id) {
         return switch(id) {
             case "advanced_pickup" -> "pickup";
             case "advanced_compacting" -> "compacting";
+            case "manual_smelting", "auto_smelting" -> "smelting";
             default -> id;
         };
     }

@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:smelting",
+  "category": "misc",
+  "ingredient": {"item": "minecraft:totem_of_undying"},
+  "result": {"id": "anyastorage:backpack"},
+  "cookingtime": 40,
+  "experience": 1.0
+}
