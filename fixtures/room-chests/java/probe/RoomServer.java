@@ -27,8 +27,8 @@ import com.mojang.authlib.GameProfile;
 @EventBusSubscriber(modid="roomprobe")
 public final class RoomServer {
     static final BlockPos HUB=new BlockPos(2,81,1), DOOR=new BlockPos(3,81,1);
-    private static ServerPlayer join(net.minecraft.server.MinecraftServer server,String name)throws Exception{
-        var level=server.overworld();var profile=new GameProfile(UUID.randomUUID(),name);
+    private static ServerPlayer join(net.minecraft.server.MinecraftServer server,String name,UUID uuid)throws Exception{
+        var level=server.overworld();var profile=new GameProfile(uuid,name);
         var p=new ServerPlayer(server,level,profile,ClientInformation.createDefault());
         var connection=new Connection(PacketFlow.SERVERBOUND){
             @Override public boolean isMemoryConnection(){return true;}
@@ -65,7 +65,14 @@ public final class RoomServer {
             var registry=PocketRoomLayout.present(level,room);var extra=registry.get(4);
             check(registry.size()==5 && extra.getBlockPos().equals(new BlockPos(room.x()+9,65,room.z()+17)) &&
                 extra.storageIdentity().equals(UUID.fromString(lines.get(1))) && extra.getItem(0).getCount()==7 && extra.getItem(0).is(Items.EMERALD),"Restart identity or contents");
-            Files.writeString(Path.of("CHECKS.txt"),"PASS Off-pad placement spent one chest, retained seven emeralds and chest identity across restart. Starter, occupied chest and exit protected. Visit exceeded 200 ticks, exit released tickets.\\n");
+            if(stage==0){
+                guest=join(server,lines.get(3),UUID.fromString(lines.get(2)));guest.teleportTo(server.overworld(),3.5,81,3.5,180,0);
+                PocketService.enter(guest,(PocketContent.EntranceEntity)server.overworld().getBlockEntity(DOOR));stage=8;return;
+            }
+            if(!PocketService.inPocket(guest.level()))return;
+            guest.getInventory().selected=5;
+            check(PocketService.openVisitedTablet(guest,InteractionHand.MAIN_HAND) && guest.containerMenu instanceof StoreMenu menu && menu.capacity()==270,"Saved tablet access to five chests");
+            Files.writeString(Path.of("CHECKS.txt"),"PASS Off-pad placement spent one chest, retained seven emeralds and chest identity across restart. Starter, occupied chest and exit protected. Visit exceeded 200 ticks, owner-only guest removal preserved grants and owner loading; exit released tickets. Saved tablet reopened 270 slots after restart.\n");
             stage=99;server.halt(false);return;
         }
         if(server.getPlayerList().getPlayers().isEmpty())return;
@@ -79,11 +86,11 @@ public final class RoomServer {
             var door=(PocketContent.EntranceEntity)home.getBlockEntity(DOOR);door.owner=p.getUUID();
             var tablet=new ItemStack(Content.CUPID_TABLET.get());var tag=BagInventory.data(tablet);
             tag.putUUID("HubId",hub.storageIdentity());tag.putLong("HubPos",HUB.asLong());tag.putString("HubDimension","minecraft:overworld");BagInventory.data(tablet,tag);
-            p.setItemInHand(InteractionHand.MAIN_HAND,tablet);PocketService.link(p,door,tablet);id=door.pocket;check(id!=null,"Link");PocketService.enter(p,door);stage++;return;
+            p.setItemInHand(InteractionHand.MAIN_HAND,tablet);PocketService.link(p,door,tablet);id=door.pocket;check(id!=null,"Link");p.getInventory().setItem(5,tablet.copy());PocketService.enter(p,door);stage++;return;
         }
         if(stage==5){
             if(PocketService.inPocket(p.level())||PocketService.ownedTicketRequests()!=0)return;
-            Files.writeString(Path.of("entry.txt"),id+"\\n"+identity+"\\n");stage=99;return;
+            Files.writeString(Path.of("entry.txt"),id+"\n"+identity+"\n"+p.getUUID()+"\n"+p.getGameProfile().getName()+"\n");stage=99;return;
         }
         if(!PocketService.inPocket(p.level())){check(stage==1,"Unexpected timed return");return;}
         var room=PocketService.ledger(server).get(id);var pos=new BlockPos(room.x()+9,65,room.z()+17);
@@ -100,10 +107,16 @@ public final class RoomServer {
             var starter=PocketService.chestPositions(room).getFirst();click(p,starter,true);
             check(p.serverLevel().getBlockEntity(starter)!=null,"Starter protection");
             var route=new BlockPos(room.x()+16,64,room.z()+22);click(p,route,false);check(p.serverLevel().isEmptyBlock(route.above()),"Exit path");
-            stage++;
+            stage=10;
+        }else if(stage==10 && server.getTickCount()-start>35){
+            var legacy=PocketRoomLayout.pads(room).getFirst();click(p,legacy.below(),false);
+            check(PocketRoomLayout.present(p.serverLevel(),room).size()==6 && p.getMainHandItem().isEmpty(),"Legacy chest spot");stage=11;
+        }else if(stage==11 && server.getTickCount()-start>45){
+            var legacy=PocketRoomLayout.pads(room).getFirst();click(p,legacy,true);
+            check(p.serverLevel().isEmptyBlock(legacy) && p.getInventory().countItem(Content.CRATE.get().asItem())==1,"Remove empty chest and refund");stage=4;
         }else if(stage==4 && server.getTickCount()-start>240){
             check(PocketService.lease(p.getUUID())!=null&&RoomEditor.active(p),"Visit after former timeout");
-            guest=join(server,"RoomGuestTwo");
+            guest=join(server,"RoomGuestTwo",UUID.randomUUID());
             var home=server.overworld();guest.teleportTo(home,3.5,81,3.5,180,0);
             var hub=(StorageEntity)home.getBlockEntity(HUB);hub.setMember(guest.getUUID(),BasePermissions.VISIT);
             PocketService.enter(guest,(PocketContent.EntranceEntity)home.getBlockEntity(DOOR));stage=6;
