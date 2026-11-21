@@ -35,10 +35,11 @@ public final class StoreMenu extends AbstractContainerMenu {
     private enum Opening { PLAIN, REMOTE, TABLET, CHEST, BACKPACK, CREATIVE }
     private record Click(int button,boolean shift) {}
     private record Entry(Container inventory,int slot,ItemStack snapshot,BlockPos position) {}
-    private final SimpleContainer display=new SimpleContainer(54);
-    private final ContainerData sync=new SimpleContainerData(19);
+    private final SimpleContainer display=new SimpleContainer(54+StorageGrid.CHEST_EXTRA_SLOTS);
+    private final ContainerData sync=new SimpleContainerData(22);
     private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256, CREATIVE_ACCESS=512, TABLET_ACCESS=1024;
     private static final int LOCAL_ROOM=2048, EDIT_ALLOWED=4096, EDIT_ACTIVE=8192;
+    private static final int PHYSICAL_CHEST=16384, PHYSICAL_CUBE=32768;
     private CreativeTabletAccess.Session creative;
     private ItemStack networkTablet;
     static final int POCKET_ACTION_SLOT = 51;
@@ -54,7 +55,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private BlockPos routePos;
     private Config.Data draft;
     private String input="",selectedTier="netherite";
-    private int offset,viewportRows=5;
+    private int offset,viewportRows=5,viewportColumns=9;
     private UUID selectedImage,deleteImage,selectedMember;
     private boolean clearLogConfirm;
     private String lastAppearance="";
@@ -79,6 +80,8 @@ public final class StoreMenu extends AbstractContainerMenu {
         for(int row=0;row<6;row++)for(int col=0;col<9;col++)addSlot(locked(display,row*9+col,125+col*18,34+row*18));
         for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(locked(inventory,9+row*9+col,125+col*18,155+row*18));
         for(int col=0;col<9;col++)addSlot(locked(inventory,col,125+col*18,213));
+        // Keep the original 54 display/control IDs and 36 player IDs for every existing page.
+        for(int i=0;i<StorageGrid.CHEST_EXTRA_SLOTS;i++)addSlot(locked(display,54+i,-10000,-10000));
         addDataSlots(sync);
     }
     private StoreMenu(int id,Inventory inventory,ServerPlayer owner,Page page,BagInventory bag,StorageEntity hub,StorageEntity chest,BlockPos routePos,int flags){
@@ -148,7 +151,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     public static void container(ServerPlayer p,StorageEntity chest){
         if(chest.pocketId!=null){dev.anya.storage.pocket.PocketService.openChest(p,chest);return;}
-        if(Safety.reason(p,chest,null).isEmpty())open(p,Page.CHEST,null,null,chest,null,openingFlags(Opening.CHEST,true));
+        if(Safety.reason(p,chest,null).isEmpty())open(p,Page.CHEST,null,null,chest,null,openingFlags(Opening.CHEST,true)
+                | PHYSICAL_CHEST | ("cube".equals(chest.kind())?PHYSICAL_CUBE:0));
     }
     public static void pocket(ServerPlayer p,dev.anya.storage.pocket.PocketView view){
         openPocket(p,view,Opening.PLAIN);
@@ -164,7 +168,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private static void openPocket(ServerPlayer p,dev.anya.storage.pocket.PocketView view,Opening opening){
         if(!view.valid())return;
-        int flags=openingFlags(opening,view.permits(BasePermissions.VIEW)) | (view.localTablet()?LOCAL_ROOM:0);
+        int flags=openingFlags(opening,view.permits(BasePermissions.VIEW)) | (view.localTablet()?LOCAL_ROOM:0)
+                | (opening==Opening.CHEST?PHYSICAL_CHEST:0);
         p.openMenu(new SimpleMenuProvider((id,inv,ignored)->{
             StoreMenu menu=new StoreMenu(id,inv,p,Page.CHEST,null,null,null,null,flags);menu.pocket=view;menu.render();menu.bump();return menu;
         },Component.literal(view.localTablet()?"Home Void Cube":"Experimental pocket storage")));
@@ -199,12 +204,16 @@ public final class StoreMenu extends AbstractContainerMenu {
     public boolean accessView(){return (sync.get(4)&16)!=0;}
     public boolean privateView(){return (sync.get(4)&4)!=0;}
     public boolean filteredView(){return (sync.get(4)&8)!=0;}
-    public int visibleRows(){return StorageGrid.clampRows(sync.get(5));}
+    public boolean chestView(){return storageView() && (sync.get(4)&PHYSICAL_CHEST)!=0;}
+    public boolean cubeView(){return chestView() && (sync.get(4)&PHYSICAL_CUBE)!=0;}
+    public int visibleColumns(){return chestView() && sync.get(19)==StorageGrid.WIDE_COLUMNS ? StorageGrid.WIDE_COLUMNS : 9;}
+    public int chestSearchRevision(){return synchronizedInt(20);}
+    public int visibleRows(){return chestView()?Math.clamp(sync.get(5),1,StorageGrid.CHEST_ROWS):StorageGrid.clampRows(sync.get(5));}
     public int capacity(){return Math.max(0,synchronizedInt(6));}
     public int resultCount(){return Math.max(0,synchronizedInt(8));}
     public int firstSlot(){return Math.max(0,synchronizedInt(10));}
     public int occupiedSlots(){return Math.max(0,synchronizedInt(12));}
-    public int shownSlots(){return storageView()?StorageGrid.visible(resultCount(),firstSlot(),visibleRows()):45;}
+    public int shownSlots(){return storageView()?Math.clamp(resultCount()-firstSlot(),0,visibleRows()*visibleColumns()):45;}
     /** Explicit renderer fixture only; cannot be invoked by packets or on a server-owned menu. */
     public void renderFixture(int capacity,int row,int rows){
         if(owner!=null||!Boolean.getBoolean("anyastorage.clientSmoke"))throw new IllegalStateException("Not a development renderer fixture");
@@ -260,8 +269,17 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(accessChanged()){render();bump();sendAllDataToRemote();return;}
         long now=owner.serverLevel().getGameTime();if(lastAction==now)return;lastAction=now;
         try {
-            if(packet.verb().equals("text")){input=packet.text().strip();if(input.length()>128)input=input.substring(0,128);offset=0;}
-            else if(packet.verb().equals("viewport")&&isStoragePage()){
+            if(packet.verb().equals("text")){
+                input=packet.text().strip();if(input.length()>128)input=input.substring(0,128);offset=0;
+                if(physicalChestPage())synchronizedInt(20,packet.value());
+            }
+            else if(packet.verb().equals("chest_view")&&physicalChestPage()){
+                int value=packet.value(), rows=value&15, columns=(value&16)!=0?StorageGrid.WIDE_COLUMNS:9;
+                if(value<0 || value>16_000_000 || rows<1 || rows>StorageGrid.CHEST_ROWS
+                        || columns!=9 && (openingFlags&PHYSICAL_CUBE)==0)return;
+                viewportColumns=columns;viewportRows=rows;offset=StorageGrid.first(resultCount(),value>>>5,columns,rows);
+            }
+            else if(packet.verb().equals("viewport")&&isStoragePage()&&!physicalChestPage()){
                 int value=packet.value();if(value<0||value>16_000_000)return;
                 viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
             }
@@ -284,13 +302,15 @@ public final class StoreMenu extends AbstractContainerMenu {
                 int index=packet.value()&255;Click click=new Click((packet.value()>>8)&3,(packet.value()&65536)!=0);
                 if(index>=0&&index<54){Consumer<Click> action=buttons.get(index);if(action!=null)action.accept(click);else if(entries.containsKey(index))take(entries.get(index),click);}
                 else if(index>=54&&index<90)inventoryClick(slots.get(index).getContainerSlot(),click);
+                else if(physicalChestPage() && entries.containsKey(index))take(entries.get(index),click);
             }
         } catch(IllegalArgumentException e){AnyaStorage.tell(owner,e.getMessage());}
         if(owner.containerMenu==this){if(!stillValid(owner)){owner.closeContainer();return;}render();bump();sendAllDataToRemote();Wearables.refresh(owner);}
     }
     private boolean isStoragePage(){return page.isStorage();}
+    private boolean physicalChestPage(){return page==Page.CHEST && (openingFlags&PHYSICAL_CHEST)!=0;}
     private void render(){
-        resetControlSlots();buttons.clear();entries.clear();for(int i=0;i<54;i++)display.setItem(i,ItemStack.EMPTY);
+        resetControlSlots();buttons.clear();entries.clear();display.clearContent();
         sync.set(18,Profiles.of(owner).hideStorageTooltips?1:0);
         sync.set(4,(bag!=null?2:0)|(openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
         for(int i=0;i<36;i++)playerSeen[i]=owner.getInventory().getItem(i).copy();
@@ -343,23 +363,27 @@ public final class StoreMenu extends AbstractContainerMenu {
         }
         // Unfiltered views retain physical slot order, including every real empty slot.
         // Search narrows the view without inventing slots or changing the source-slot identity.
-        offset=StorageGrid.start(values.size(),offset/9,viewportRows);
+        int columns=physicalChestPage()?viewportColumns:9;
+        int rows=physicalChestPage()?viewportRows:StorageGrid.clampRows(viewportRows);
+        offset=StorageGrid.first(values.size(),offset/columns,columns,rows);
         int roomFlags=0;
         if(pocket!=null && pocket.localTablet()){
             roomFlags=LOCAL_ROOM;
             if(RoomEditor.active(owner))roomFlags|=EDIT_ACTIVE;
             if(RoomEditor.modeDenial(owner).isEmpty())roomFlags|=EDIT_ALLOWED;
         }
-        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|roomFlags|(mayView?openingFlags:openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);
+        int chestFlags=physicalChestPage()?openingFlags&(PHYSICAL_CHEST|PHYSICAL_CUBE):0;
+        sync.set(4,1|(bag!=null?2:0)|(!mayView?4:0)|(filtered?8:0)|roomFlags|chestFlags|(mayView?openingFlags:openingFlags&CREATIVE_ACCESS));sync.set(5,rows);sync.set(19,columns);
         synchronizedInt(6,capacity);synchronizedInt(8,values.size());synchronizedInt(10,offset);synchronizedInt(12,occupied);
-        int shown=StorageGrid.visible(values.size(),offset,viewportRows);
+        int shown=Math.min(values.size()-offset,rows*columns);
         for(int i=0;i<shown;i++){
-            Entry entry=values.get(offset+i);entries.put(i,entry);
+            Entry entry=values.get(offset+i);entries.put(StorageGrid.chestSlot(i),entry);
             if(entry.snapshot.isEmpty())continue;
             String source=sourceLabel(entry.inventory,entry.position,containers);
-            display.setItem(i,icon(entry.snapshot,null,List.of("Source: "+source+" / real slot "+(entry.slot+1),"Category: "+Categories.of(entry.snapshot),"Left: take stack | Right: take one","Middle: favorite this item type",entry.position!=null?"Shift-right: find the physical chest":"",Profiles.of(owner).favorites.contains(Categories.id(entry.snapshot))?"Favorite":"")));
+            int backing=i<StorageGrid.CELLS?i:54+i-StorageGrid.CELLS;
+            display.setItem(backing,icon(entry.snapshot,null,List.of("Source: "+source+" / real slot "+(entry.slot+1),"Category: "+Categories.of(entry.snapshot),"Left: take stack | Right: take one","Middle: favorite this item type",entry.position!=null?"Shift-right: find the physical chest":"",Profiles.of(owner).favorites.contains(Categories.id(entry.snapshot))?"Favorite":"")));
         }
-        button(45,ControlGlyph.SCROLL_UP,"Scroll up",c->offset=Math.max(0,offset-9));button(46,ControlGlyph.SCROLL_DOWN,"Scroll down",c->offset+=9);
+        button(45,ControlGlyph.SCROLL_UP,"Scroll up",c->offset=Math.max(0,offset-columns));button(46,ControlGlyph.SCROLL_DOWN,"Scroll down",c->offset+=columns);
         button(47,ControlGlyph.ORGANIZE,"Preview organize",c->previewSort(),"Groups by category and exact components.","Nothing moves until you confirm the preview.");
         button(48,ControlGlyph.QUICKSTACK,"QuickStack matching",c->depositAll(false),"Only existing identical item/components.","Protected slots are never swept.");
         button(49,ControlGlyph.DUMP,"Dump broader matches",c->{if(c.shift)undoDump();else depositAll(true);},"Shift-click to undo your last dump here.","Same item type or designated category.","Does not empty unrelated items into random chests.");

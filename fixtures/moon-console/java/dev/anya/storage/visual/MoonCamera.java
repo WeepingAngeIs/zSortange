@@ -61,6 +61,7 @@ public final class MoonCamera {
         RESUME, USE_TABLET, INTRO, GRID, TOOLTIP_ON, TOOLTIP_OFF, RETURN, CREATIVE_ITEM, CREATIVE_EQUIP, CREATIVE_USE, CREATIVE_INTRO, CREATIVE_GRID, CREATIVE_RETURN, RESTORE, FINISH, DONE }
     private static final boolean EXPRESSIONS="true".equals(System.getenv("GITHUB_ACTIONS")) && "1".equals(System.getenv("ANYA_EXPRESSION_REVIEW"));
     private static final boolean EDITOR="true".equals(System.getenv("GITHUB_ACTIONS")) && "1".equals(System.getenv("ANYA_ROOM_EDITOR_REVIEW"));
+    private static final boolean CHESTS="true".equals(System.getenv("GITHUB_ACTIONS")) && "1".equals(System.getenv("ANYA_CHEST_REVIEW"));
     private static final int TABLET_SLOT = 1, CREATIVE_SLOT = 2;
     private static final ResourceLocation FACE = ResourceLocation.fromNamespaceAndPath("anyastorage", "cupid_face");
     private static final BlockPos CUBE = new BlockPos(0, 80, 0);
@@ -160,7 +161,7 @@ public final class MoonCamera {
     }
 
     @SubscribeEvent public static void frame(RenderFrameEvent.Post event) throws ReflectiveOperationException {
-        if (EDITOR) return;
+        if (EDITOR || CHESTS) return;
         var mc = Minecraft.getInstance();
         if(EXPRESSIONS){ExpressionCamera.frame(mc);return;}
         boolean creativeEquip = step == Step.CREATIVE_EQUIP;
@@ -197,6 +198,7 @@ public final class MoonCamera {
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) throws Exception {
         if (!"true".equals(System.getenv("GITHUB_ACTIONS")) || step == Step.DONE) return;
         var mc = Minecraft.getInstance();
+        if(CHESTS && step==Step.JOIN){ChestCamera.tick(mc);return;}
         if(EDITOR && step==Step.JOIN){EditorCamera.tick(mc);return;}
         if(EXPRESSIONS && step==Step.JOIN){ExpressionCamera.tick(mc);return;}
         if (operation != null) {
@@ -209,7 +211,8 @@ public final class MoonCamera {
             case TITLE -> {
                 if (!(mc.screen instanceof TitleScreen) || mc.getOverlay()!=null) return;
                 Path game = mc.gameDirectory.toPath().toAbsolutePath().normalize();
-                require(game.endsWith(Path.of("build","moon-review","client")), "Expected isolated camera directory");
+                Path expected=CHESTS ? Path.of("build","chest-review",ChestCamera.withEmi()?"emi":"plain") : Path.of("build","moon-review","client");
+                require(game.endsWith(expected), "Expected isolated camera directory: " + expected);
                 require(!Files.exists(game.resolve("saves/MoonReview")), "Disposable world must start empty");
                 mc.options.guiScale().set(2);
                 mc.options.renderDistance().set(5);

@@ -3,6 +3,21 @@ package dev.anya.storage.ui;
 /** Shared, engine-independent viewport arithmetic. Network indices always refer to server snapshots. */
 public final class StorageGrid {
     public static final int COLUMNS=9,MAX_ROWS=5,CELLS=45;
+    public static final int WIDE_COLUMNS=12, CHEST_ROWS=9;
+    public static final int CHEST_EXTRA_SLOTS=WIDE_COLUMNS*CHEST_ROWS-CELLS;
+    public static int chestSlot(int ordinal) {
+        if (ordinal<0 || ordinal>=CELLS+CHEST_EXTRA_SLOTS) return -1;
+        return ordinal<CELLS ? ordinal : 90+ordinal-CELLS;
+    }
+    public static int maxRow(int count,int columns,int visibleRows) {
+        return Math.max(0, count<=0 ? 0 : 1+(count-1)/columns-visibleRows);
+    }
+    public static int first(int count,int row,int columns,int visibleRows) {
+        return Math.min(Math.max(0,row),maxRow(count,columns,visibleRows))*columns;
+    }
+    public static int chestViewport(int row,int columns,int visibleRows) {
+        return (row<<5) | (columns==WIDE_COLUMNS?16:0) | visibleRows;
+    }
     public static int rows(int count){return count<=0?0:1+(count-1)/COLUMNS;}
     public static int clampRows(int rows){return Math.max(1,Math.min(MAX_ROWS,rows));}
     public static int maxStartRow(int count,int visibleRows){return Math.max(0,rows(count)-clampRows(visibleRows));}

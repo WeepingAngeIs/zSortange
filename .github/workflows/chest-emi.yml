@@ -1,0 +1,87 @@
+name: Physical chest controls with and without EMI
+on:
+  push:
+    branches: [experiment/chest-emi]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chest-emi-tablet-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Prepare image reading and software rendering on the runner
+        run: |
+          if ! /usr/bin/python3 -c 'import PIL.Image' || ! command -v xvfb-run || ! command -v xauth; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-pil xvfb xauth libgl1-mesa-dri
+          fi
+      - name: Build and check the optional integration
+        env:
+          ANYA_CHEST_REVIEW: '1'
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle jar moonCameraJar
+          mkdir -p upload
+          cp build/libs/anya-storage-plus-*-chestemi.1.jar upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum *.jar > SHA256SUMS.txt)
+      - name: Exercise the drawer, inventory and sidebar on two disposable clients
+        env:
+          ANYA_CHEST_REVIEW: '1'
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          ALSOFT_DRIVERS: 'null'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for variant in plain emi; do
+            root="build/chest-review/$variant"
+            mkdir -p "$root"
+            printf 'onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\nrenderDistance:5\nsimulationDistance:5\n' > "$root/options.txt"
+            export ANYA_CHEST_EMI=0
+            if [ "$variant" = emi ]; then export ANYA_CHEST_EMI=1; fi
+            timeout 12m xvfb-run -a -s '-screen 0 1440x1000x24' gradle --no-daemon --max-workers=2 -I fixtures/moon-console/init.gradle runMoonVisual > "$root/launch.log" 2>&1 || {
+              grep -E 'Chest review|Caused by:|AssertionError|IllegalStateException|Exception|ERROR' "$root/launch.log" | tail -60 || true
+              tail -30 "$root/launch.log"
+              exit 1
+            }
+            test -s "$root/CHEST-CHECKS.txt"
+            grep -F "$(cut -d' ' -f1 upload/SHA256SUMS.txt)" "$root/CHEST-CHECKS.txt"
+            cat "$root/CHEST-CHECKS.txt" | tee -a upload/CHECKS.txt
+            cp "$root/CHEST-CHECKS.txt" "upload/$variant-checks.txt"
+            mkdir -p "upload/$variant"
+            cp "$root/screenshots/"*.png "upload/$variant/"
+          done
+          jar=$(find "${GRADLE_USER_HOME:-$HOME/.gradle}" -name 'emi-neoforge-1.1.24+1.21.1.jar' -print -quit)
+          echo "b68691f94f0727fc517cac2ab55bd6658d1179cc8cc715fe610b60c37469bc4c  $jar" | sha256sum --check | tee -a upload/CHECKS.txt
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: chest-test-diagnostics
+          path: |
+            build/chest-review/*/launch.log
+            build/chest-review/*/crash-reports/*.txt
+            build/chest-review/*/screenshots/*.png
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-chestemi.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14

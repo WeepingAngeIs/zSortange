@@ -18,7 +18,7 @@ public final class Packets {
     }
     public static void register(RegisterPayloadHandlersEvent event) {
         TabletThreatCue.register(event);
-        event.registrar("3").playToServer(Action.TYPE,Action.CODEC,(p,context)->context.enqueueWork(()->{
+        event.registrar("4").playToServer(Action.TYPE,Action.CODEC,(p,context)->context.enqueueWork(()->{
             if(!(context.player() instanceof ServerPlayer player) || player.isSpectator() || !player.isAlive()) return;
             try {
                 if(player.containerMenu instanceof StoreMenu menu && p.menu==menu.containerId) menu.action(p);

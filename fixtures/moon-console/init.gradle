@@ -5,6 +5,7 @@ gradle.beforeProject { project ->
         camera.resources.srcDir project.file('fixtures/moon-console/resources')
         project.neoForge.addModdingDependenciesTo(camera)
         project.dependencies.add('moonCameraCompileOnly', project.sourceSets.main.output)
+        project.dependencies.add('moonCameraCompileOnly', 'dev.emi:emi-neoforge:1.1.24+1.21.1:api')
         def fixture = project.tasks.register('moonCameraJar', Jar) {
             dependsOn 'moonCameraClasses'
             from camera.output
@@ -15,11 +16,14 @@ gradle.beforeProject { project ->
         project.neoForge.addModdingDependenciesTo(runtime)
         project.dependencies.add('moonRuntimeRuntimeOnly', project.files(project.tasks.named('jar')))
         project.dependencies.add('moonRuntimeRuntimeOnly', project.files(fixture))
+        def chest = System.getenv('ANYA_CHEST_REVIEW') == '1'
+        def withEmi = System.getenv('ANYA_CHEST_EMI') == '1'
+        if (chest && withEmi) project.dependencies.add('moonRuntimeRuntimeOnly', 'dev.emi:emi-neoforge:1.1.24+1.21.1')
         project.neoForge.runs.create('moonVisual') {
             client()
             sourceSet = runtime
             loadedMods = []
-            gameDirectory = project.file('build/moon-review/client')
+            gameDirectory = project.file(chest ? "build/chest-review/${withEmi?'emi':'plain'}" : 'build/moon-review/client')
             programArguments.addAll '--username', 'MoonCamera', '--width', '960', '--height', '640'
             jvmArguments.addAll '-Xmx2304m', '-Xms384m'
         }

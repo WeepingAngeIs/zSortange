@@ -19,6 +19,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import dev.anya.storage.ui.ControlGlyph;
 import dev.anya.storage.ui.ControlSprites;
 import dev.anya.storage.ui.StorageGrid;
+import dev.anya.storage.ui.ChestLayout;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.ItemLore;
@@ -60,6 +61,8 @@ public final class Client {
     /** Manual drawing and hit testing avoid vanilla cursor prediction over display-only slots. */
     public static final class Screen extends AbstractContainerScreen<StoreMenu> {
         private static WeakReference<Player> tabletViewer = new WeakReference<>(null);
+        private static java.util.function.BooleanSupplier externalSearch=()->false;
+        public static void externalSearchFocus(java.util.function.BooleanSupplier focused){externalSearch=focused;}
         private static GuardianBlink.Playlist tabletVisits = new GuardianBlink.Playlist();
         private final GuardianBlink tabletIntro;
         private final TabletBootScreen tabletBoot = new TabletBootScreen();
@@ -77,8 +80,11 @@ public final class Client {
         private long pressedUntil;
         private static final String[] PERMISSION_LABELS={"View","Deposit","Withdraw","Activity","Visit","Build"};
         private dev.anya.storage.ui.StorageGrid.Layout layout;
+        private final ChestPanel chest;
+        private boolean chestWasVisible;
         public Screen(StoreMenu menu,Inventory inventory,Component title){
             super(menu,inventory,title);
+            chest=new ChestPanel(this,menu);
             openingPlayer = inventory.player;
             tabletPresentation = TabletDevice.enabled();
             tabletIntro = new GuardianBlink(tabletPresentation);
@@ -151,19 +157,70 @@ public final class Client {
         private void reflow(){
             layout=dev.anya.storage.ui.StorageGrid.layout(width,height,menu.resultCount(),menu.storageView());
             if (showTabletFrame()) layout = TabletDevice.fitMenu(layout, width, height);
+            boolean physical=menu.chestView();
+            if(physical)chest.reflow(width,height,input);
+            if(chestWasVisible!=physical){
+                if(input!=null){
+                    input.setFocused(false);
+                    input.setHint(Component.literal(physical?"Search storage":"Search / settings input"));
+                    if(!physical){input.setX(104);input.setY(27);input.setWidth(164);}
+                }
+                if(!physical)chest.reset();
+                dragging=false;pendingRow=-1;chestWasVisible=physical;
+            }
+            StorageGrid.Box bounds=mainBounds();
+            leftPos=bounds.x();topPos=bounds.y();imageWidth=bounds.width();imageHeight=bounds.height();
+            if(input!=null && input.isFocused() && externalSearch.getAsBoolean())focusSearch(false);
         }
+        private StorageGrid.Box mainBounds(){
+            if(menu.chestView())return chest.main();
+            if(showTabletFrame()){
+                var b=TabletDevice.openBounds(width,height);
+                return ChestLayout.bounds(b.x(),b.y(),TabletDevice.WIDTH*b.scale(),TabletDevice.HEIGHT*b.scale());
+            }
+            return ChestLayout.bounds(layout.left(),layout.top(),StorageGrid.Layout.WIDTH*layout.scale(),layout.height()*layout.scale());
+        }
+        /** Actual scaled screen rectangles shared with optional item-browser integrations. */
+        public StorageGrid.Box emiMainBounds(){reflow();return mainBounds();}
+        public List<StorageGrid.Box> emiExtraBounds(){reflow();return menu.chestView()?chest.extra():List.of();}
+        public StorageGrid.Box chestCellBounds(int ordinal){return menu.chestView()?chest.cell(ordinal):ChestPanel.EMPTY;}
+        public StorageGrid.Box chestInventoryBounds(int ordinal){return menu.chestView()?chest.inventory(ordinal):ChestPanel.EMPTY;}
+        public StorageGrid.Box chestDrawerBounds(){return menu.chestView()?chest.settingsButton():ChestPanel.EMPTY;}
+        public StorageGrid.Box chestSettingsPanelBounds(){return menu.chestView()?chest.settingsPanel():ChestPanel.EMPTY;}
+        public StorageGrid.Box chestDisplayButtonBounds(){return menu.chestView()?chest.displayButton():ChestPanel.EMPTY;}
+        public StorageGrid.Box chestControlBounds(int id){return menu.chestView()?chest.control(id):ChestPanel.EMPTY;}
+        public StorageGrid.Box chestSearchBounds(){return menu.chestView()?chest.search():ChestPanel.EMPTY;}
+        public boolean chestDrawerOpen(){return menu.chestView() && chest.settingsOpen();}
         @Override protected void init(){
+            // Returning from a recipe screen restores its original parent. A replaced server menu
+            // or an explicit close must never let the old screen issue another action.
+            if(cleaned && !closeRequested && menu.chestView() && openingPlayer!=null
+                    && minecraft.player==openingPlayer && openingPlayer.containerMenu==menu && minecraft.screen==this){
+                cleaned=false;retired=false;
+            }
             super.init();reflow();String previous=input==null?sent:input.getValue();
             input=new EditBox(font,104,27,164,16,Component.literal("Search storage or enter a setting"));
-            input.setMaxLength(128);input.setValue(previous);input.setHint(Component.literal("Search / settings input"));input.setResponder(v->debounce=4);
+            input.setMaxLength(128);input.setValue(previous);input.setHint(Component.literal(menu.chestView()?"Search storage":"Search / settings input"));input.setResponder(v->debounce=4);
+            addWidget(input); // Allows recipe-browser shortcuts to yield while Anya's search owns text input.
+            reflow();
         }
-        private void send(String action,String text,int value){
+        void focusSearch(boolean focused){
+            if(focused)setFocused(input);
+            else if(getFocused()==input)setFocused(null);
+            input.setFocused(focused);
+        }
+        @Override protected void setInitialFocus(){
+            // Opening a container or returning from a recipe should leave the inventory key active.
+            // The player explicitly focuses search with a click or Tab.
+        }
+        void send(String action,String text,int value){
             if(activeScreen())PacketDistributor.sendToServer(new Packets.Action(menu.containerId,menu.session(),menu.revision(),action,text,value));
         }
         @Override protected void containerTick(){
             if (!activeScreen()) return;
             super.containerTick();ticks++;ClientInteriors.tick();reflow();
-            if(debounce>0&&--debounce==0&&!input.getValue().equals(sent)){sent=input.getValue();pendingRow=-1;send("text",sent,0);}
+            if(debounce>0&&--debounce==0&&!input.getValue().equals(sent))submitSearch();
+            if(menu.chestView()){chest.tick(ticks);return;}
             if(menu.storageView()){
                 if(pendingRow<0&&layout.rows()!=menu.visibleRows()){pendingRow=menu.firstSlot()/9;pendingRows=layout.rows();}
                 if(pendingRow>=0){
@@ -172,6 +229,10 @@ public final class Client {
                     else if(ticks-lastViewport>=4){send("viewport","",(row<<3)|pendingRows);lastViewport=ticks;}
                 }
             }else pendingRow=-1;
+        }
+        private void submitSearch(){
+            sent=input.getValue();debounce=0;pendingRow=-1;
+            if(menu.chestView())chest.searchChanged(sent);else send("text",sent,0);
         }
         private void scrollTo(int row){pendingRows=layout.rows();pendingRow=Math.max(0,Math.min(row,dev.anya.storage.ui.StorageGrid.maxStartRow(menu.resultCount(),pendingRows)));}
         private void scrollbar(double y){
@@ -197,8 +258,10 @@ public final class Client {
                 if (minecraft != null && minecraft.options.keyInventory.matchesMouse(button)) onClose();
                 return true;
             }
-            reflow();double x=layout.x(mx),y=layout.y(my);
-            if(input.mouseClicked(x,y,button)){input.setFocused(true);return true;}input.setFocused(false);
+            reflow();
+            if(menu.chestView())return chest.click(mx,my,button,hasShiftDown(),input);
+            double x=layout.x(mx),y=layout.y(my);
+            if(input.mouseClicked(x,y,button)){focusSearch(true);return true;}focusSearch(false);
             if(button==0 && TOOLTIP_BUTTON.contains(x,y)){
                 press(94);send("tooltips","",menu.tooltipsEnabled()?0:1);return true;
             }
@@ -223,23 +286,25 @@ public final class Client {
             if(index>=0&&button>=0&&button<=2){press(index);send("slot","",index|((button&3)<<8)|(hasShiftDown()?65536:0));return true;}
             return false;
         }
-        @Override public boolean mouseDragged(double x,double y,int button,double dx,double dy){if(blockTabletInput())return true;if(dragging&&button==0){scrollbar(layout.y(y));return true;}return false;}
-        @Override public boolean mouseReleased(double x,double y,int button){dragging=false;return blockTabletInput();}
+        @Override public boolean mouseDragged(double x,double y,int button,double dx,double dy){if(blockTabletInput())return true;if(menu.chestView())return button==0&&chest.drag(y);if(dragging&&button==0){scrollbar(layout.y(y));return true;}return false;}
+        @Override public boolean mouseReleased(double x,double y,int button){dragging=false;return blockTabletInput()||menu.chestView()&&chest.release();}
         @Override public boolean mouseScrolled(double mx,double my,double horizontal,double vertical){
             if (blockTabletInput()) return true;
-            reflow();double x=layout.x(mx),y=layout.y(my);
+            reflow();if(menu.chestView())return chest.wheel(mx,my,vertical);
+            double x=layout.x(mx),y=layout.y(my);
             if(menu.storageView()&&x>=102&&x<280&&y>=48&&y<50+layout.rows()*18&&vertical!=0){int row=pendingRow<0?menu.firstSlot()/9:pendingRow;scrollTo(row-(vertical>0?1:-1));return true;}return false;
         }
         @Override protected void slotClicked(Slot slot,int id,int button,ClickType type){} // No vanilla cursor transactions.
         @Override public boolean charTyped(char character,int modifiers){return blockTabletInput()||input.isFocused()&&input.charTyped(character,modifiers);}
         @Override public boolean keyPressed(int key,int scan,int modifiers){
+            if(menu.chestView() && !blockTabletInput() && chest.key(key,hasShiftDown(),input))return true;
             if(key==256){onClose();return true;}
             if (blockTabletInput()) {
                 if (minecraft != null && minecraft.options.keyInventory.matches(key,scan)) onClose();
                 return true;
             }
             if(input.isFocused()){
-                if(key==257||key==335){sent=input.getValue();debounce=0;pendingRow=-1;send("text",sent,0);return true;}
+                if(key==257||key==335){submitSearch();return true;}
                 input.keyPressed(key,scan,modifiers);return true;
             }
             if(minecraft.options.keyInventory.matches(key,scan)){onClose();return true;}
@@ -281,7 +346,7 @@ public final class Client {
                 default->new int[]{0xff302a38,0xff473849,0xffe2b7cc};
             };
         }
-        private void frame(GuiGraphics g,dev.anya.storage.ui.StorageGrid.Box box,int fill,int edge){
+        void frame(GuiGraphics g,dev.anya.storage.ui.StorageGrid.Box box,int fill,int edge){
             g.fill(box.x()-1,box.y()-1,box.x()+box.width()+1,box.y()+box.height()+1,edge);
             g.fill(box.x(),box.y(),box.x()+box.width(),box.y()+box.height(),fill);
         }
@@ -290,7 +355,7 @@ public final class Client {
             int index=slot-28;
             return new StorageGrid.Box(104+(index%2)*86,86+(index/2)*19,83,17);
         }
-        private void press(int slot){pressedSlot=slot;pressedUntil=net.minecraft.Util.getMillis()+160;}
+        void press(int slot){pressedSlot=slot;pressedUntil=net.minecraft.Util.getMillis()+160;}
         private boolean pressed(int slot){return slot==pressedSlot&&net.minecraft.Util.getMillis()<pressedUntil;}
         private void option(GuiGraphics g,int slot,ControlGlyph glyph,String name,int y,ControlGlyph.State state,int mx,int my){
             ControlSprites.button(g,font,glyph,state,12,y,78,18,name,mx>=12&&mx<90&&my>=y&&my<y+18,pressed(slot));
@@ -306,7 +371,7 @@ public final class Client {
             g.drawCenteredString(font,"Edit Mode",51,91,enabled?0xfff3eaf4:0xffb2a6b8);
             g.drawCenteredString(font,active?"ON":"OFF",51,105,active?0xffa5e9dc:0xffc6b5cd);
         }
-        private void drawSlot(GuiGraphics g,int slot,StorageGrid.Box box,boolean hover,String label,int[] colors){
+        void drawSlot(GuiGraphics g,int slot,StorageGrid.Box box,boolean hover,String label,int[] colors){
             var stack=menu.getSlot(slot).getItem();
             ControlGlyph.Face face=menu.controlSlot(slot)?ControlGlyph.read(stack):null;
             if(face!=null){
@@ -319,7 +384,7 @@ public final class Client {
                 }
             }
         }
-        private String actionLabel(int slot,ItemStack stack){
+        String actionLabel(int slot,ItemStack stack){
             if(menu.storageView()){
                 ControlGlyph.Face face=ControlGlyph.read(stack);
                 if(face!=null)return switch(face.glyph()){
@@ -335,7 +400,7 @@ public final class Client {
             };
             return stack.getHoverName().getString();
         }
-        private void controlTooltip(GuiGraphics g,ItemStack stack,int x,int y){
+        void controlTooltip(GuiGraphics g,ItemStack stack,int x,int y){
             java.util.ArrayList<Component> lines=new java.util.ArrayList<>();
             lines.add(stack.getHoverName());
             ItemLore lore=stack.get(DataComponents.LORE);
@@ -354,17 +419,44 @@ public final class Client {
                 graphics.drawString(font, summary, StorageGrid.Layout.GRID_X, y, color, false);
             }
         }
+        void chestCameo(GuiGraphics g,int x,int y){
+            if(cameoStarted==Long.MIN_VALUE)return;
+            g.pose().pushPose();g.pose().translate(x,y,0);g.pose().scale(.35f,.35f,1);
+            g.pose().translate(-22,-79,0);drawStorageCameo(g);g.pose().popPose();
+        }
+        boolean cameoVisible(){return cameoStarted!=Long.MIN_VALUE;}
+        private void containerBackground(GuiGraphics g,int mx,int my){
+            net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(new ContainerScreenEvent.Render.Background(this,g,mx,my));
+        }
+        private void containerForeground(GuiGraphics g,int mx,int my){
+            // NeoForge emits the foreground event in translated container space, without Anya's fitting scale.
+            g.pose().pushPose();
+            try{
+                g.pose().translate(leftPos,topPos,0);
+                net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(new ContainerScreenEvent.Render.Foreground(this,g,mx,my));
+            }finally{g.pose().popPose();}
+        }
         @Override public void render(GuiGraphics g,int mx,int my,float partial){
             // The existing screenshot fixture delegates paint with a synthetic inventory at the title screen.
             boolean fixture = openingPlayer == null && minecraft.player == null && !cleaned && Boolean.getBoolean("anyastorage.clientSmoke");
             if (!fixture && (!activeScreen() || drawTabletIntro(g))) return;
             reflow();int x=(int)layout.x(mx),y=(int)layout.y(my);int[] colors=palette();
+            if(menu.chestView()){
+                g.fill(0,0,width,height,0x990c1017);chest.background(g,colors);containerBackground(g,mx,my);
+                chest.render(g,font,mx,my,partial,input,colors);
+                containerForeground(g,mx,my);
+                chest.tooltip(g,font,mx,my);
+                return;
+            }
             if (showTabletFrame()) {
                 g.fill(0,0,width,height,-900,0x990c1017);
                 tabletBoot.drawSettled(g,width,height,openingPlayer,menu.creativeTabletOpening());
             } else g.fill(0,0,width,height,0x990c1017);
             g.pose().pushPose();g.pose().translate(layout.left(),layout.top(),0);g.pose().scale((float)layout.scale(),(float)layout.scale(),1);
             g.fill(0,0,382,layout.height(),0xff111823);g.fill(2,2,380,layout.height()-2,colors[0]);g.fill(8,8,374,10,colors[2]);
+            g.pose().popPose();
+            containerBackground(g,mx,my);
+            g.pose().pushPose();g.pose().translate(layout.left(),layout.top(),0);g.pose().scale((float)layout.scale(),(float)layout.scale(),1);
             var look=ClientInteriors.current;
             String header = title.getString();
             if (menu.backpackView() && look != null && look.menu()==menu.containerId && look.session()==menu.session() && !look.bagTitle().isEmpty()) header = look.bagTitle();
@@ -426,6 +518,7 @@ public final class Client {
             g.drawString(font,menu.accessView()?"Changes apply immediately.":"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
             drawStorageCameo(g);
             g.pose().popPose();
+            containerForeground(g,mx,my);
             if(!tips)return;
             if(menu.localRoomPanel() && ROOM_WRENCH.contains(x,y)){
                 String help=menu.roomEditActive()?"Click to turn off room editing.":menu.roomEditAllowed()
