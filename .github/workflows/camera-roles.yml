@@ -33,15 +33,31 @@ jobs:
           run-id: 44942218262
           github-token: ${{ github.token }}
           path: reference
+      - name: Retrieve the observed incoming regression
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: camera-role-diagnostics
+          run-id: 44949993144
+          github-token: ${{ github.token }}
+          path: previous-observation
       - name: Verify the prior artifact and prepare the hosted clients
+        id: prepare
         run: |
           set -euo pipefail
           test "$(cat reference/SOURCE_COMMIT.txt)" = b759c90fd52bf216c9b476884a10d988efedb865
           (cd reference && echo "8e5032899baf4c70c6a6746f82178afe843f1569ebc79f958a46d38c800029cc  $PREVIOUS" | sha256sum -c)
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri python3-pil
           mkdir -p upload
-          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=baseline -ProlePlayable="$PWD/reference/$PREVIOUS" prepareRoleTrial
+          if echo 'ea4b2de48e6dd2ceb5c9f980e2f32b851455ca64c7bbf5ba81282a5e57b70cec  previous-observation/upload/BASELINE.txt' | sha256sum --check --status; then
+            cp previous-observation/upload/BASELINE.txt upload/BASELINE.txt
+            echo 'Original skyglass.3 JAR; two-client observation from https://github.com/WeepingAngeIs/zSortange/actions/runs/44949993144' >> upload/BASELINE.txt
+            echo 'observed=true' >> "$GITHUB_OUTPUT"
+          else
+            gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=baseline -ProlePlayable="$PWD/reference/$PREVIOUS" prepareRoleTrial
+          fi
       - name: Reproduce the incoming Build guest click on the original JAR
+        if: steps.prepare.outputs.observed != 'true'
         run: |
           set -euo pipefail
           python3 -B fixtures/camera-roles/run.py baseline | tee upload/BASELINE.txt
@@ -50,6 +66,8 @@ jobs:
           set -euo pipefail
           gradle --no-daemon --max-workers=2 --console=plain jar
           cp "build/libs/$PLAYABLE" upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
           gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=candidate -ProlePlayable="$PWD/upload/$PLAYABLE" prepareRoleTrial
       - name: Exercise the three Survival players and measure their captures
         run: |
@@ -58,15 +76,13 @@ jobs:
           /usr/bin/python3 -B fixtures/camera-roles/check_captures.py "upload/$PLAYABLE" | tee -a upload/CHECKS.txt
           mkdir -p upload/captures
           cp build/role-check/candidate/control/{*.png,*.ok,pixel-samples.json} upload/captures/
-          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
-          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
       - name: Preserve observations from an incomplete fixture
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: camera-role-diagnostics
           path: |
-            upload/BASELINE.txt
+            upload/
             build/role-check/*/control/
           retention-days: 3
           if-no-files-found: ignore

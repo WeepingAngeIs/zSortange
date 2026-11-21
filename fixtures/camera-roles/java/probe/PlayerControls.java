@@ -60,6 +60,7 @@ public final class PlayerControls {
         var next=Orders.JSON.fromJson(Files.readString(file),Orders.Order.class);
         if(order==null || !order.step().equals(next.step())){
             order=next;done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;diagnostic="";
+            if(!order.action().equals("use"))mc.gui.getChat().clearMessages(false);
         }
         if(done)return;
         mc.options.keyShift.setDown(order.sneak());
@@ -69,7 +70,8 @@ public final class PlayerControls {
         if(mc.player.position().distanceToSqr(order.x(),order.y(),order.z())>.64)return;
         if(mc.player.isShiftKeyDown()!=order.sneak() || age<7)return;
         var hit=mc.player.pick(mc.player.blockInteractionRange(),1,false);
-        diagnostic="ray="+hit+" hand="+mc.player.getMainHandItem()+" pos="+mc.player.position();
+        diagnostic="ray="+(hit instanceof BlockHitResult h?h.getType()+" "+h.getBlockPos()+" "+h.getDirection():hit.getType())
+                +" hand="+mc.player.getMainHandItem()+" pos="+mc.player.position();
         if(!(hit instanceof BlockHitResult block) || hit.getType()!=HitResult.Type.BLOCK || !block.getBlockPos().equals(order.target())){
             stable=0;return;
         }

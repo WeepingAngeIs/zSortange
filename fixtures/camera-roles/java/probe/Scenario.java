@@ -181,7 +181,9 @@ public final class Scenario {
     }
     private static void outsideCameraSteps(){
         verify("six-attachment-faces-selection-collision-legacy-facing-and-lens-rays",()->{
+            equip(player(OWNER),Items.AIR);
             MountProbe.sixFaces(player(OWNER));
+            check(player(OWNER).getInventory().getItem(1).is(Content.CUPID_TABLET.get()),"Mount probe displaced the bound tablet");
             home.setBlockAndUpdate(CAMERA.south(),Blocks.SMOOTH_STONE.defaultBlockState());
             home.setBlockAndUpdate(WALL.south(),Blocks.SMOOTH_STONE.defaultBlockState());
         });
@@ -190,7 +192,7 @@ public final class Scenario {
             check(d!=null && d.owned(player(OWNER)),"Camera owner");
             cameraId=d.saveWithoutMetadata(home.registryAccess()).getUUID("Identity");return true;
         });
-        step("photograph-wall-bracket-housing-and-lens",()->order(OWNER,"photo",CAMERA,new Vec3(-1.25,81,-1.55),
+        step("photograph-wall-bracket-housing-and-lens",()->order(OWNER,"photo",CAMERA,new Vec3(-.65,81,-1.1),
                 Vec3.atCenterOf(CAMERA),Items.AIR,false,null,0),()->true);
         step("select-mounted-camera-with-tablet",()->northUse(CAMERA,Content.CUPID_TABLET.get(),true),()->true);
         step("place-wall-monitor",()->northUse(WALL.south(),CameraDevices.WALL.get().asItem(),false),()->true);
