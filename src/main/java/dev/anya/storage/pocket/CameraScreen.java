@@ -44,7 +44,7 @@ public final class CameraScreen {
         var end=eye.add(look.scale(48));
         var hit=mc.level.clip(new net.minecraft.world.level.ClipContext(eye,end,net.minecraft.world.level.ClipContext.Block.COLLIDER,
                 net.minecraft.world.level.ClipContext.Fluid.NONE,mc.player));
-        if(hit.getType()!=HitResult.Type.BLOCK)return null;
+        if(hit.getType()!=HitResult.Type.BLOCK)return nearbyPanel(mc,eye,look);
         var wall=WallPanel.atHit(mc.level,hit,eye,look);
         if(wall!=null)return wall;
         BlockPos pos=hit.getBlockPos();
@@ -54,6 +54,24 @@ public final class CameraScreen {
                     || !d.getBlockState().is(CameraDevices.SKY.get()))continue;
             Vec3 intersection=CameraFeed.looking(d,eye,look);
             if(intersection!=null && eye.distanceTo(intersection)<=eye.distanceTo(hit.getLocation())+.02)return d;
+        }
+        return nearbyPanel(mc,eye,look);
+    }
+    private static boolean visible(Minecraft mc,CameraDevices.Device d,Vec3 eye,Vec3 look){
+        if(d==null||d.isRemoved()||d.getLevel()!=mc.level||!(d.getBlockState().getBlock() instanceof WallMonitorBlock))return false;
+        var point=CameraFeed.visiblePoint(d,eye,look);
+        return point!=null&&mc.level.clip(new net.minecraft.world.level.ClipContext(eye,point,net.minecraft.world.level.ClipContext.Block.COLLIDER,
+                net.minecraft.world.level.ClipContext.Fluid.NONE,mc.player)).getType()==HitResult.Type.MISS;
+    }
+    private static CameraDevices.Device nearbyPanel(Minecraft mc,Vec3 eye,Vec3 look){
+        if(visible(mc,target,eye,look))return target;
+        if(tick%8!=0)return null;
+        var seen=new java.util.HashSet<CameraDevices.Device>();var pos=mc.player.blockPosition();
+        int rays=0;
+        for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)for(var d:WallPanel.at(mc.level,pos.offset(16*dx,0,16*dz))){
+            if(!seen.add(d))continue;
+            if(++rays>24)return null;
+            if(visible(mc,d,eye,look))return d;
         }
         return null;
     }

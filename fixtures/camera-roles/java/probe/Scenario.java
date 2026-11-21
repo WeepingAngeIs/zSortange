@@ -221,6 +221,10 @@ public final class Scenario {
         studioHit("mount-flush-monitor",OWNER,0,1,CameraDevices.WALL.get().asItem(),false);
         studioHit("link-flat-monitor",OWNER,0,0,Content.CUPID_TABLET.get(),true);
         viewStudio("one-block-screen",OWNER,"anyview",-1);
+        step("screen-stays-on-beside-crosshair",()->{
+            var pos=studioWall();var feet=new Vec3(pos.getX()+.5,65,pos.getZ()-3);
+            order(OWNER,"peripheral",pos,feet,Vec3.atCenterOf(pos).add(.95,0,.435),Items.AIR,false,null,-1);
+        },()->true);
         studioHit("open-monitor-settings",OWNER,0,0,Items.AIR,false);
         uiStep("widen-to-two","width");uiStep("widen-to-three","width");
         uiStep("raise-to-two","height");uiStep("raise-to-three","height");
@@ -236,6 +240,8 @@ public final class Scenario {
         uiStep("close-outer-panel-settings","close");
         studioHit("guest-clicks-outer-panel",BUILDER,1,1,Items.AIR,false);
         viewStudio("guest-cannot-open-controls-or-view",BUILDER,"private",0);
+        step("observer-returns-outdoors-to-keep-source-naturally-ticking",()->PocketService.recover(player(BUILDER)),()->player(BUILDER).level()==home);
+        verify("source-simulation-has-a-nearby-outdoor-player",()->player(BUILDER).connection.teleport(11.5,81,5.5,0,0));
         motionSteps();studioCeilingAndWall();
         verify("save-links-rules-and-size",()->StudioEvidence.checkpoint(server,inside(),studioWall()));
     }
@@ -268,6 +274,7 @@ public final class Scenario {
             for(int z=-3;z<=0;z++)for(int y=81;y<=83;y++)home.removeBlock(new BlockPos(2,y,z),false);
         },()->{
             if((server.getTickCount()-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
+            if((server.getTickCount()-started)%60==0)writeLog(StudioEvidence.motionStatus(home,player(OWNER)));
             return StudioEvidence.creeper.getUUID().equals(StudioEvidence.tracked(home))&&StudioEvidence.property(home,CAMERA,"pan")==1;
         });
         viewStudio("motion-on-indoor-monitor",OWNER,"motion",0xd4b9db);
@@ -315,12 +322,14 @@ public final class Scenario {
         uiStep("photograph-skygrid-tablet","photo");uiStep("lower-tablet","close");
         verify("daylight-outdoor-sky",()->{home.setDayTime(6000);home.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);});
         ceiling("ceiling-without-flyover","clear",0x4000000);
-        step("guest-returns-to-outdoor-camera",()->PocketService.recover(player(BUILDER)),()->player(BUILDER).level()==home);
         verify("second-player-flies-over-upward-lens",()->{
             var other=player(BUILDER);other.getAbilities().mayfly=true;other.getAbilities().flying=true;other.onUpdateAbilities();
             other.connection.teleport(UP.getX()+.5,UP.getY()+3.2,UP.getZ()+.5,0,0);
         });
         ceiling("ceiling-player-overhead","fly",-1);
+        verify("flyer-goes-invisible",()->player(BUILDER).addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.INVISIBILITY,1200,0,false,false)));
+        ceiling("ceiling-invisible-flyer-masked","clear",0x4000000);
+        verify("flyer-is-visible-again",()->player(BUILDER).removeEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY));
         verify("flyer-moves-off-camera",()->player(BUILDER).connection.teleport(UP.getX()+12,UP.getY()+3.2,UP.getZ()+.5,0,0));
         ceiling("ceiling-after-flyover","clear",0x4000000);
         verify("occlude-outdoor-lens",()->home.setBlockAndUpdate(UP.above(),Blocks.GOLD_BLOCK.defaultBlockState()));

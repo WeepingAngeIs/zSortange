@@ -67,6 +67,20 @@ public final class CameraFeed {
         double radius=d.getBlockState().is(CameraDevices.SKY.get())?2:.5;
         return Math.max(Math.max(Math.abs(delta.x),Math.abs(delta.y)),Math.abs(delta.z))<radius?hit:null;
     }
+    // A TV stays visible beside the crosshair. Both ends validate the same point on its
+    // surface, with distance, room rights, a sight line and the claim at that exact cell.
+    static Vec3 visiblePoint(CameraDevices.Device d,Vec3 eye,Vec3 look){
+        var direct=looking(d,eye,look);
+        if(direct!=null||!(d.getBlockState().getBlock() instanceof WallMonitorBlock))return direct;
+        var n=normal(d);var c=screenCenter(d);double dot=n.dot(look),depth=c.subtract(eye).dot(n);
+        if(dot>=-.04||depth>=0)return null;
+        var projected=eye.add(look.scale(depth/dot)).subtract(c);
+        var across=Vec3.atLowerCornerOf(WallPanel.right(WallPanel.face(d)).getNormal());
+        double x=Math.clamp(projected.dot(across),.03-d.panel.width()*.5,d.panel.width()*.5-.03);
+        double y=Math.clamp(projected.y,.03-d.panel.height()*.5,d.panel.height()*.5-.03);
+        var hit=c.add(across.scale(x)).add(0,y,0);var ray=hit.subtract(eye);
+        return ray.lengthSqr()<=48*48&&ray.normalize().dot(look)>.89?hit:null;
+    }
     private record Session(CameraDevices.Device device,long renewed){}
     private static final Map<ServerPlayer,Session> sessions=new WeakHashMap<>();
     private static void watch(ServerPlayer p,BlockPos pos){
@@ -78,7 +92,7 @@ public final class CameraFeed {
     }
     static CameraDevices.Device source(ServerPlayer p,CameraDevices.Device d){
         if(!d.owned(p) || p.isSpectator() || !p.isAlive() || d.getLevel()!=p.level() || d.isRemoved() || d.linked==null || d.owner==null)return null;
-        var eye=p.getEyePosition();var hit=looking(d,eye,p.getLookAngle());if(hit==null)return null;
+        var eye=p.getEyePosition();var hit=visiblePoint(d,eye,p.getLookAngle());if(hit==null)return null;
         var blocks=new LoadedPocketBlocks(p.serverLevel());
         if(blocks.getBlockEntity(d.getBlockPos())!=d || blocks.clip(new ClipContext(eye,hit,ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,p)).getType()!=HitResult.Type.MISS
                 || !blocks.complete() || !Safety.locationReason(p,p.serverLevel(),BlockPos.containing(hit.add(normal(d).scale(.004)))).isEmpty() || !Safety.locationReason(p,p.serverLevel(),d.getBlockPos()).isEmpty())return null;
@@ -133,14 +147,14 @@ public final class CameraFeed {
         var face=direction(cam);
         var eye=eye(cam);
         var access=new HashMap<BlockPos,Boolean>();var pixels=new int[side*side];
-        var flyers=new ArrayList<AABB>();
+        var flyers=new ArrayList<CameraFigure>();
         if(cam.getBlockState().is(CameraDevices.SKY_CAMERA.get())){
             var bounds=new AABB(eye.x-24,eye.y,eye.z-24,eye.x+24,eye.y+24,eye.z+24);
             var people=new ArrayList<ServerPlayer>();
             level.getEntities(net.minecraft.world.level.entity.EntityTypeTest.forClass(ServerPlayer.class),bounds,
                     actor->actor.isAlive()&&!actor.isSpectator()&&!actor.isInvisible()&&!actor.isInvisibleTo(p)&&actor.broadcastToPlayer(p)
                             &&actor.distanceToSqr(eye)<=24*24&&Safety.locationReason(p,level,actor.blockPosition()).isEmpty(),people,8);
-            for(var actor:people)flyers.add(actor.getBoundingBox());
+            for(var actor:people)CameraFigure.add(flyers,actor);
         }
         var forward=target==null?null:target.getEyePosition().subtract(eye).normalize();
         // Spend the access budget on the center first; unknown peripheral rays stay masked.
@@ -161,16 +175,16 @@ public final class CameraFeed {
         if(cache.size()>=1024 || !level.hasChunkAt(pos))return false;
         boolean ok=Safety.locationReason(p,level,pos).isEmpty();cache.put(pos.immutable(),ok);return ok;
     }
-    private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob,BlockPos camera,List<AABB> flyers){
+    private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob,BlockPos camera,List<CameraFigure> flyers){
         var end=eye.add(ray.scale(24));
         Vec3 first=mob==null?null:mob.getBoundingBox().clip(eye,end).orElse(null);
-        boolean person=false;
+        int tint=0xd4b9db;
         for(var box:flyers){
-            var hit=box.clip(eye,end).orElse(null);
-            if(hit!=null&&(first==null||hit.distanceToSqr(eye)<first.distanceToSqr(eye))){first=hit;person=true;}
+            var hit=box.box().clip(eye,end).orElse(null);
+            if(hit!=null&&(first==null||hit.distanceToSqr(eye)<first.distanceToSqr(eye))){first=hit;tint=box.color();}
         }
         final BlockPos silhouette=first==null?null:BlockPos.containing(first.add(ray.scale(.0001)));
-        final int actorColor=person?0x47384f:0xd4b9db;
+        final int actorColor=tint;
         return net.minecraft.world.level.BlockGetter.traverseBlocks(eye,end,ray,(dir,pos)->{
             if(!allowed(p,level,pos,access))return UNKNOWN;
             var state=blocks.getBlockState(pos);
@@ -219,12 +233,17 @@ public final class CameraFeed {
     static double visibleWeight(ServerPlayer p,ServerLevel level,Vec3 eye,Mob m){
         if(!m.isAlive()||m.isInvisible()||m instanceof TamableAnimal pet&&pet.isTame()||m.distanceToSqr(eye)>64)return -1;
         if(!Safety.locationReason(p,level,m.blockPosition()).isEmpty())return -1;
-        var access=new HashMap<BlockPos,Boolean>();
-        boolean visible=net.minecraft.world.level.BlockGetter.traverseBlocks(eye,m.getEyePosition(),access,
-                (cache,pos)->allowed(p,level,pos,cache)?null:Boolean.FALSE,cache->Boolean.TRUE);
-        if(!visible)return -1;
-        var blocks=new LoadedPocketBlocks(level);
-        if(blocks.clip(new ClipContext(eye,m.getEyePosition(),ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,p)).getType()!=HitResult.Type.MISS||!blocks.complete())return -1;
+        var blocks=new LoadedPocketBlocks(level);var access=new HashMap<BlockPos,Boolean>();
+        var lensCell=BlockPos.containing(eye);var end=m.getEyePosition();
+        boolean visible=net.minecraft.world.level.BlockGetter.traverseBlocks(eye,end,blocks,(world,pos)->{
+            if(!allowed(p,level,pos,access))return Boolean.FALSE;
+            var state=world.getBlockState(pos);
+            // A swiveling head can briefly cross its own rays. Adjacent walls always occlude.
+            if(pos.equals(lensCell)&&CameraDevices.isCamera(state))return null;
+            if(state.hasBlockEntity()||state.getCollisionShape(world,pos).clip(eye,end,pos)!=null)return Boolean.FALSE;
+            return null;
+        },world->Boolean.TRUE);
+        if(!visible||!blocks.complete())return -1;
         double weight=8/(1+m.distanceToSqr(eye));
         if(m.getClass().getName().startsWith("com.cobblemon.")){
             try{

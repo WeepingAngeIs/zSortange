@@ -33,6 +33,15 @@ public final class StudioEvidence {
         var t=field.get(device(level,CAMERA));var f=t.getClass().getDeclaredField("target");f.setAccessible(true);
         return (UUID)f.get(t);
     }
+    static String motionStatus(ServerLevel level,ServerPlayer owner)throws Exception{
+        var d=device(level,CAMERA);var f=d.getClass().getDeclaredField("tracking");f.setAccessible(true);var t=f.get(d);
+        var sample=t.getClass().getDeclaredField("sampled");sample.setAccessible(true);
+        var seen=t.getClass().getDeclaredField("previous");seen.setAccessible(true);
+        var target=t.getClass().getDeclaredField("target");target.setAccessible(true);
+        var eye=CameraFeed.class.getDeclaredMethod("eye",CameraDevices.Device.class);eye.setAccessible(true);
+        var weight=CameraFeed.class.getDeclaredMethod("visibleWeight",ServerPlayer.class,ServerLevel.class,net.minecraft.world.phys.Vec3.class,Mob.class);weight.setAccessible(true);
+        return "Motion sample="+sample.get(t)+" now="+level.getGameTime()+" seen="+((Map<?,?>)seen.get(t)).size()+" target="+target.get(t)+" weight="+weight.invoke(null,owner,level,eye.invoke(null,d),creeper)+" mob alive="+creeper.isAlive()+" position="+creeper.position()+" pan="+property(level,CAMERA,"pan");
+    }
     static void scenery(ServerLevel level){
         for(int x=-6;x<=6;x++)for(int y=-3;y<=4;y++){
             var block=y<0?Blocks.MOSS_BLOCK:Blocks.LIGHT_BLUE_CONCRETE;
@@ -43,7 +52,7 @@ public final class StudioEvidence {
         }
     }
     static Mob mob(ServerLevel level,EntityType<? extends Mob> type,double x,double z){
-        var mob=type.create(level);mob.setNoAi(true);mob.setNoGravity(true);mob.setInvulnerable(true);
+        var mob=type.create(level);mob.setPersistenceRequired();mob.setNoAi(true);mob.setNoGravity(true);mob.setInvulnerable(true);
         mob.moveTo(x,81,z,0,0);level.addFreshEntity(mob);return mob;
     }
     static void spawn(ServerLevel level){

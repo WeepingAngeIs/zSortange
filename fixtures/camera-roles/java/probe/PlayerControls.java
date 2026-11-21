@@ -90,7 +90,7 @@ public final class PlayerControls {
             }
             return;
         }
-        if(order.action().startsWith("sky.")||order.action().equals("cinema")){stable++;return;}
+        if(order.action().startsWith("sky.")||(order.action().equals("cinema")||order.action().equals("peripheral"))){stable++;return;}
         var hit=mc.player.pick(mc.player.blockInteractionRange(),1,false);
         diagnostic="ray="+(hit instanceof BlockHitResult h?h.getType()+" "+h.getBlockPos()+" "+h.getDirection():hit.getType())
                 +" hand="+mc.player.getMainHandItem()+" pos="+mc.player.position();
@@ -116,7 +116,7 @@ public final class PlayerControls {
             var active=field(Class.forName("dev.anya.storage.pocket.SkyCeilingClient"),"current").get(null);
             if(active==null||initialCeiling==ceilingPackets)return;
             var data=pixels(active);if(data.length!=1024)return;
-            long count=java.util.Arrays.stream(data).filter(c->c==0x47384f).count();
+            long count=java.util.Arrays.stream(data).filter(c->c==0x47384f||c==0x6c5874||c==0x927d93).count();
             boolean expected=order.action().equals("sky.fly");
             if(expected!=(count>0))return;
             int center=data[16*32+16];

@@ -202,6 +202,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     public boolean showsStorageCameo(){return (sync.get(4)&STORAGE_CAMEO)!=0;}
     public boolean guestControl(){return localRoomPanel() && sync.get(22)!=0;}
     public boolean backpackView(){return (sync.get(4)&2)!=0;}
+    public boolean roomCosmeticsView(){return !storageView()&&sync.get(22)==2;}
     public boolean accessView(){return (sync.get(4)&16)!=0;}
     public boolean privateView(){return (sync.get(4)&4)!=0;}
     public boolean filteredView(){return (sync.get(4)&8)!=0;}
@@ -384,6 +385,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private boolean isStoragePage(){return page.isStorage();}
     private boolean physicalChestPage(){return page==Page.CHEST && (openingFlags&PHYSICAL_CHEST)!=0;}
     private void render(){
+        sync.set(22,page==Page.SKYGRID_COSMETICS?2:0);
         resetControlSlots();buttons.clear();entries.clear();display.clearContent();
         sync.set(18,Profiles.of(owner).hideStorageTooltips?1:0);
         sync.set(4,(bag!=null?2:0)|(openingFlags&CREATIVE_ACCESS));sync.set(5,viewportRows);synchronizedInt(6,0);synchronizedInt(8,0);synchronizedInt(10,0);synchronizedInt(12,0);
@@ -653,7 +655,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(46,ControlGlyph.SYMBOL,"Wall theme",c->dev.anya.storage.pocket.SkygridWalls.cycle(owner,id,false),"Cycle the room's wall panels.");
         button(47,ControlGlyph.IMAGE,"Wall image",c->dev.anya.storage.pocket.SkygridWalls.cycle(owner,id,true),"Choose one of your images or turn the image off.");
         button(48,ControlGlyph.SYMBOL,"Exit color",c->dev.anya.storage.pocket.ExitGate.cycle(owner,id));
-        button(49,ControlGlyph.MODELS,"Live ceiling "+(live?"ON":"OFF"),c->dev.anya.storage.pocket.SkyCeiling.set(owner,id,!live),
+        button(49,ControlGlyph.MODELS,live?State.ON:State.OFF,"Live ceiling "+(live?"ON":"OFF"),c->dev.anya.storage.pocket.SkyCeiling.set(owner,id,!live),
                 "Place your Sky Camera outdoors. Turn this on to view it overhead.");
         button(50,ControlGlyph.INFO,"Select monitor",c->selectedMonitor=dev.anya.storage.pocket.RoomDisplays.choose(owner,id,selectedMonitor,true).id(),device.label());
         button(51,ControlGlyph.IMAGE,"Fit to wall",device.id()==null?null:c->dev.anya.storage.pocket.RoomDisplays.change(owner,id,device.id(),true),device.label());

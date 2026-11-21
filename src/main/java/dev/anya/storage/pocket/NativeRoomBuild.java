@@ -30,13 +30,10 @@ final class NativeRoomBuild {
         var room=PocketService.loadedPocket(p.getServer(),lease.pocket());
         boolean wallFace=false;
         if(room!=null&&state.getBlock() instanceof WallMonitorBlock){
-            // BlockPlaceContext has not resolved FACING yet in the initial item-use event.
-            for(var direction:net.minecraft.core.Direction.Plane.HORIZONTAL){
-                if(WallMonitorBlock.shellFace(room,pos,direction)&&p.serverLevel().hasChunkAt(pos.relative(direction.getOpposite()))
-                        &&p.serverLevel().getBlockState(pos.relative(direction.getOpposite())).isFaceSturdy(p.serverLevel(),pos.relative(direction.getOpposite()),direction)){
-                    wallFace=true;break;
-                }
-            }
+            var direction=state.getValue(BlockStateProperties.FACING);
+            var backing=pos.relative(direction.getOpposite());
+            wallFace=WallMonitorBlock.shellFace(room,pos,direction)&&p.serverLevel().hasChunkAt(backing)
+                    &&p.serverLevel().getBlockState(backing).isFaceSturdy(p.serverLevel(),backing,direction);
         }
         if(room==null || !wallFace&&!RoomBounds.decoration(pos.getX()-room.x(),pos.getY(),pos.getZ()-room.z())
                 || p.serverLevel().getBlockState(pos.below()).is(Content.CRATE.get()))return false;

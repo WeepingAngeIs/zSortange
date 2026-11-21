@@ -275,6 +275,7 @@ public final class Client {
                 return true;
             }
             if(button==0&&x>=12&&x<90){
+                if(menu.roomCosmeticsView())return false;
                 if(menu.guestControl() && y>=176 && y<194){press(91);send("room_cosmetics","",0);return true;}
                 if(menu.guestControl() && y>=199 && y<217){send("wall_photo","",0);return true;}
                 if(y>=127&&y<145&&menu.guestControl()){press(96);send("exit_color","",0);return true;}
@@ -465,7 +466,7 @@ public final class Client {
             containerBackground(g,mx,my);
             g.pose().pushPose();g.pose().translate(layout.left(),layout.top(),0);g.pose().scale((float)layout.scale(),(float)layout.scale(),1);
             var look=ClientInteriors.current;
-            String header = title.getString();
+            String header = menu.roomCosmeticsView()?"Skygrid cosmetics":title.getString();
             if (menu.backpackView() && look != null && look.menu()==menu.containerId && look.session()==menu.session() && !look.bagTitle().isEmpty()) header = look.bagTitle();
             g.drawString(font,font.plainSubstrByWidth(menu.accessView()?"Member permissions":header,250),12,15,0xfff4eaf1,false);
             boolean tips=menu.tooltipsEnabled();
@@ -474,7 +475,14 @@ public final class Client {
             g.drawString(font,"ACTIONS",290,29,colors[2],false);input.render(g,x,y,partial);
             String texture=look==null?"plain":look.texture();
             g.fill(12,35,90,126,colors[1]);ResourceLocation custom=ClientInteriors.texture();
-            if(menu.accessView()){
+            if(menu.roomCosmeticsView()){
+                g.pose().pushPose();g.pose().translate(18,45,0);g.pose().scale(4,4,1);
+                g.renderItem(new ItemStack(dev.anya.storage.pocket.CameraDevices.SKY_CAMERA.get()),0,0);g.pose().popPose();
+                var selected=menu.getSlot(50).getItem().get(DataComponents.LORE);
+                g.drawString(font,"Wall monitor",104,53,colors[2],false);
+                if(selected!=null&&!selected.lines().isEmpty())g.drawWordWrap(font,selected.lines().getFirst(),104,66,165,0xffe5d6e5);
+                g.drawString(font,menu.getSlot(49).getItem().getHoverName(),104,92,colors[2],false);
+            }else if(menu.accessView()){
                 g.pose().pushPose();g.pose().translate(21,49,0);g.pose().scale(3.7f,3.7f,1);ControlSprites.sprite(g,ControlGlyph.MEMBERS,0,0);g.pose().popPose();
                 g.drawCenteredString(font,"Home base",51,112,0xffe6cddd);
                 ItemStack member=menu.getSlot(27).getItem();
@@ -487,14 +495,16 @@ public final class Client {
                 else{g.pose().pushPose();g.pose().translate(17,43,0);g.pose().scale(4.2f,4.2f,1);g.renderItem(ClientLooks.shell(texture),0,0);g.pose().popPose();}
                 g.drawString(font,font.plainSubstrByWidth(Looks.title(texture),78),12,131,colors[2],false);
             }
-            if(menu.guestControl())option(g,90,ControlGlyph.REMOVE_MEMBER,"Remove guests",153,ControlGlyph.State.NORMAL,x,y);
-            else if(menu.localRoomPanel())option(g,90,ControlGlyph.POCKET_EDIT,"Room plan",153,menu.roomEditAllowed()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
-            else option(g,90,ControlGlyph.WARDROBE,"Wardrobe",153,menu.backpackView()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
-            if(menu.guestControl())option(g,91,ControlGlyph.SYMBOL,"Cosmetics",176,ControlGlyph.State.NORMAL,x,y);
-            else option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
-            if(menu.guestControl())option(g,92,ControlGlyph.IMAGE,"Wall image",199,ControlGlyph.State.NORMAL,x,y);
-            else option(g,92,ControlGlyph.IMAGE,"Images",199,ClientInteriors.imagesVisible()?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
-            option(g,93,ControlGlyph.MODELS,"Models",222,ClientLooks.options.models?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            if(!menu.roomCosmeticsView()){
+                if(menu.guestControl())option(g,90,ControlGlyph.REMOVE_MEMBER,"Remove guests",153,ControlGlyph.State.NORMAL,x,y);
+                else if(menu.localRoomPanel())option(g,90,ControlGlyph.POCKET_EDIT,"Room plan",153,menu.roomEditAllowed()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
+                else option(g,90,ControlGlyph.WARDROBE,"Wardrobe",153,menu.backpackView()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
+                if(menu.guestControl())option(g,91,ControlGlyph.SYMBOL,"Cosmetics",176,ControlGlyph.State.NORMAL,x,y);
+                else option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+                if(menu.guestControl())option(g,92,ControlGlyph.IMAGE,"Wall image",199,ControlGlyph.State.NORMAL,x,y);
+                else option(g,92,ControlGlyph.IMAGE,"Images",199,ClientInteriors.imagesVisible()?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+                option(g,93,ControlGlyph.MODELS,"Models",222,ClientLooks.options.models?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            }
             int hover=slotAt(x,y);
             for(int i=0;i<shown();i++){
                 var stack=menu.getSlot(i).getItem();

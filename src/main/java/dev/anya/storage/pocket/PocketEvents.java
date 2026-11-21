@@ -106,7 +106,8 @@ public final class PocketEvents {
                     }else if(nativeItem && !NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)){
                         var ctx=new net.minecraft.world.item.context.BlockPlaceContext(p,e.getHand(),held,e.getHitVec());
                         var state=((net.minecraft.world.item.BlockItem)held.getItem()).getBlock().defaultBlockState();
-                        if(NativeRoomBuild.cell(p,ctx.getClickedPos(),state,false,state.hasBlockEntity())){
+                        if(state.getBlock() instanceof WallMonitorBlock monitor)state=monitor.getStateForPlacement(ctx);
+                        if(state!=null&&NativeRoomBuild.cell(p,ctx.getClickedPos(),state,false,state.hasBlockEntity())){
                             // Only the held block item may run here; container use is a separate authorized click.
                             e.setUseBlock(TriState.FALSE);return;
                         }
