@@ -59,6 +59,7 @@ lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
 lang[f'item.{MOD}.creative_tablet']='UwU Tablet'
 lang[f'item.{MOD}.remote']='Cupid Tablet (Former Remote)'
 for name, title in {
+    'advanced_feeding_upgrade': 'Advanced Feeding Upgrade',
     'advanced_pickup_upgrade': 'Advanced Pickup Upgrade',
     'advanced_compacting_upgrade': 'Advanced Compacting Upgrade',
     'manual_smoking_upgrade': 'Manual Smoker Upgrade',
@@ -109,6 +110,7 @@ for family, station, part in (
         'result':{'id':f'{MOD}:{auto}','count':1},
     })
 for family, parts in {
+    'feeding': ['clock', 'bowl'],
     'pickup': ['amethyst_shard', 'name_tag', 'copper_ingot'],
     'compacting': ['piston', 'comparator', 'amethyst_shard'],
 }.items():

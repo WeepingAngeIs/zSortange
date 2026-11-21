@@ -64,6 +64,7 @@ public final class GuideContent {
         Map<String,String> upgrades=new LinkedHashMap<>();
         upgrades.put("pickup","Moves normally picked-up matching items from your inventory into the bag using its filter. It is not a ground-vacuum or long-distance magnet. Protect important inventory slots first.");
         upgrades.put("feeding","Uses supported plain foods from the bag when they fit the missing hunger. It does not eat every modded food or consume named/modified food indiscriminately.");
+        upgrades.put("advanced_feeding","Craft a Feeding Upgrade with one clock and one bowl. In Upgrades, choose how many hunger points must be missing before eating. Select plain foods from your inventory and add them in the order you prefer. A listed food is skipped if absent or too filling. With an empty list, the bag serves its first suitable food. Carry the bag with menus closed. Supported foods are apple, beetroot, carrot, baked potato, bread, and cooked beef, pork, chicken, mutton, rabbit, cod and salmon.");
         upgrades.put("refill","Tops up existing matching stacks from the bag. It honors protected slots and exact item components; it is not an unrestricted item-creation feature.");
         upgrades.put("crafting","The explicit crafting button opens a portable crafting table. It uses your inventory; it is not automatic crafting across a storage network.");
         upgrades.put("smelting","The original Smelting Upgrade automatically cooks the first allowed input it finds in bag slot order, using server furnace recipes and plain coal or charcoal. It requires output space and preserves recipe remainders. It does not supply free furnace fuel.");
@@ -79,6 +80,7 @@ public final class GuideContent {
             case "manual_smelting" -> "Manual Smelter Upgrade";
             case "auto_smelting" -> "Auto Smelter Upgrade";
             case "manual_smoking" -> "Manual Smoker Upgrade";
+            case "advanced_feeding" -> "Advanced Feeding Upgrade";
             case "auto_smoking" -> "Auto Smoker Upgrade";
             case "manual_blasting" -> "Manual Blast Furnace Upgrade";
             case "auto_blasting" -> "Auto Blast Furnace Upgrade";

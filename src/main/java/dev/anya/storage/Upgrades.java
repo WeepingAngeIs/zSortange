@@ -19,7 +19,7 @@ import java.util.*;
 
 /** Explicitly installed upgrades. Automation never reads armor/offhand or a backpack currently open in a menu. */
 public final class Upgrades {
-    private static final Set<Item> SAFE_FOOD=Set.of(Items.COOKED_BEEF,Items.COOKED_PORKCHOP,Items.COOKED_CHICKEN,Items.COOKED_MUTTON,Items.COOKED_RABBIT,Items.COOKED_COD,Items.COOKED_SALMON,Items.BREAD,Items.BAKED_POTATO,Items.CARROT,Items.APPLE,Items.BEETROOT);
+    static final Set<Item> SAFE_FOOD=Set.of(Items.COOKED_BEEF,Items.COOKED_PORKCHOP,Items.COOKED_CHICKEN,Items.COOKED_MUTTON,Items.COOKED_RABBIT,Items.COOKED_COD,Items.COOKED_SALMON,Items.BREAD,Items.BAKED_POTATO,Items.CARROT,Items.APPLE,Items.BEETROOT);
     private static final Map<Item,Item> COMPACT=Map.ofEntries(Map.entry(Items.IRON_NUGGET,Items.IRON_INGOT),Map.entry(Items.GOLD_NUGGET,Items.GOLD_INGOT),Map.entry(Items.IRON_INGOT,Items.IRON_BLOCK),Map.entry(Items.GOLD_INGOT,Items.GOLD_BLOCK),Map.entry(Items.DIAMOND,Items.DIAMOND_BLOCK),Map.entry(Items.EMERALD,Items.EMERALD_BLOCK),Map.entry(Items.COAL,Items.COAL_BLOCK),Map.entry(Items.LAPIS_LAZULI,Items.LAPIS_BLOCK),Map.entry(Items.REDSTONE,Items.REDSTONE_BLOCK),Map.entry(Items.NETHERITE_INGOT,Items.NETHERITE_BLOCK));
     public static ListTag installedItems(ItemStack bag){return BagInventory.data(bag).getList("InstalledUpgrades",Tag.TAG_COMPOUND);}
     public static boolean installed(BagInventory bag,String id){for(Tag entry:installedItems(bag.stack))if(((CompoundTag)entry).getString("Id").equals(id))return true;return false;}
@@ -116,7 +116,13 @@ public final class Upgrades {
         if(!(event.getEntity() instanceof ServerPlayer p)||p.tickCount%20!=0||!p.isAlive()||p.isSpectator()||p.containerMenu!=p.inventoryMenu||!Config.get().backpacks)return;
         for(var source:BackpackAccess.priority(p))if(!installedItems(source.stack()).isEmpty()&&BackpackAccess.unique(p,source.stack())){
             BagInventory bag=source.open(p);
-            try { pickup(bag);if(active(bag,"refill"))refill(bag);if(active(bag,"feeding"))feed(bag);BackpackSmelter.stepAll(bag); }
+            try {
+                pickup(bag);
+                if(active(bag,"refill"))refill(bag);
+                if(active(bag,"feeding"))feed(bag);
+                else if(active(bag,"advanced_feeding"))AdvancedFeeding.feed(bag);
+                BackpackSmelter.stepAll(bag);
+            }
             catch(Exception e){AnyaStorage.LOG.error("Backpack automation stopped for {}",p.getUUID(),e);}
             break; // One active backpack per player per second bounds the automation cost.
         }

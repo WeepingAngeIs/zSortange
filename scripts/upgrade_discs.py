@@ -96,6 +96,8 @@ def generate(write):
         write(key+'_upgrade',pixels)
     # Two raised tabs identify the advanced tier in monochrome as well.
     advanced = {
+        # A heart floats above a shallow serving bowl on the two-tab advanced casing.
+        'advanced_feeding': (' ++ ++ ', ' +++++ ', '  +++  ', '   +   ', '       ', '#######', ' ##### ', '  ###  '),
         'advanced_pickup': ('  ###  ', ' ## ## ', ' ##### ', '  ###  ', '   #   ', '       ', '+     +', ' +++++ '),
         # Clock hands above a heating element, housed in the twin-tab automatic casing.
         # Repeat each station's silhouette with a clock dial and the two raised automatic-tier tabs.

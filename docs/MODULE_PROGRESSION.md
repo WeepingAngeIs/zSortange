@@ -4,6 +4,18 @@
 
 **Done** means the described function exists in Anya. **Verified in modules.1** means the hosted checks below exercised it. **Next** identifies proposed development, **Optional** marks a later design choice, and **Blocked** names a missing dependency or deliberate exclusion. The version-pinned reference inventories the upstream Sophisticated Storage 1.6.18.2229 / Core 1.5.35.2473 upgrades, optional providers and recipes. [Storage upgrade reference](STORAGE_UPGRADE_REFERENCE.md)
 
+## Advanced Feeding in feeding.1
+
+Craft one **Feeding Upgrade**, one **clock** and one **bowl** in any arrangement. Install the resulting disc in a free backpack socket. Both discs use the existing feeding switch and share one family socket. This batch starts at the [verified cookers.1 build](https://github.com/WeepingAngeIs/zSortange/actions/runs/44874113092).
+
+In the backpack's Upgrades screen, **Eat at … missing hunger points** sets the threshold from 2 to 10. The default is 4 points, or two drumsticks. Select a food from your inventory or type its item ID, then use **Meal priority** to add it at the end of the list. Selecting it again removes it. **Use bag order** clears the list. The bag serves the first listed food it has that fits the missing hunger. An empty list uses slot order. Each eligible check spends one actual food item from the carried bag. Advanced Feeding waits while you are using an item or have a container open.
+
+Both tiers accept plain apple, beetroot, carrot, baked potato, bread, and cooked beef, porkchop, chicken, mutton, rabbit, cod and salmon. The list and hunger threshold stay with the individual backpack. A new or existing bag with no settings starts at the defaults.
+
+**Food history.** Eating by hand sends NeoForge's item-use completion event. The original Feeding disc completes a meal directly from the bag. Advanced Feeding also completes the meal directly and supports Spice of Life Onion 1.5.6 through its own meal-recording method. The adapter checks whether another listener already recorded the meal. Other versions and other history providers receive the usual backpack behavior. [Onion 1.5.6](https://modrinth.com/mod/spice-of-life-onion/version/4YRKCovn) · [CreativeCore 2.13.49](https://modrinth.com/mod/creativecore/version/vn4lrETC)
+
+The test profile also has a custom pack rule that banks earned bonus health at 64 recorded meals. Credit for a single meal is a prerequisite. The full 64-meal cycle and pack-configured heart thresholds require a separate in-pack check.
+
 ## Smoker and blast furnace progression in cookers.1
 
 The four specialist discs extend the verified smelter.1 build at `000606dc1d23`. [Smelter baseline](https://github.com/WeepingAngeIs/zSortange/actions/runs/44872333372)
@@ -57,7 +69,7 @@ The first two rows describe recipes in the checked JAR. Later arrows are propose
 |---|---|---|
 | Pickup · carried bag | **Done** `pickup_upgrade` (hopper) moves eligible player-inventory stacks into the bag. The hosted run **verified** that the advanced tier accepted both an exact item and a tag, skipped protected and unrelated stacks, and stopped under the family's server switch. The basic tier continued to use exact-item criteria. | Basic Pickup + amethyst shard, name tag and copper ingot → Advanced Pickup. |
 | Compacting · bag, manual | **Done** `compacting_upgrade` (piston) checks ten supported plain-material 3×3 conversions. The hosted run **verified** one basic conversion per press and up to eight identical conversions with the advanced disc. Named inputs survived and the press respected partial and full output space. | Basic Compacting + piston, comparator and amethyst shard → Advanced Compacting. Shared reversible compression is a separate proposed branch. |
-| Feeding · carried bag | **Done** `feeding_upgrade` (golden carrot). Consumes plain food from a small allowlist when its nutrition fits missing hunger. **Next** player-defined timing/food priorities. | Feeding + clock and bowl → advanced feeding with minimum hunger and a priority list restricted to safe foods. |
+| Feeding · carried bag | **Done** `feeding_upgrade` (golden carrot). Consumes plain food from a small allowlist when its nutrition fits missing hunger. **Implemented in feeding.1:** choose a minimum hunger deficit and an ordered list of safe foods for this bag. | Feeding + clock and bowl → advanced feeding with minimum hunger and a priority list restricted to safe foods. |
 | Refill · carried bag | **Done** `refill_upgrade` (dropper). Tops up existing matching hotbar stacks with matching components. **Optional** per-slot reserve targets. | Refill + comparator and chiseled bookshelf → advanced refill with selected hotbar slots and minimum bag reserve. |
 | Tool resupply · bag, manual | **Done** `resupply_upgrade` (iron pickaxe). Moves one stored tool or sword into an empty selected hotbar slot. **Optional** preferred tool/condition. | Resupply + tripwire hook and grindstone → advanced resupply with tool class and minimum durability. Ordinary tool identity and enchantments travel with the item. |
 | Crafting workstation · bag | **Done** `crafting_upgrade` (crafting table). Opens the vanilla portable crafting menu, using the player inventory. **Optional** bag-backed ingredient planning. | Crafting + written recipe template (new blank plan item) and a hopper → advanced crafting with explicit ingredient preview and confirmed transfer from this bag, including remainders. |

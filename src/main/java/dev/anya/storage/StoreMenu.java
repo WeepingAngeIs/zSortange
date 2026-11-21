@@ -906,15 +906,16 @@ public final class StoreMenu extends AbstractContainerMenu {
             String family=Config.upgradeFamily(id);
             boolean installed=Upgrades.installed(bag,id);
             int slot=switch(id){
+                case "advanced_feeding" -> 28;
                 case "manual_smoking" -> 31;
                 case "auto_smoking" -> 32;
                 case "manual_blasting" -> 40;
                 case "auto_blasting" -> 41;
                 default -> originalSlot++;
             };
-            boolean specialist=family.equals("smoking")||family.equals("blasting");
+            boolean showDisc=family.equals("smoking")||family.equals("blasting")||id.equals("advanced_feeding");
             var disc=Content.UPGRADES.get(id).get();
-            String label=(specialist||id.equals("manual_smelting")||id.equals("auto_smelting"))
+            String label=(showDisc||id.equals("manual_smelting")||id.equals("auto_smelting"))
                     ?new ItemStack(disc).getHoverName().getString():id.replace('_',' ');
             String title=label+(installed?" [INSTALLED]":" [EMPTY]");
             Consumer<Click> change=click->{
@@ -922,11 +923,12 @@ public final class StoreMenu extends AbstractContainerMenu {
             };
             String[] hints={"Left: install from your inventory.","Right: uninstall and return the exact upgrade item.",
                     "Server enabled: "+Config.get().upgrades.get(family)};
-            if(specialist){
+            if(showDisc){
                 button(slot,disc,title,change,hints);
                 if(installed)display.getItem(slot).set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE,true);
             }else button(slot,ControlGlyph.setting(family),installed?State.ON:State.OFF,title,change,hints);
         }
+        if(Upgrades.active(bag,"advanced_feeding")) feedingControls();
         specialistCooker(33,"smoking","smoker","SmokeFilter");
         specialistCooker(42,"blasting","blast furnace","BlastFilter");
         button(27,ControlGlyph.WARDROBE,"Wardrobe / wear / interiors",c->navigate(Page.WARDROBE),"Element, cosmetic skin and storage tier are independent.");
@@ -948,6 +950,28 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(50,ControlGlyph.EDIT_SMELT,"Toggle smelt filter: "+input,c->Upgrades.filter(bag,"SmeltFilter",input));
         button(51,ControlGlyph.STOP_SMELT,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");BagInventory.data(bag.stack,tag);Upgrades.stopSmelt(bag);});
         button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());
+    }
+    private void feedingControls(){
+        int minimum=AdvancedFeeding.minimumMissing(bag);
+        button(29,ControlGlyph.CHANGE,"Eat at "+minimum+" missing hunger points",click->{
+            if(click.button>1)return;
+            int next=click.button==0?Math.min(10,minimum+1):Math.max(2,minimum-1);
+            showFeedingProblem(AdvancedFeeding.setMinimumMissing(bag,next));
+        },"Left-click to raise the minimum. Right-click to lower it.",
+          "Choose 2 to 10 points. Two points equal one drumstick.");
+        var priority=AdvancedFeeding.priority(bag);
+        String[] hints=new String[priority.size()+2];
+        hints[0]="Select a food below or enter its ID. Click when its ID appears here.";
+        hints[1]=priority.isEmpty()?"Using the first suitable food in bag order.":"Only listed foods are eaten, in this order:";
+        for(int index=0;index<priority.size();index++)hints[index+2]=(index+1)+". "+priority.get(index);
+        button(36,ControlGlyph.PRIORITY,"Meal priority"+(input.isBlank()?"":": "+input),
+                click->showFeedingProblem(AdvancedFeeding.toggleFood(bag,input)),hints);
+        button(37,ControlGlyph.CLEAR_FILTER,priority.isEmpty()?State.READ_ONLY:State.NORMAL,
+                "Use bag order",priority.isEmpty()?null:click->showFeedingProblem(AdvancedFeeding.clearPriority(bag)),
+                "Clears this backpack's food list. The first suitable food in the bag will be eaten.");
+    }
+    private void showFeedingProblem(String message){
+        if(!message.isEmpty())owner.displayClientMessage(Component.literal(message),true);
     }
     private void specialistCooker(int slot,String family,String station,String filterKey){
         boolean manual=Upgrades.active(bag,"manual_"+family);

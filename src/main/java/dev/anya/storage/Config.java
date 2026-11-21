@@ -28,9 +28,10 @@ public final class Config {
             java.util.stream.Stream.of("smoking","blasting")).toList();
     public static final List<String> DISC_IDS = java.util.stream.Stream.concat(UPGRADE_IDS.stream(),
             java.util.stream.Stream.of("advanced_pickup","advanced_compacting","manual_smelting","auto_smelting",
-                    "manual_smoking","auto_smoking","manual_blasting","auto_blasting")).toList();
+                    "manual_smoking","auto_smoking","manual_blasting","auto_blasting","advanced_feeding")).toList();
     public static String upgradeFamily(String id) {
         return switch(id) {
+            case "advanced_feeding" -> "feeding";
             case "advanced_pickup" -> "pickup";
             case "advanced_compacting" -> "compacting";
             case "manual_smelting", "auto_smelting" -> "smelting";

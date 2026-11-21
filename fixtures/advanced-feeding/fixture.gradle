@@ -1,0 +1,37 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def playable = p.file(p.property('feedingPlayable'))
+    def fixture = p.sourceSets.create('feedingProbe')
+    fixture.java.srcDir p.file('fixtures/advanced-feeding/java')
+    fixture.resources.srcDir p.file('fixtures/advanced-feeding/resources')
+    p.neoForge.addModdingDependenciesTo(fixture)
+    p.dependencies.add(fixture.compileOnlyConfigurationName, p.files(playable))
+    def jar = p.tasks.register('feedingProbeJar', Jar) {
+        dependsOn fixture.classesTaskName
+        from fixture.output
+        archiveBaseName = 'hosted-feeding-fixture'
+        destinationDirectory = p.layout.buildDirectory.dir('advanced-feeding/fixture')
+    }
+    def runtime = p.sourceSets.create('feedingRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(playable))
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(jar))
+    def provider = p.hasProperty('feedingProvider')
+    if (provider) {
+        p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(p.file(p.property('feedingProvider')), p.file(p.property('feedingCore'))))
+    }
+    def dest = p.file('build/advanced-feeding/' + (provider ? 'provider' : 'plain'))
+    p.neoForge.runs.create('feedingReview') {
+        server()
+        programArgument '--nogui'
+        sourceSet = runtime
+        loadedMods = []
+        gameDirectory = new File(dest,'game')
+        jvmArguments.addAll '-Xmx1600m', '-Xms256m'
+        systemProperty 'anya.feedingPlayable', playable.absolutePath
+        systemProperty 'anya.feedingProvider', provider.toString()
+    }
+    p.tasks.register('prepareFeedingReview') {
+        dependsOn jar, 'createFeedingReviewLaunchScript'
+        doLast { new File(dest,'launch.txt').text = p.tasks.named('createFeedingReviewLaunchScript').get().launchScript.get().asFile.absolutePath }
+    }
+}}
