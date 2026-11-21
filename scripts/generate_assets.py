@@ -61,6 +61,10 @@ lang[f'item.{MOD}.remote']='Cupid Tablet (Former Remote)'
 for name, title in {
     'advanced_pickup_upgrade': 'Advanced Pickup Upgrade',
     'advanced_compacting_upgrade': 'Advanced Compacting Upgrade',
+    'manual_smoking_upgrade': 'Manual Smoker Upgrade',
+    'auto_smoking_upgrade': 'Auto Smoker Upgrade',
+    'manual_blasting_upgrade': 'Manual Blast Furnace Upgrade',
+    'auto_blasting_upgrade': 'Auto Blast Furnace Upgrade',
     'manual_smelting_upgrade': 'Manual Smelter Upgrade',
     'auto_smelting_upgrade': 'Auto Smelter Upgrade',
 }.items():
@@ -90,14 +94,20 @@ shaped('cupid_tablet','terminals',['IGI','ARA','IEI'],{
 shaped('storage_core','endgame',['DDD','DND','DDD'],{'D':'minecraft:diamond_block','N':'minecraft:netherite_block'})
 for u,ingredient in [('pickup','hopper'),('feeding','golden_carrot'),('refill','dropper'),('crafting','crafting_table'),('smelting','furnace'),('compacting','piston'),('resupply','iron_pickaxe')]:
     shaped(u+'_upgrade','upgrade.'+u,['PIP','IRI','PIP'],{'P':'minecraft:paper','I':'minecraft:'+ingredient,'R':'minecraft:redstone'})
-shaped('manual_smelting_upgrade','upgrade.smelting',['CFC',' T '],
-       {'C':'minecraft:copper_ingot','F':'minecraft:furnace','T':'minecraft:redstone_torch'})
-js(f'data/{MOD}/recipe/auto_smelting_upgrade.json', {
-    'type':'minecraft:crafting_shapeless', 'category':'equipment',
-    'neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':'upgrade.smelting'}],
-    'ingredients':[{'item':f'{MOD}:manual_smelting_upgrade'}, {'item':'minecraft:clock'}, {'item':'minecraft:powered_rail'}],
-    'result':{'id':f'{MOD}:auto_smelting_upgrade','count':1},
-})
+for family, station, part in (
+    ('smelting', 'furnace', 'powered_rail'),
+    ('smoking', 'smoker', 'copper_grate'),
+    ('blasting', 'blast_furnace', 'obsidian'),
+):
+    manual, auto = f'manual_{family}_upgrade', f'auto_{family}_upgrade'
+    shaped(manual,'upgrade.'+family,['CFC',' T '],
+           {'C':'minecraft:copper_ingot','F':'minecraft:'+station,'T':'minecraft:redstone_torch'})
+    js(f'data/{MOD}/recipe/{auto}.json', {
+        'type':'minecraft:crafting_shapeless', 'category':'equipment',
+        'neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':'upgrade.'+family}],
+        'ingredients':[{'item':f'{MOD}:{manual}'}, {'item':'minecraft:clock'}, {'item':'minecraft:'+part}],
+        'result':{'id':f'{MOD}:{auto}','count':1},
+    })
 for family, parts in {
     'pickup': ['amethyst_shard', 'name_tag', 'copper_ingot'],
     'compacting': ['piston', 'comparator', 'amethyst_shard'],

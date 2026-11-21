@@ -69,9 +69,21 @@ public final class GuideContent {
         upgrades.put("smelting","The original Smelting Upgrade automatically cooks the first allowed input it finds in bag slot order, using server furnace recipes and plain coal or charcoal. It requires output space and preserves recipe remainders. It does not supply free furnace fuel.");
         upgrades.put("manual_smelting","In Upgrades, add allowed input IDs to the smelting filter. Put matching items and plain coal or charcoal in the bag, then start one cook. Carry the bag with menus closed while it cooks. Start another cook when you want another result.");
         upgrades.put("auto_smelting","Craft the manual disc with a clock and a powered rail. Add input IDs to the smelting filter in the order you want them cooked. Carry the bag with matching inputs and plain coal or charcoal inside. With menus closed, it keeps cooking and chooses the first available input in filter order.");
+        upgrades.put("manual_blasting","Put an input for a blast furnace recipe in your bag with plain coal or charcoal. Add its item ID to the blasting filter in Upgrades, then start one cook. Carry the bag with menus closed until it finishes.");
+        upgrades.put("auto_blasting","Craft the manual blast furnace disc with a clock and obsidian. Add allowed input IDs to the blasting filter in priority order. With matching inputs and plain coal or charcoal in the carried bag, it runs blast furnace recipes continuously while menus are closed.");
+        upgrades.put("manual_smoking","Put an input for a smoker recipe in your bag with plain coal or charcoal. Add its item ID to the smoking filter in Upgrades, then start one cook. Carry the bag with menus closed until it finishes.");
+        upgrades.put("auto_smoking","Craft the manual smoker disc with a clock and a copper grate. Add allowed input IDs to the smoking filter in priority order. With matching inputs and plain coal or charcoal in the carried bag, it runs smoker recipes continuously while menus are closed.");
         upgrades.put("compacting","Press the compacting button to perform one supported vanilla 3-by-3 compression. It is not continuous autocrafting. Named or modified material stacks are not compacted.");
         upgrades.put("resupply","Select an empty hotbar slot, then press the resupply button. It transfers a tool or sword from the backpack. It does not overwrite the item in your hand.");
-        for(var e:upgrades.entrySet())recipe(out,level,"Upgrades",switch(e.getKey()){case "manual_smelting"->"Manual Smelter Upgrade";case "auto_smelting"->"Auto Smelter Upgrade";default->Looks.title(e.getKey())+" upgrade";},"item:anyastorage:"+e.getKey()+"_upgrade",
+        for(var e:upgrades.entrySet())recipe(out,level,"Upgrades",switch(e.getKey()){
+            case "manual_smelting" -> "Manual Smelter Upgrade";
+            case "auto_smelting" -> "Auto Smelter Upgrade";
+            case "manual_smoking" -> "Manual Smoker Upgrade";
+            case "auto_smoking" -> "Auto Smoker Upgrade";
+            case "manual_blasting" -> "Manual Blast Furnace Upgrade";
+            case "auto_blasting" -> "Auto Blast Furnace Upgrade";
+            default -> Looks.title(e.getKey())+" upgrade";
+        },"item:anyastorage:"+e.getKey()+"_upgrade",
             e.getValue()+"\n\nSneak-use a backpack, carry the crafted upgrade and left-click its icon to install. Right-click the icon to recover the exact installed upgrade item when there is inventory space.\n\nThis server's upgrade switch: "+(Boolean.TRUE.equals(d.upgrades.get(Config.upgradeFamily(e.getKey())))?"ON":"OFF")+". Automated upgrades pause while a storage menu is open.",e.getKey()+"_upgrade");
         recipe(out,level,"Home storage","Build a home hub","item:anyastorage:hub",
             "Place a hub near physical chests or barrels. Its initial radius is "+d.initialRadius+" blocks; the maximum is "+d.maxRadius+". That radius governs regular tablet access and which physical stores the hub includes.\n\nStorage is not copied into the hub. Search results point to real stacks in loaded, permitted containers. Discovery is incremental; a new chest may take a moment to appear.\n\nNo storage chunk is force-loaded by this base network.","hub");

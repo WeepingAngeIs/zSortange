@@ -16,6 +16,11 @@ DISCS = {
     # A little furnace with one glowing billet, set inside a smooth manual-tier rim.
     'manual_smelting': ('ae86bb','483952','ffb1d3','c7f2ff', (
         '#######','#     #','#######','#     #','# +++ #','#     #','#######')),
+    # Two wisps above an open smoker rack; the blast furnace has stepped bellows and a tuyere.
+    'manual_smoking': ('ac84bb','493650','ffb3cf','bef1fa', (
+        ' +  +  ','  +  + ',' +  +  ','       ','#######',' # # # ','#######')),
+    'manual_blasting': ('9295c7','433851','ffb2ce','bef1ff', (
+        '  +    ',' ++  + ',' +++++ ','       ',' ###   ','#####  ',' ### ##')),
     'compacting': ('7d69b8','3f355f','c7a8ee','f3dcff', (
         '#######','  ###  ',' ##### ','       ','>#####<',' ##### ','#######')),
     'resupply': ('417da9','253f60','8dd6eb','e0fbff', (
@@ -93,6 +98,9 @@ def generate(write):
     advanced = {
         'advanced_pickup': ('  ###  ', ' ## ## ', ' ##### ', '  ###  ', '   #   ', '       ', '+     +', ' +++++ '),
         # Clock hands above a heating element, housed in the twin-tab automatic casing.
+        # Repeat each station's silhouette with a clock dial and the two raised automatic-tier tabs.
+        'auto_smoking': ('  ###  ', ' # # # ', ' # ++# ', '  ###  ', ' +  +  ', '  +  + ', '#######', ' # # # '),
+        'auto_blasting': ('  ###  ', ' # # # ', ' # ++# ', '  ###  ', '       ', ' ###   ', '#####  ', ' ### ##'),
         'auto_smelting': ('  ###  ', ' # # # ', '#  #  #', '#  ++ #', ' #   # ', '  ###  ', '       ', ' +++++ '),
         'advanced_compacting': ('  ###  ', '   #   ', '+++++++', '       ', ' ## ## ', ' ## ## ', '       ', '+++++++'),
     }

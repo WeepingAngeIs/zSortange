@@ -53,5 +53,15 @@
   "tooltip.anyastorage.manual_smelting_upgrade.2": "Put the input and coal or charcoal in the bag. Carry it with menus closed to cook.",
   "tooltip.anyastorage.auto_smelting_upgrade.1": "Continuously smelts items from the bag in smelting-filter order. Add your first choice first.",
   "tooltip.anyastorage.auto_smelting_upgrade.2": "Install in a backpack with coal or charcoal inside. Carry it with menus closed to cook.",
-  "tooltip.anyastorage.auto_smelting_upgrade.3": "Craft from a Manual Smelter Upgrade, a clock and a powered rail."
+  "tooltip.anyastorage.auto_smelting_upgrade.3": "Craft from a Manual Smelter Upgrade, a clock and a powered rail.",
+  "tooltip.anyastorage.manual_smoking_upgrade.1": "In Upgrades, add allowed item IDs to the smoking filter, then start one smoker cook.",
+  "tooltip.anyastorage.manual_smoking_upgrade.2": "Put matching input and coal or charcoal in the bag. Carry it with menus closed to cook.",
+  "tooltip.anyastorage.auto_smoking_upgrade.1": "Runs smoker recipes continuously, choosing inputs in smoking-filter order.",
+  "tooltip.anyastorage.auto_smoking_upgrade.2": "Put matching input and coal or charcoal in the bag. Carry it with menus closed to cook.",
+  "tooltip.anyastorage.auto_smoking_upgrade.3": "Craft from the manual smoker disc, a clock and a copper grate.",
+  "tooltip.anyastorage.manual_blasting_upgrade.1": "In Upgrades, add allowed item IDs to the blasting filter, then start one blast furnace cook.",
+  "tooltip.anyastorage.manual_blasting_upgrade.2": "Put matching input and coal or charcoal in the bag. Carry it with menus closed to cook.",
+  "tooltip.anyastorage.auto_blasting_upgrade.1": "Runs blast furnace recipes continuously, choosing inputs in blasting-filter order.",
+  "tooltip.anyastorage.auto_blasting_upgrade.2": "Put matching input and coal or charcoal in the bag. Carry it with menus closed to cook.",
+  "tooltip.anyastorage.auto_blasting_upgrade.3": "Craft from the manual blast furnace disc, a clock and obsidian."
 }

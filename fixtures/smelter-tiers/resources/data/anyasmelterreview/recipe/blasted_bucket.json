@@ -1,0 +1,8 @@
+{
+  "type": "minecraft:blasting",
+  "category": "misc",
+  "ingredient": {"item": "minecraft:water_bucket"},
+  "result": {"id": "minecraft:brick"},
+  "cookingtime": 40,
+  "experience": 1.0
+}

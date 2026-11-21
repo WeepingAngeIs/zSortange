@@ -53,14 +53,15 @@ public final class Upgrades {
             if(upgrade.isEmpty()){AnyaStorage.tell(p,"Craft and carry a "+id+" upgrade first.");return false;}
             addDisc(upgrades,id,upgrade,p);consumed.add(upgrade);
         }
-        if(remove && id.equals("manual_smelting"))BackpackSmelter.clearManual(tag);
+        if(remove)BackpackSmelter.removedDisc(tag,id);
         tag.put("InstalledUpgrades",upgrades);BagInventory.data(next,tag);plan.work(main)[bag.playerSlot]=next;produced.add(next.copy());
         plan.authorizeRecipe(consumed,produced);String error=plan.commit(p.getServer());if(!error.isEmpty()){AnyaStorage.tell(p,error);return false;}return true;
     }
     public static void filter(BagInventory bag,String key,String item){
         if(!bag.valid())return;
         CompoundTag tag=BagInventory.data(bag.stack);ListTag list=tag.getList(key,Tag.TAG_STRING).copy();
-        if(!list.remove(StringTag.valueOf(item))){
+        if(list.remove(StringTag.valueOf(item)))BackpackSmelter.removedRule(tag,key,item);
+        else{
             boolean valid;
             if(item.startsWith("#")){
                 String name=item.substring(1);
@@ -71,7 +72,6 @@ public final class Upgrades {
             if(list.size()>=64){AnyaStorage.tell(bag.player,"Filter limit reached.");return;}
             list.add(StringTag.valueOf(item));
         }
-        if(key.equals("SmeltFilter") && !list.contains(StringTag.valueOf(item)))BackpackSmelter.removedRule(tag,item);
         tag.put(key,list);BagInventory.data(bag.stack,tag);bag.hostChanged();
     }
     public static void craft(BagInventory bag){if(!bag.valid()||!active(bag,"crafting"))return;bag.player.openMenu(new SimpleMenuProvider((id,inv,p)->new CraftingMenu(id,inv,ContainerLevelAccess.NULL),Component.literal("Backpack Crafting")));}
@@ -116,7 +116,7 @@ public final class Upgrades {
         if(!(event.getEntity() instanceof ServerPlayer p)||p.tickCount%20!=0||!p.isAlive()||p.isSpectator()||p.containerMenu!=p.inventoryMenu||!Config.get().backpacks)return;
         for(var source:BackpackAccess.priority(p))if(!installedItems(source.stack()).isEmpty()&&BackpackAccess.unique(p,source.stack())){
             BagInventory bag=source.open(p);
-            try { pickup(bag);if(active(bag,"refill"))refill(bag);if(active(bag,"feeding"))feed(bag);smeltingStep(bag); }
+            try { pickup(bag);if(active(bag,"refill"))refill(bag);if(active(bag,"feeding"))feed(bag);BackpackSmelter.stepAll(bag); }
             catch(Exception e){AnyaStorage.LOG.error("Backpack automation stopped for {}",p.getUUID(),e);}
             break; // One active backpack per player per second bounds the automation cost.
         }
@@ -160,10 +160,14 @@ public final class Upgrades {
             ItemStack one=bag.removeItem(i,1);one.finishUsingItem(bag.player.serverLevel(),bag.player);return;
         }
     }
-    public static String startSmelt(BagInventory bag){return BackpackSmelter.start(bag);}
-    public static boolean manualSmeltPending(BagInventory bag){return BackpackSmelter.pending(BagInventory.data(bag.stack));}
-    public static void stopSmelt(BagInventory bag){BackpackSmelter.stop(bag);}
-    public static void smeltingStep(BagInventory bag){BackpackSmelter.step(bag);}
+    public static String startCook(BagInventory bag,String family){return BackpackSmelter.start(bag,family);}
+    public static boolean cookPending(BagInventory bag,String family){return BackpackSmelter.pending(bag,family);}
+    public static void stopCook(BagInventory bag,String family){BackpackSmelter.stop(bag,family);}
+    public static int fuelTicks(BagInventory bag,String family){return BackpackSmelter.fuelTicks(bag,family);}
+    public static String startSmelt(BagInventory bag){return startCook(bag,"smelting");}
+    public static boolean manualSmeltPending(BagInventory bag){return cookPending(bag,"smelting");}
+    public static void stopSmelt(BagInventory bag){stopCook(bag,"smelting");}
+    public static void smeltingStep(BagInventory bag){BackpackSmelter.stepFurnace(bag);}
     public static void resupply(BagInventory bag){
         if(!bag.valid()||!active(bag,"resupply"))return;ServerPlayer p=bag.player;int selected=p.getInventory().selected;
         if(!p.getMainHandItem().isEmpty()){AnyaStorage.tell(p,"Select an empty hotbar slot first, then use the resupply button.");return;}

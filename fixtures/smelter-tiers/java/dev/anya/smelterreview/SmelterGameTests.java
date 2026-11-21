@@ -58,6 +58,7 @@ public final class SmelterGameTests {
         stalls(p);
         menuStart(p);
         fixtureRecipes(p);
+        SpecialistChecks.run(p);
     }
 
     static BagInventory bag(ServerPlayer p){return new BagInventory(p,0);}
@@ -69,7 +70,7 @@ public final class SmelterGameTests {
     static BagInventory install(ServerPlayer p,String tier) {
         return install(p,tier,new ItemStack(Content.BACKPACK.get()));
     }
-    private static BagInventory install(ServerPlayer p,String tier,ItemStack host) {
+    static BagInventory install(ServerPlayer p,String tier,ItemStack host) {
         var inventory=p.getInventory();
         inventory.clearContent();inventory.selected=0;
         inventory.setItem(0,host);
@@ -310,7 +311,7 @@ public final class SmelterGameTests {
         var unchanged=bag.stack.copy();xp=p.totalExperience;carry(p,10);
         check(Transactions.same(unchanged,bag(p).stack) && p.totalExperience==xp,"Forbidden nested backpack output consumed fuel, input or paid XP");
     }
-    private static void checkRecipe(ServerPlayer p,String tier,int w,int h,List<Item> ingredients){
+    static void checkRecipe(ServerPlayer p,String tier,int w,int h,List<Item> ingredients){
         List<ItemStack> slots=new ArrayList<>();
         for(Item item:ingredients)slots.add(item==Items.AIR?ItemStack.EMPTY:new ItemStack(item));
         var grid=CraftingInput.of(w,h,slots);

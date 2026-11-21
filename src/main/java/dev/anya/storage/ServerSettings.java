@@ -105,7 +105,7 @@ public final class ServerSettings {
             flag(entries, "recipes." + group, "Recipe group " + group, "Enable recipes in this group.",
                     d -> d.recipes.get(group), (d, v) -> d.recipes.put(group, v));
         }
-        for (String id : Config.UPGRADE_IDS) {
+        for (String id : Config.UPGRADE_FAMILIES) {
             flag(entries, "upgrades." + id, "Backpack upgrade " + id, "Enable behavior and crafting for this upgrade.",
                     d -> d.upgrades.get(id), (d, v) -> d.upgrades.put(id, v));
         }

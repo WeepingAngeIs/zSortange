@@ -24,13 +24,18 @@ public final class Config {
     public static String lastStatus = "Not initialized";
     public static final List<String> GROUPS = List.of("backpacks", "hubs", "terminals", "containers", "upgrades", "endgame");
     public static final List<String> UPGRADE_IDS = List.of("pickup", "feeding", "refill", "crafting", "smelting", "compacting", "resupply");
+    public static final List<String> UPGRADE_FAMILIES = java.util.stream.Stream.concat(UPGRADE_IDS.stream(),
+            java.util.stream.Stream.of("smoking","blasting")).toList();
     public static final List<String> DISC_IDS = java.util.stream.Stream.concat(UPGRADE_IDS.stream(),
-            java.util.stream.Stream.of("advanced_pickup","advanced_compacting","manual_smelting","auto_smelting")).toList();
+            java.util.stream.Stream.of("advanced_pickup","advanced_compacting","manual_smelting","auto_smelting",
+                    "manual_smoking","auto_smoking","manual_blasting","auto_blasting")).toList();
     public static String upgradeFamily(String id) {
         return switch(id) {
             case "advanced_pickup" -> "pickup";
             case "advanced_compacting" -> "compacting";
             case "manual_smelting", "auto_smelting" -> "smelting";
+            case "manual_smoking", "auto_smoking" -> "smoking";
+            case "manual_blasting", "auto_blasting" -> "blasting";
             default -> id;
         };
     }
@@ -68,7 +73,7 @@ public final class Config {
         public List<Tier> tiers=new ArrayList<>();
         public Data() {
             GROUPS.forEach(k->recipes.put(k,!k.equals("endgame")));
-            UPGRADE_IDS.forEach(k->upgrades.put(k,true));
+            UPGRADE_FAMILIES.forEach(k->upgrades.put(k,true));
             tiers.add(new Tier("starter","Starter","","",27,1,0,true));
             tiers.add(new Tier("iron","Iron","starter","minecraft:iron_ingot",45,2,8,true));
             tiers.add(new Tier("gold","Gold","iron","minecraft:gold_ingot",63,3,8,true));
@@ -136,6 +141,13 @@ public final class Config {
             checkBoolean(expansion, "chestCameoEnabled");
             checkBoolean(expansion, "backpackCameoEnabled");
         }
+        // Older schema-2 files have only the furnace switch. Expand them in memory only.
+        if (object.get("upgrades") instanceof JsonObject switches && switches.has("smelting")) {
+            for (String family : List.of("smoking", "blasting")) {
+                if (!switches.has(family)) switches.add(family, switches.get("smelting"));
+                checkBoolean(switches, family);
+            }
+        }
         Data data=JSON.fromJson(object,Data.class);
         validate(data,true);
         return data;
@@ -182,7 +194,7 @@ public final class Config {
         require(d.upgradeBaseCost>=1 && d.upgradeBaseCost<=100000,"Ore cost must be 1..100000");
         require(d.cubeRecipe>=0 && d.cubeRecipe<=2,"Unknown cube recipe");
         require(d.recipes!=null && d.recipes.keySet().equals(new HashSet<>(GROUPS)) && !d.recipes.containsValue(null),"Invalid recipe groups");
-        require(d.upgrades!=null && d.upgrades.keySet().equals(new HashSet<>(UPGRADE_IDS)) && !d.upgrades.containsValue(null),"Invalid upgrade switches");
+        require(d.upgrades!=null && d.upgrades.keySet().equals(new HashSet<>(UPGRADE_FAMILIES)) && !d.upgrades.containsValue(null),"Invalid upgrade switches");
         require(d.categoryRules!=null && d.categoryRules.size()<=256,"At most 256 category rules");
         d.categoryRules.forEach((key,category)->require(key!=null && validId(key.startsWith("#")?key.substring(1):key) && CATEGORIES.contains(category) && !category.equals("any"),"Invalid category rule "+key));
         require(d.oreValues!=null && d.oreValues.size()<=128,"At most 128 ore rules");

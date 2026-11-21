@@ -771,7 +771,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         String[] options={"OFF / undecided","Dragon's Breath route","Tracked dragon victory-token route"};
         button(22,ControlGlyph.CUBE_RECIPE,"Cube recipe: "+options[draft.cubeRecipe],c->draft.cubeRecipe=(draft.cubeRecipe+1)%3,"Choose explicitly; the default is OFF.","Both active routes: 1 storage core + 4 Nether Stars.","Breath route also needs 4 Dragon's Breath.","Token route also needs 4 tracked fight victory tokens.","Breath does NOT prove repeated dragon kills.","Also enable the endgame recipe gate above.");footer(Page.ADMIN);
     }
-    private void upgradeGates(){for(int i=0;i<Config.UPGRADE_IDS.size();i++){String id=Config.UPGRADE_IDS.get(i);toggle(10+i,ControlGlyph.setting(id),id,draft.upgrades.get(id),()->draft.upgrades.put(id,!draft.upgrades.get(id)),"Controls this upgrade's behavior and crafting recipe.","Installed upgrades are retained when disabled.");}footer(Page.ADMIN);}
+    private void upgradeGates(){for(int i=0;i<Config.UPGRADE_FAMILIES.size();i++){String id=Config.UPGRADE_FAMILIES.get(i);toggle(10+i,ControlGlyph.setting(id),id,draft.upgrades.get(id),()->draft.upgrades.put(id,!draft.upgrades.get(id)),"Controls this upgrade's behavior and crafting recipe.","Installed upgrades are retained when disabled.");}footer(Page.ADMIN);}
     private void presets(){
         button(11,ControlGlyph.SURVIVAL,"Conservative survival",c->{draft.initialRadius=16;draft.maxRadius=48;draft.quickRadius=6;draft.maxContainers=64;draft.scanChunksPerTick=1;},"16 -> 48 range, 6-block nearby QuickStack.","64 containers and 1 scanned chunk per tick.","Only edits the draft. Existing content is untouched.");
         button(15,ControlGlyph.LARGE_NETWORK,"Larger beta-test network",c->{draft.initialRadius=16;draft.maxRadius=96;draft.quickRadius=12;draft.maxContainers=256;draft.scanChunksPerTick=4;},"16 -> 96 range, 12-block nearby QuickStack.","256 containers and 4 scanned chunks per tick.","Safety checks remain mandatory.");footer(Page.ADMIN);
@@ -901,18 +901,34 @@ public final class StoreMenu extends AbstractContainerMenu {
     }
     private void upgrades(){
         if(bag==null)return;
-        for(int i=0;i<Config.DISC_IDS.size();i++){
-            String id=Config.DISC_IDS.get(i), family=Config.upgradeFamily(id);
+        int originalSlot=10;
+        for(String id:Config.DISC_IDS){
+            String family=Config.upgradeFamily(id);
             boolean installed=Upgrades.installed(bag,id);
-            String label=switch(id){
-                case "manual_smelting","auto_smelting" -> new ItemStack(Content.UPGRADES.get(id).get()).getHoverName().getString();
-                default -> id.replace('_',' ');
+            int slot=switch(id){
+                case "manual_smoking" -> 31;
+                case "auto_smoking" -> 32;
+                case "manual_blasting" -> 40;
+                case "auto_blasting" -> 41;
+                default -> originalSlot++;
             };
-            button(10+i,ControlGlyph.setting(family),installed?State.ON:State.OFF,label+(installed?" [INSTALLED]":" [EMPTY]"),click->{
+            boolean specialist=family.equals("smoking")||family.equals("blasting");
+            var disc=Content.UPGRADES.get(id).get();
+            String label=(specialist||id.equals("manual_smelting")||id.equals("auto_smelting"))
+                    ?new ItemStack(disc).getHoverName().getString():id.replace('_',' ');
+            String title=label+(installed?" [INSTALLED]":" [EMPTY]");
+            Consumer<Click> change=click->{
                 if(Upgrades.change(bag,id,click.button==1))StoreMenu.bag(owner,new BagInventory(owner,bag.playerSlot),true);
-            },"Left: install from your inventory.","Right: uninstall and return the exact upgrade item.",
-                    "Server enabled: "+Config.get().upgrades.get(family));
+            };
+            String[] hints={"Left: install from your inventory.","Right: uninstall and return the exact upgrade item.",
+                    "Server enabled: "+Config.get().upgrades.get(family)};
+            if(specialist){
+                button(slot,disc,title,change,hints);
+                if(installed)display.getItem(slot).set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE,true);
+            }else button(slot,ControlGlyph.setting(family),installed?State.ON:State.OFF,title,change,hints);
         }
+        specialistCooker(33,"smoking","smoker","SmokeFilter");
+        specialistCooker(42,"blasting","blast furnace","BlastFilter");
         button(27,ControlGlyph.WARDROBE,"Wardrobe / wear / interiors",c->navigate(Page.WARDROBE),"Element, cosmetic skin and storage tier are independent.");
         button(21,ControlGlyph.UPGRADE_LIST,"Installed upgrade slots",null,Upgrades.installedItems(bag.stack).size()+" / "+BagInventory.data(bag.stack).getInt("UpgradeSlots"),"Automatic upgrades use the first upgraded backpack.","Automation pauses while a container screen is open.");
         button(23,ControlGlyph.PICKUP_FILTER,"Pickup filter",null,"Auto-stores items after normal vanilla pickup.","Empty filter: only existing identical stacks.",BagInventory.data(bag.stack).getList("PickupFilter",Tag.TAG_STRING).toString());
@@ -932,6 +948,24 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(50,ControlGlyph.EDIT_SMELT,"Toggle smelt filter: "+input,c->Upgrades.filter(bag,"SmeltFilter",input));
         button(51,ControlGlyph.STOP_SMELT,"Clear both filters / stop smelting",c->{CompoundTag tag=BagInventory.data(bag.stack);tag.remove("PickupFilter");BagInventory.data(bag.stack,tag);Upgrades.stopSmelt(bag);});
         button(53,ControlGlyph.CLOSE,"Close",c->owner.closeContainer());
+    }
+    private void specialistCooker(int slot,String family,String station,String filterKey){
+        boolean manual=Upgrades.active(bag,"manual_"+family);
+        if(!manual&&!Upgrades.active(bag,"auto_"+family))return;
+        String rules=BagInventory.data(bag.stack).getList(filterKey,Tag.TAG_STRING).toString();
+        button(slot,ControlGlyph.EDIT_SMELT,"Toggle "+family+" filter: "+input,
+                click->Upgrades.filter(bag,filterKey,input),"Type an item ID or select it in your inventory.",
+                "Inputs in priority order: "+rules,"Fuel ticks: "+Upgrades.fuelTicks(bag,family));
+        if(manual){
+            boolean queued=Upgrades.cookPending(bag,family);
+            button(slot+1,ControlGlyph.SMELTING,queued?State.READ_ONLY:State.NORMAL,
+                    queued?"One "+station+" cook queued":"Start one "+station+" cook",
+                    queued?null:click->owner.displayClientMessage(Component.literal(Upgrades.startCook(bag,family)),true),
+                    "Carry this backpack with the menu closed to cook one listed ingredient.");
+        }
+        button(slot+2,ControlGlyph.STOP_SMELT,"Clear "+family+" filter and stop",
+                click->Upgrades.stopCook(bag,family),"Clears this cooker's queue and input list.",
+                "Stored fuel and earned XP are kept.");
     }
     private void explainSlot(int slot,boolean dump){
         String report;

@@ -4,6 +4,21 @@
 
 **Done** means the described function exists in Anya. **Verified in modules.1** means the hosted checks below exercised it. **Next** identifies proposed development, **Optional** marks a later design choice, and **Blocked** names a missing dependency or deliberate exclusion. The version-pinned reference inventories the upstream Sophisticated Storage 1.6.18.2229 / Core 1.5.35.2473 upgrades, optional providers and recipes. [Storage upgrade reference](STORAGE_UPGRADE_REFERENCE.md)
 
+## Smoker and blast furnace progression in cookers.1
+
+The four specialist discs extend the verified smelter.1 build at `000606dc1d23`. [Smelter baseline](https://github.com/WeepingAngeIs/zSortange/actions/runs/44872333372)
+
+| Cooker | Manual disc | Auto disc |
+|---|---|---|
+| Smoker | Put a smoker between two copper ingots with a redstone torch directly below it. Install the disc, add an ingredient to the smoking filter and press **Start one smoker cook**. | Combine the Manual Smoker Upgrade with one clock and one copper grate. The Auto Smoker chooses the first available smoker recipe in your smoking filter order. |
+| Blast furnace | Use the same copper and torch pattern with a blast furnace in the middle. Install the disc, add an ingredient to the blasting filter and press **Start one blast furnace cook**. | Combine the Manual Blast Furnace Upgrade with one clock and one obsidian. The Auto Blast Furnace follows your blasting filter order. |
+
+Each family uses its own server recipes. In vanilla 1.21.1 a smoker cooks beef, a blast furnace turns raw iron into an ingot, and ordinary sand-to-glass belongs in the furnace. Server datapacks may add more recipes to each type. Plain coal or charcoal buys 800 cooking ticks in either specialist. The standard 100-tick recipes produce eight results per fuel item when run continuously.
+
+A bag with enough sockets can carry one furnace, one smoker and one blast furnace. Each keeps its own filter, queued ingredient, paid heat and fractional XP. They draw from the same physical inventory, checking supplies in furnace, smoker, then blast furnace order. A manual disc completes one requested item. A backpack must be carried with menus closed for either tier to cook. Clearing one specialist's filter stops its job and preserves its remaining heat and earned XP.
+
+For existing schema-2 settings, each missing specialist switch inherits the saved smelting value in memory. Operators can set smoking and blasting independently afterward. The seven original upgrade switches and saved furnace job fields keep their existing meanings.
+
 ## Furnace progression in smelter.1
 
 This candidate extends the combined modules.1 build at `c94d19253e38`. [Baseline receipt](https://github.com/WeepingAngeIs/zSortange/actions/runs/44869692420)
@@ -16,7 +31,7 @@ This candidate extends the combined modules.1 build at `c94d19253e38`. [Baseline
 
 The three discs share one smelting-family socket and the existing server switch. A full destination pauses cooking and fuel use. The manual job records its selected slot, exact ingredient and server recipe. Changing the queued ingredient or its recipe cancels that request. Removing its disc or clearing the filter cancels the request and keeps the remaining fuel and earned fractional XP. The bag uses the server’s furnace cooking time, output and remainders.
 
-Smoking and blasting remain separate planned families. Each will use its own recipe type and require its manual disc to craft its automatic disc. No new family settings are needed for this furnace batch.
+The original furnace batch uses the smelting server switch. The specialist batch above adds two independent switches.
 
 ## First batch in modules.1
 
@@ -47,8 +62,8 @@ The first two rows describe recipes in the checked JAR. Later arrows are propose
 | Tool resupply · bag, manual | **Done** `resupply_upgrade` (iron pickaxe). Moves one stored tool or sword into an empty selected hotbar slot. **Optional** preferred tool/condition. | Resupply + tripwire hook and grindstone → advanced resupply with tool class and minimum durability. Ordinary tool identity and enchantments travel with the item. |
 | Crafting workstation · bag | **Done** `crafting_upgrade` (crafting table). Opens the vanilla portable crafting menu, using the player inventory. **Optional** bag-backed ingredient planning. | Crafting + written recipe template (new blank plan item) and a hopper → advanced crafting with explicit ingredient preview and confirmed transfer from this bag, including remainders. |
 | Smelting · carried bag | **Implemented in smelter.1.** Manual cooks one deliberately queued ingredient. Auto continuously chooses by filter priority. The original automatic disc still chooses by bag-slot order. | Manual Smelter Upgrade + clock + powered rail → Auto Smelter Upgrade. All three use the same smelting switch and keep their exact disc on removal. |
-| Smoking · bag | **Next** separate smoker recipe type and manual station. Current smelting does not expose a smoker station. | Manual smoker module made with a smoker → automatic smoker using the manual module, clock and copper grate. Same fuel/remainder safeguards, smoker-specific recipes. |
-| Blasting · bag | **Next** separate blast-furnace recipe type and manual station. | Manual blast module made with a blast furnace → automatic blast module using the manual module, clock and blast-resistant lining (obsidian). No furnace/smoker recipe substitution. |
+| Smoking · carried bag | **Implemented in cookers.1.** One requested smoker recipe or continuous cooking in smoking-filter order. | Manual Smoker Upgrade + clock + copper grate → Auto Smoker Upgrade. |
+| Blasting · carried bag | **Implemented in cookers.1.** One requested blast furnace recipe or continuous cooking in blasting-filter order. | Manual Blast Furnace Upgrade + clock + obsidian → Auto Blast Furnace Upgrade. |
 | Item filter · authorized placed item host | **Next** dedicated input/output filtering. Existing hub exact-item/category routes and bag pickup filters already work within their own paths. | Basic filter uses an explicit item allowlist and one direction. Basic filter + comparator and name tag → advanced independent inbound/outbound item and tag rules. An empty filter cannot silently broaden access. |
 | Magnet · carried bag or explicitly authorized placed host | **Optional** separate world-item collector. Anya pickup has no attraction radius. | Basic contained-radius item collector → advanced magnet using basic magnet, lodestone and copper ingot, adding selectable radius and tag filters. Respect item ownership, pickup delay, capacity and claims. XP-orb collection waits for an XP store. |
 | Void · authorized item host | **Optional** intentionally destructive. Current pickups/routing do not delete stock. | Basic overflow discard → advanced using basic module, comparator and echo shard for a per-filter reserve and discard preview. Server default **off**. Both tiers require a nonempty explicit filter **and** deliberate enablement by an authorized owner. Blank, invalid or cleared filter means no deletion. Default operation handles new overflow only. No silent purge of existing contents. |
@@ -77,7 +92,7 @@ The first two rows describe recipes in the checked JAR. Later arrows are propose
 ## Save compatibility and acceptance
 
 1. **Old automatic smelters.** The furnace batch recognizes unmarked legacy jobs by their installed disc, saved recipe ID and exact ingredient components. It records the current recipe definition when a job advances. The manual disc has its own ID and requires an explicit request. The original loose disc still installs as automatic. Cooking progress does not move from one tier into a different recipe.
-2. **Protect existing packs.** Old schema-2 files were validated against an exact upgrade-key set. The first two advanced discs reuse their existing family switches. Old configurations load with the same seven keys. Treat a disabled basic family as disabled across new tiers unless a documented operator migration explicitly chooses otherwise. Preserve unknown/inactive installed disc data for recovery. Refuse conflicting tier installations and capacity changes that would invalidate contents.
+2. **Protect existing packs.** Old schema-2 files were validated against an exact upgrade-key set. The first two advanced discs reuse their existing family switches. The first two advanced discs use the seven original keys. The specialist candidate also accepts old seven-key files and fills missing specialist settings in memory. Treat a disabled basic family as disabled across new tiers unless a documented operator migration explicitly chooses otherwise. Preserve unknown/inactive installed disc data for recovery. Refuse conflicting tier installations and capacity changes that would invalidate contents.
 ### Verified in the original modules.1 hosted run
 
 - **Packaged JAR.** The runner checked the two shapeless recipe definitions, exact basic disc and three parts, family gates, item models and distinct 32×32 icons. It compared original recipes, skins and gameplay resources with the verified itemhelp.1 artifact and exercised the JAR's hover helper for all 36 items and both backpack placeholders.

@@ -37,6 +37,7 @@ public final class SmelterRestart {
     private static final BlockPos CHEST=new BlockPos(3,90,3);
     private static final Path ORACLE=Path.of("smelter-fixture-oracle.nbt");
     private static GroundSmelter ground;
+    private static SpecialistMenuClicks menuClicks;
     private static List<String> seedEvidence;
 
     @SubscribeEvent
@@ -59,7 +60,12 @@ public final class SmelterRestart {
         var player=new FakePlayer(level,new GameProfile(UUID.fromString("2c383843-bd5f-4ef4-a780-a4d79e472e0e"),"SmelterTester"));
         if(phase.equals("seed")){
             check(!Files.exists(ORACLE) && level.isEmptyBlock(CHEST),"Fresh seed world required");
+            SpecialistChecks.configCompatibility();
             run(player);
+            evidence.add("PASS Two preheated specialists finished competing for one water bucket in the same pass. Only the smoker produced an item, a bucket and XP. The blaster retained its paid heat.");
+            evidence.add("PASS Disposable config loader inherited historical enabled and disabled furnace switches, respected explicit specialist settings and preserved each original file. Independent runtime switches paused only the selected family.");
+            evidence.add("PASS Actual specialist upgrades controls: stale session denied, current manual Start queued, Stop preserved paid heat and the other family.");
+            evidence.add("PASS Manual/Auto smokers and blasters: exact crafting, cross-family recipe rejection, ordered filters, fuel, whole/fractional XP, component-preserving recovery, type-specific cooking results and bucket returns.");
             evidence.add("PASS Manual, Auto and legacy real crafting, missing-ingredient refusal and named disc install/removal.");
             evidence.add("PASS Carried automation, manual re-arming, filter order, legacy slot order, component substitution, duplicate identity, family disable, full output, fuel and fractional XP.");
             evidence.add("PASS Server upgrades menu slot 24 queued exactly one cook; retired sessions and stale controls could not arm it.");
@@ -68,10 +74,11 @@ public final class SmelterRestart {
             var chest=(ChestBlockEntity)level.getBlockEntity(CHEST);
             var oracle=new CompoundTag();
             for(int i=0;i<TIERS.size();i++)seed(player,chest,oracle,i);
+            for(int i=0;i<2;i++)SpecialistChecks.seed(player,chest,oracle,i);
             chest.setChanged();
             NbtIo.writeCompressed(oracle,ORACLE);
             evidence.add("PASS Three distinct partially cooked backpacks saved to an overworld chest, including pre-tier legacy fields.");
-            ground=new GroundSmelter(level);seedEvidence=evidence;
+            ground=new GroundSmelter(level);menuClicks=new SpecialistMenuClicks(level);seedEvidence=evidence;
             return;
         }else{
             check(Files.isRegularFile(ORACLE) && level.getBlockEntity(CHEST) instanceof ChestBlockEntity,
@@ -79,6 +86,8 @@ public final class SmelterRestart {
             var chest=(ChestBlockEntity)level.getBlockEntity(CHEST);
             var oracle=NbtIo.readCompressed(ORACLE,NbtAccounter.create(2_097_152L));
             for(int i=0;i<TIERS.size();i++)resume(player,chest,oracle,i);
+            for(int i=0;i<2;i++)SpecialistChecks.resume(player,chest,oracle,i);
+            evidence.add("PASS Two additional gold backpacks: all four specialist tiers and two co-installed furnaces survived the same disk restart. Staggered jobs kept distinct heat, inputs, filter rules and fractional XP. Stopping one family preserved both others.");
             evidence.add("PASS New server reopened the same chest. All three exact stacks matched the pre-shutdown oracle, including bag ID, module components, order, input, paid progress, fuel and fractional XP.");
             evidence.add("PASS Each partial recipe finished after six more carried steps and spent precisely 120 stored fuel ticks. Manual then waited; Auto and legacy continued.");
         }
@@ -87,8 +96,12 @@ public final class SmelterRestart {
 
     @SubscribeEvent
     public static void tick(ServerTickEvent.Post event)throws Exception{
-        if(ground==null || !ground.tick())return;
+        if(ground==null)return;
+        if(menuClicks!=null && menuClicks.tick())menuClicks=null;
+        if(!ground.tick())return;
+        check(menuClicks==null,"Specialist menu actions did not finish");
         ground=null;
+        seedEvidence.add("PASS Real upgrades menu slots 31/32/40/41 displayed, installed and returned each exact named disc. Slots 33/42 added and removed the typed rule only in the intended family, across separate server ticks.");
         seedEvidence.add("PASS Placed backpack: guest attach/open refused, owner attached the exact disc, out-of-range Start rejected, nearby owner queued one cook. After 220 actual ground ticks unchanged, pickup resumed it once.");
         finish(event.getServer(),"seed",seedEvidence);
     }
