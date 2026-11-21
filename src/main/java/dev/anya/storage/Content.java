@@ -71,7 +71,7 @@ public final class Content {
         for(String skin:dev.anya.storage.appearance.Looks.SKINS) if(!skin.equals("elemental"))STYLES.put("skin_"+skin,ITEMS.registerSimpleItem("skin_"+skin));
         ITEMS.registerSimpleBlockItem(HUB); ITEMS.registerSimpleBlockItem(CRATE); ITEMS.registerSimpleBlockItem(CUBE);
         ITEMS.registerSimpleBlockItem(SHELF); ITEMS.registerSimpleBlockItem(HATCH);
-        for(String id:Config.UPGRADE_IDS) UPGRADES.put(id,ITEMS.registerSimpleItem(id+"_upgrade",new Item.Properties().stacksTo(16)));
+        for(String id:Config.DISC_IDS) UPGRADES.put(id,ITEMS.registerSimpleItem(id+"_upgrade",new Item.Properties().stacksTo(16)));
         CONDITIONS.register("recipe_group",()->RecipeCondition.CODEC);
         TABS.register("storage",()->CreativeModeTab.builder().title(Component.literal("Anya Storage"))
             .icon(()->new ItemStack(BACKPACK.get())).displayItems((parameters,out)->{

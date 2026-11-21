@@ -44,5 +44,9 @@
   "tooltip.anyastorage.storage_core.1": "One core and four Nether Stars go into the optional UwU Storage Cube recipe.",
   "tooltip.anyastorage.storage_core.2": "Craft the core with eight diamond blocks around a netherite block.",
   "tooltip.anyastorage.dragon_victory_token.1": "Earn one by defeating the Ender Dragon in Survival during an End fight.",
-  "tooltip.anyastorage.dragon_victory_token.2": "Use four to craft the UwU Storage Cube when the server enables its token recipe."
+  "tooltip.anyastorage.dragon_victory_token.2": "Use four to craft the UwU Storage Cube when the server enables its token recipe.",
+  "tooltip.anyastorage.advanced_pickup_upgrade.1": "Moves matching items from your inventory into your backpack. Its pickup filter also accepts #item tags.",
+  "tooltip.anyastorage.advanced_pickup_upgrade.2": "Use one free upgrade slot. Remove Basic Pickup first if it is installed.",
+  "tooltip.anyastorage.advanced_compacting_upgrade.1": "Press Compact to pack up to eight groups of nine of the same material in one click.",
+  "tooltip.anyastorage.advanced_compacting_upgrade.2": "Use one free upgrade slot. Remove Basic Compacting first if it is installed."
 }

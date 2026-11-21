@@ -58,6 +58,10 @@ lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
 lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
 lang[f'item.{MOD}.creative_tablet']='UwU Tablet'
 lang[f'item.{MOD}.remote']='Cupid Tablet (Former Remote)'
+for family in ('pickup', 'compacting'):
+    name = 'advanced_' + family + '_upgrade'
+    lang[f'item.{MOD}.{name}'] = 'Advanced ' + family.title() + ' Upgrade'
+    js(f'assets/{MOD}/models/item/{name}.json', {'parent':'minecraft:item/generated','textures':{'layer0':f'{MOD}:item/{name}'}})
 lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
 lang.update({'subtitles.anyastorage.cube_open':'UwU storage cube opens','subtitles.anyastorage.cube_close':'UwU storage cube closes'})
 lang.update({'subtitles.anyastorage.frame_on':'Pocket window powers on','subtitles.anyastorage.frame_off':'Pocket window powers down'})
@@ -82,6 +86,17 @@ shaped('cupid_tablet','terminals',['IGI','ARA','IEI'],{
 shaped('storage_core','endgame',['DDD','DND','DDD'],{'D':'minecraft:diamond_block','N':'minecraft:netherite_block'})
 for u,ingredient in [('pickup','hopper'),('feeding','golden_carrot'),('refill','dropper'),('crafting','crafting_table'),('smelting','furnace'),('compacting','piston'),('resupply','iron_pickaxe')]:
     shaped(u+'_upgrade','upgrade.'+u,['PIP','IRI','PIP'],{'P':'minecraft:paper','I':'minecraft:'+ingredient,'R':'minecraft:redstone'})
+for family, parts in {
+    'pickup': ['amethyst_shard', 'name_tag', 'copper_ingot'],
+    'compacting': ['piston', 'comparator', 'amethyst_shard'],
+}.items():
+    name = 'advanced_' + family + '_upgrade'
+    js(f'data/{MOD}/recipe/{name}.json', {
+        'type':'minecraft:crafting_shapeless', 'category':'equipment',
+        'neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':'upgrade.'+family}],
+        'ingredients':[{'item':f'{MOD}:{family}_upgrade'}, *({'item':'minecraft:'+part} for part in parts)],
+        'result':{'id':f'{MOD}:{name}','count':1},
+    })
 js(f'data/{MOD}/recipe/backpack_upgrade.json',{'type':f'{MOD}:backpack_upgrade','category':'misc'})
 js(f'data/{MOD}/recipe/uwu_cube.json',{'type':f'{MOD}:cube','category':'misc'})
 js('data/minecraft/tags/block/mineable/pickaxe.json',{'replace':False,'values':[f'{MOD}:hub',f'{MOD}:chest',f'{MOD}:uwu_cube']})

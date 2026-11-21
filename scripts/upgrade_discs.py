@@ -86,6 +86,19 @@ def generate(write):
         pixels=badge((rim,face,edge,ink))
         glyph(pixels,rows,rgb(ink),rgb(edge),shift(rgb(face),-23))
         write(key+'_upgrade',pixels)
+    # Two raised tabs identify the advanced tier in monochrome as well.
+    advanced = {
+        'advanced_pickup': ('  ###  ', ' ## ## ', ' ##### ', '  ###  ', '   #   ', '       ', '+     +', ' +++++ '),
+        'advanced_compacting': ('  ###  ', '   #   ', '+++++++', '       ', ' ## ## ', ' ## ## ', '       ', '+++++++'),
+    }
+    for key, rows in advanced.items():
+        pixels = badge(('ae8bc8','423653','d6c5fd','b6eafe'))
+        glyph(pixels, rows, rgb('b7efff'), rgb('ffaed2'), rgb('30273e'))
+        for left in (10,18):
+            for y in range(0,5):
+                for x in range(left,left+4):
+                    pixels[y*32+x] = rgb('eddbff' if y < 2 else '846493')
+        write(key+'_upgrade',pixels)
     token=badge(('b38251','564354','ffe0a2','ffe7ac'))
     glyph(token,DRAGON,rgb('ffdc88'),rgb('694764'),rgb('3b2b46'))
     write('dragon_victory_token',token)

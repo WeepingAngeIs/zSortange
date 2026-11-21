@@ -7,7 +7,7 @@ public record RecipeCondition(String group) implements ICondition {
     public boolean test(IContext context) {
         Config.Data d=Config.get();
         if(group.equals("guide"))return d.expansion.tutorialRecovery;
-        if(group.startsWith("upgrade."))return Boolean.TRUE.equals(d.recipes.get("upgrades"))&&Boolean.TRUE.equals(d.upgrades.get(group.substring(8)));
+        if(group.startsWith("upgrade."))return Boolean.TRUE.equals(d.recipes.get("upgrades"))&&Boolean.TRUE.equals(d.upgrades.get(Config.upgradeFamily(group.substring(8))));
         if(!Boolean.TRUE.equals(d.recipes.get(group)))return false;
         return switch(group){case "backpacks"->d.backpacks&&d.tier("starter").enabled;case "hubs","terminals"->d.network;default->true;};
     }

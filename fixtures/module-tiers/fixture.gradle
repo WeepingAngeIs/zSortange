@@ -1,0 +1,10 @@
+// Only the second, hosted test invocation applies this script. The upload JAR is already archived.
+gradle.projectsEvaluated {
+    def project = gradle.rootProject
+    project.sourceSets.main.java.srcDir(project.file('fixtures/module-tiers/java'))
+    project.sourceSets.main.resources.srcDir(project.file('build/module-tier/resources'))
+    project.neoForge.runs.named('gameTestServer') {
+        systemProperty 'neoforge.enabledGameTestNamespaces', 'anyamoduletest'
+        gameDirectory = project.file('build/module-tier/game')
+    }
+}

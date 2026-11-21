@@ -1,0 +1,85 @@
+name: Advanced pickup and compacting modules
+on:
+  push:
+    branches: [experiment/module-tiers]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: module-tiers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-modules.1.jar
+      BASELINE: reference/anya-storage-plus-0.3.0-beta.7-itemhelp.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Retrieve the published itemhelp.1 JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-itemhelp.1
+          path: reference
+          github-token: ${{ github.token }}
+          run-id: 44863859043
+      - name: Build and freeze the playable before adding the test fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 4d125e5fc32fca35c511f6a65f4b8de8e5ff2a043e550423c9717d8352335567 "$BASELINE" | sha256sum --check
+          gradle --no-daemon --console=plain --max-workers=2 -I scripts/durable-audit-init.gradle jar durableAuditClasspath
+          mkdir -p upload build/module-tier/hover build/module-tier/resources/data/anyamoduletest/structure
+          cp "build/libs/$PLAYABLE" "upload/$PLAYABLE"
+          unzip -p "upload/$PLAYABLE" data/anyastorage/structure/empty.nbt > build/module-tier/resources/data/anyamoduletest/structure/empty.nbt
+          test -s build/module-tier/resources/data/anyamoduletest/structure/empty.nbt
+      - name: Verify packaged recipes, artwork and ordinary tooltips
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar=$(realpath "upload/$PLAYABLE")
+          if ! /usr/bin/python3 -c 'import PIL.Image'; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-pil
+          fi
+          /usr/bin/python3 -B fixtures/module-tiers/check_package.py "$jar" "$BASELINE" | tee upload/CHECKS.txt
+          vanilla="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$vanilla"
+          cp="$jar:$(cat build/durable-audit/classpath.txt):$vanilla"
+          javac --release 21 -proc:none -cp "$cp" -d build/module-tier/hover fixtures/item-help/HoverCheck.java
+          java -cp "build/module-tier/hover:$cp" dev.anya.storage.HoverCheck "$jar" | tee build/module-tier/hover.txt
+          grep -F '36 items and rendered both backpack value placeholders' build/module-tier/hover.txt
+          cat build/module-tier/hover.txt >> upload/CHECKS.txt
+      - name: Run only the module GameTests on the hosted NeoForge server
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --console=plain --max-workers=2 -I fixtures/module-tiers/fixture.gradle runGameTestServer | tee build/module-tier/console.log
+          python3 -B fixtures/module-tiers/check_game.py "upload/$PLAYABLE" build/module-tier/game/logs/latest.log | tee -a upload/CHECKS.txt
+      - name: Assemble the checked handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp docs/MODULE_PROGRESSION.md docs/STORAGE_UPGRADE_REFERENCE.md upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt && sha256sum --check SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-modules.1
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14
