@@ -49,6 +49,7 @@ final class NativeRoomBuild {
         var level=p.serverLevel();var state=level.getBlockState(pos);
         if(special(state) || !cell(p,pos,state,true,state.hasBlockEntity()))return false;
         BlockEntity entity=level.getBlockEntity(pos);
+        if(entity instanceof CameraDevices.Device device)return device.owned(p);
         if(entity instanceof Container inventory && !inventory.isEmpty())return false;
         // A non-container modded block entity may keep items in a capability; leave its data intact.
         if(entity!=null && !(entity instanceof Container))return false;

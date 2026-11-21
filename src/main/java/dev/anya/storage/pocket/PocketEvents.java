@@ -82,6 +82,11 @@ public final class PocketEvents {
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
         boolean denied=e.getUseBlock().isFalse() || e.getUseItem().isFalse();
+        if(!denied && !(e.getItemStack().getItem() instanceof net.minecraft.world.item.BlockItem)
+                && e.getLevel().getBlockEntity(e.getPos()) instanceof CameraDevices.Device device){
+            if(e.getEntity() instanceof ServerPlayer player)CameraDevices.use(player,device,e.getHand());
+            e.setCanceled(true);e.setCancellationResult(InteractionResult.sidedSuccess(e.getLevel().isClientSide));return;
+        }
         if(PocketService.inPocket(e.getLevel()) && !denied){
             var target=e.getLevel().getBlockState(e.getPos());
             var held=e.getItemStack();

@@ -80,6 +80,8 @@ for source in ('item_help_parts.json', 'item_help_devices.json'):
     if lang.keys() & help_lines.keys():
         raise ValueError(f'Duplicate language keys in {source}')
     lang.update(help_lines)
+for name,title in [('outdoor_camera','Outdoor Camera'),('wall_monitor','Wall Monitor'),('skyglass','Skyglass')]:
+    lang[f'block.{MOD}.{name}']=title
 js(f'assets/{MOD}/lang/en_us.json',lang)
 def shaped(name,group,pattern,key,count=1):
     js(f'data/{MOD}/recipe/{name}.json',{'type':'minecraft:crafting_shaped','category':'misc','neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':group}],'pattern':pattern,'key':{k:({'tag':v[1:]} if v.startswith('#') else {'item':v}) for k,v in key.items()},'result':{'id':f'{MOD}:{name}','count':count}})
@@ -154,3 +156,27 @@ for panel in ('skygrid_panel','skygrid_floor','skygrid_light'):
     png(f'assets/{MOD}/textures/block/{panel}.png',32,32,colors)
     js(f'assets/{MOD}/blockstates/{panel}.json',{'variants':{'':{'model':f'{MOD}:block/{panel}'}}})
     js(f'assets/{MOD}/models/block/{panel}.json',{'parent':'minecraft:block/cube_all','textures':{'all':f'{MOD}:block/{panel}'}})
+
+# The sensor and screens share the Skygrid casing. North is the active face before blockstate rotation.
+for device in ('outdoor_camera','wall_monitor','skyglass'):
+    pixels=[]
+    for y in range(16):
+        for x in range(16):
+            rim=min(x,y,15-x,15-y)
+            color=(27,29,40) if rim>1 else ((167,131,159) if rim==1 else (59,58,74))
+            if device=='outdoor_camera':
+                radius=(x-7.5)**2+(y-7.5)**2
+                if radius<27: color=(91,102,132) if radius>15 else (34,52,80)
+                if (x,y) in [(6,5),(7,5)]: color=(160,203,223)
+            elif y==13 and x in (3,4,5): color=(174,153,186)
+            pixels.append((*color,255))
+    png(f'assets/{MOD}/textures/block/{device}.png',16,16,pixels)
+    casing=f'{MOD}:block/skygrid_panel'
+    js(f'assets/{MOD}/models/block/{device}.json',{'parent':'minecraft:block/cube','textures':{
+        **dict.fromkeys(('down','up','south','west','east','particle'),casing),'north':f'{MOD}:block/{device}'}})
+    variants={}
+    for face,rotation in [('north',{}),('east',{'y':90}),('south',{'y':180}),('west',{'y':270}),('up',{'x':270}),('down',{'x':90})]:
+        variants['facing='+face]={'model':f'{MOD}:block/{device}',**rotation}
+    js(f'assets/{MOD}/blockstates/{device}.json',{'variants':variants})
+    js(f'assets/{MOD}/models/item/{device}.json',{'parent':f'{MOD}:block/{device}'})
+    js(f'data/{MOD}/loot_table/blocks/{device}.json',{'type':'minecraft:block','pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':f'{MOD}:{device}'}],'conditions':[{'condition':'minecraft:survives_explosion'}]}]})

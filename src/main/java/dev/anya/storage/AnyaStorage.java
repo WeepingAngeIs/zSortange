@@ -18,7 +18,7 @@ public final class AnyaStorage {
     public static final String ID="anyastorage";
     public static final Logger LOG=LogUtils.getLogger();
     public AnyaStorage(IEventBus bus) {
-        Config.init(); dev.anya.storage.pocket.PocketContent.register(bus); Content.register(bus); bus.addListener((net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent e)->e.enqueueWork(()->{if(BackpackAccess.accessories())dev.anya.storage.compat.AccessoriesBridge.register();})); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);bus.addListener(dev.anya.storage.guide.GuidePacket::register);
+        Config.init(); dev.anya.storage.pocket.CameraDevices.register(bus); bus.addListener(dev.anya.storage.pocket.CameraFeed::register); dev.anya.storage.pocket.PocketContent.register(bus); Content.register(bus); bus.addListener((net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent e)->e.enqueueWork(()->{if(BackpackAccess.accessories())dev.anya.storage.compat.AccessoriesBridge.register();})); bus.addListener(Packets::register);bus.addListener(ExpansionPackets::register);bus.addListener(dev.anya.storage.guide.GuidePacket::register);
         bus.addListener(dev.anya.storage.pocket.PocketPadPackets::register);
         bus.addListener(dev.anya.storage.pocket.RoomPlanPacket::register);
         bus.addListener(dev.anya.storage.pocket.RoomHologram::register);bus.addListener(dev.anya.storage.pocket.ExitGate::register);bus.addListener(dev.anya.storage.pocket.SkygridWalls::register);
