@@ -275,10 +275,11 @@ public final class PocketService {
         savePlayer(p);
         boolean owner=pocket.owner().equals(p.getUUID());
         String help;
-        if(owner){
+        var hub=home(p,pocket);
+        if(owner || (hub!=null && hub.permitsMember(p.getUUID(),BasePermissions.VISIT | BasePermissions.BUILD))){
             String reason=RoomEditor.setMode(p,true);
-            help=reason.isEmpty()?"Right-click a clear floor spot to place a chest. Left-click an empty extra chest to pick it up.":reason;
-        }else help="If you have Build access, open your linked tablet here to turn on Edit Mode.";
+            help=reason.isEmpty()?"Right-click with a block to build.":reason;
+        }else help="You are visiting. The room owner can grant Build access.";
         AnyaStorage.tell(p,"Welcome to Skygrid. "+help+" Walk through the glowing exit to go home. You can also right-click the lodestone or use Leave room on your tablet.");
     }
     public static void tick(MinecraftServer server){

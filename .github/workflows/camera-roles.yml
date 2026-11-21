@@ -1,0 +1,74 @@
+name: Skygrid Survival roles and CCTV player controls
+on:
+  push:
+    branches: [experiment/camera-roles]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  playing:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    env:
+      PREVIOUS: anya-storage-plus-0.3.0-beta.7-skyglass.3.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-cctv.1.jar
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-skyglass.3
+          run-id: 44942218262
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Verify the prior artifact and prepare the hosted clients
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = b759c90fd52bf216c9b476884a10d988efedb865
+          (cd reference && echo "8e5032899baf4c70c6a6746f82178afe843f1569ebc79f958a46d38c800029cc  $PREVIOUS" | sha256sum -c)
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri python3-pil
+          mkdir -p upload
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=baseline -ProlePlayable="$PWD/reference/$PREVIOUS" prepareRoleTrial
+      - name: Reproduce the incoming Build guest click on the original JAR
+        run: |
+          set -euo pipefail
+          python3 -B fixtures/camera-roles/run.py baseline | tee upload/BASELINE.txt
+      - name: Build CCTV candidate and prepare owner, builder and visitor
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          cp "build/libs/$PLAYABLE" upload/
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=candidate -ProlePlayable="$PWD/upload/$PLAYABLE" prepareRoleTrial
+      - name: Exercise the three Survival players and measure their captures
+        run: |
+          set -euo pipefail
+          python3 -B fixtures/camera-roles/run.py candidate | tee upload/CHECKS.txt
+          /usr/bin/python3 -B fixtures/camera-roles/check_captures.py "upload/$PLAYABLE" | tee -a upload/CHECKS.txt
+          mkdir -p upload/captures
+          cp build/role-check/candidate/control/{*.png,*.ok,pixel-samples.json} upload/captures/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Show the current fixture step on failure
+        if: failure()
+        run: |
+          for f in build/role-check/*/control/{step.txt,*status,FAIL-*} build/role-check/*/*/console.log; do
+            if test -f "$f"; then echo "$f"; tail -35 "$f" | cut -c1-900; echo; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-cctv.1
+          path: upload/
+          retention-days: 14
+

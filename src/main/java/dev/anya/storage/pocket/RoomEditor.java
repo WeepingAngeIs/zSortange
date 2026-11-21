@@ -63,7 +63,7 @@ public final class RoomEditor {
     static boolean canAddChest(int registeredChests, int configuredLimit) {
         return registeredChests >= 4 && registeredChests < Math.min(8, configuredLimit);
     }
-    public static String help(){return "Room editing enabled = "+enabled()+". Open your linked tablet inside the room to turn on editing. Right-click with a plain supported block in your main hand to place it. Left-click to return a block to your inventory. Place a plain Labelled Storage Chest on clear room floor.";}
+    public static String help(){return "Room editing enabled = "+enabled()+". Enter with Visit and Build access to edit. Your linked tablet can pause or resume editing. Right-click with a plain supported block in your main hand to place it. Left-click to return a block to your inventory. Place a plain Labelled Storage Chest on clear room floor.";}
     // Server commands use the current pose, never a previous-tick interpolated camera.
     public static BlockHitResult looking(ServerPlayer p){
         BlockHitResult hit = loadedHit(p);

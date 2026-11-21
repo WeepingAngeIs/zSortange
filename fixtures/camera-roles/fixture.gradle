@@ -1,0 +1,51 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def flavor = p.property('roleTrial')
+    def root = p.file("build/role-check/" + flavor)
+    def probe = p.sourceSets.create('roleProbe')
+    probe.java.srcDir 'fixtures/camera-roles/java'
+    probe.resources.srcDir 'fixtures/camera-roles/resources'
+    p.neoForge.addModdingDependenciesTo(probe)
+    def playable = p.file(p.property('rolePlayable'))
+    p.dependencies.add(probe.compileOnlyConfigurationName,p.files(playable))
+    def fixture = p.tasks.register('roleProbeJar',Jar) {
+        dependsOn probe.classesTaskName
+        from probe.output
+        archiveBaseName='hosted-role-probe'
+        archiveVersion='1'
+        destinationDirectory=p.layout.buildDirectory.dir('role-check/probe')
+    }
+    def runtime = p.sourceSets.create('roleRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(playable,fixture))
+    def roles = ['Server','CamOwner','RoomBuilder']
+    if(flavor!='baseline') roles += 'RoomVisitor'
+    def tasks = []
+    roles.each { role ->
+        def dir = new File(root,role)
+        p.neoForge.runs.create("role"+role) {
+            if(role=='Server'){server();programArgument '--nogui'}
+            else {
+                client()
+                programArguments.addAll '--username',role,'--quickPlayMultiplayer','127.0.0.1:25574','--width','720','--height','480'
+            }
+            sourceSet=runtime
+            loadedMods=[]
+            gameDirectory=dir
+            systemProperty 'roomroles.trial',flavor
+            systemProperty 'roomroles.control',new File(root,'control').absolutePath
+            systemProperty 'roomroles.name',role
+            jvmArguments.addAll '-XX:ActiveProcessorCount=2','-Xmx1300m','-Xms160m'
+        }
+        tasks << p.tasks.named('createRole'+role+'LaunchScript')
+    }
+    p.tasks.register('prepareRoleTrial'){
+        dependsOn fixture,tasks
+        doLast{
+            roles.eachWithIndex{ role,i ->
+                def dir=new File(root,role)
+                dir.mkdirs()
+                new File(dir,'launch.txt').text=tasks[i].get().launchScript.get().asFile.absolutePath
+            }
+        }
+    }
+}}

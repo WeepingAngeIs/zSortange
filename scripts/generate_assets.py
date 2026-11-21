@@ -171,12 +171,16 @@ for device in ('outdoor_camera','wall_monitor','skyglass'):
             elif y==13 and x in (3,4,5): color=(174,153,186)
             pixels.append((*color,255))
     png(f'assets/{MOD}/textures/block/{device}.png',16,16,pixels)
-    casing=f'{MOD}:block/skygrid_panel'
-    js(f'assets/{MOD}/models/block/{device}.json',{'parent':'minecraft:block/cube','textures':{
-        **dict.fromkeys(('down','up','south','west','east','particle'),casing),'north':f'{MOD}:block/{device}'}})
-    variants={}
-    for face,rotation in [('north',{}),('east',{'y':90}),('south',{'y':180}),('west',{'y':270}),('up',{'x':270}),('down',{'x':90})]:
-        variants['facing='+face]={'model':f'{MOD}:block/{device}',**rotation}
-    js(f'assets/{MOD}/blockstates/{device}.json',{'variants':variants})
-    js(f'assets/{MOD}/models/item/{device}.json',{'parent':f'{MOD}:block/{device}'})
+    if device=='outdoor_camera':
+        import camera_model
+        camera_model.generate(js,png,MOD)
+    else:
+        casing=f'{MOD}:block/skygrid_panel'
+        js(f'assets/{MOD}/models/block/{device}.json',{'parent':'minecraft:block/cube','textures':{
+            **dict.fromkeys(('down','up','south','west','east','particle'),casing),'north':f'{MOD}:block/{device}'}})
+        variants={}
+        for face,rotation in [('north',{}),('east',{'y':90}),('south',{'y':180}),('west',{'y':270}),('up',{'x':270}),('down',{'x':90})]:
+            variants['facing='+face]={'model':f'{MOD}:block/{device}',**rotation}
+        js(f'assets/{MOD}/blockstates/{device}.json',{'variants':variants})
+        js(f'assets/{MOD}/models/item/{device}.json',{'parent':f'{MOD}:block/{device}'})
     js(f'data/{MOD}/loot_table/blocks/{device}.json',{'type':'minecraft:block','pools':[{'rolls':1,'entries':[{'type':'minecraft:item','name':f'{MOD}:{device}'}],'conditions':[{'condition':'minecraft:survives_explosion'}]}]})

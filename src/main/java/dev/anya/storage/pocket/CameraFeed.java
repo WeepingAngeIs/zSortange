@@ -87,7 +87,7 @@ public final class CameraFeed {
                 if(Math.floorMod(e.getServer().getTickCount()+p.getId(),12)!=0)continue;
                 var level=(ServerLevel)cam.getLevel();
                 boolean sky=d.getBlockState().is(CameraDevices.SKY.get());
-                if(sky && normal(cam).y!=1){send(p,d,-1,null,new int[0]);continue;}
+                if(sky && OutdoorCameraBlock.lensDirection(cam.getBlockState())!=Direction.UP){send(p,d,-1,null,new int[0]);continue;}
                 var atmosphere=SourceSky.observe(level,cam.getBlockPos());
                 int[] pixels=capture(p,level,cam,sky,atmosphere);
                 if(source(p,d)!=cam || Arrays.stream(pixels).allMatch(pixel->pixel==UNKNOWN)){send(p,d,-1,null,new int[0]);continue;}
@@ -103,8 +103,8 @@ public final class CameraFeed {
     }
     private static int[] capture(ServerPlayer p,ServerLevel level,CameraDevices.Device cam,boolean sky,SourceSky atmosphere){
         var loaded=new LoadedPocketBlocks(level);
-        var face=cam.getBlockState().getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING);
-        var eye=Vec3.atCenterOf(cam.getBlockPos()).add(normal(cam).scale(.58));
+        var face=OutdoorCameraBlock.lensDirection(cam.getBlockState());
+        var eye=Vec3.atCenterOf(cam.getBlockPos()).add(Vec3.atLowerCornerOf(face.getNormal()).scale(.58));
         var access=new HashMap<BlockPos,Boolean>();var pixels=new int[256];
         var target=!sky && cam.glances && Math.floorMod(level.getGameTime(),300)<80?glance(p,level,eye):null;
         var forward=target==null?null:target.getEyePosition().subtract(eye).normalize();
