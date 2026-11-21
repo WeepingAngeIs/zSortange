@@ -118,7 +118,7 @@ public final class RoomEditor {
         var room = record(p);
         var returning = PocketService.ledger(p.getServer()).returning(p.getUUID());
         if (returning == null || !room.id().equals(returning.pocket()) || PocketService.recovering(p.getUUID()))
-            throw new IOException("Enter this pocket through its Home Void Cube to edit.");
+            throw new IOException("Enter this pocket through its Skygrid Cube to edit.");
         var access = Access.capture(p,room);
         if (!access.hub().permits(p,BasePermissions.VISIT | BasePermissions.BUILD))
             throw new IOException("The pocket owner must grant both Visit and Build.");

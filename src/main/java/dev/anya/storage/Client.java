@@ -275,6 +275,8 @@ public final class Client {
                 return true;
             }
             if(button==0&&x>=12&&x<90){
+                if(menu.guestControl() && y>=176 && y<194){send("wallpaper","",0);return true;}
+                if(menu.guestControl() && y>=199 && y<217){send("wall_photo","",0);return true;}
                 if(y>=127&&y<145&&menu.guestControl()){press(96);send("exit_color","",0);return true;}
                 if(y>=153&&y<171&&menu.localRoomPanel()){
                     if(menu.guestControl()){press(90);send("remove_guests","",0);}
@@ -488,8 +490,10 @@ public final class Client {
             if(menu.guestControl())option(g,90,ControlGlyph.REMOVE_MEMBER,"Remove guests",153,ControlGlyph.State.NORMAL,x,y);
             else if(menu.localRoomPanel())option(g,90,ControlGlyph.POCKET_EDIT,"Room plan",153,menu.roomEditAllowed()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
             else option(g,90,ControlGlyph.WARDROBE,"Wardrobe",153,menu.backpackView()?ControlGlyph.State.NORMAL:ControlGlyph.State.DISABLED,x,y);
-            option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
-            option(g,92,ControlGlyph.IMAGE,"Images",199,ClientInteriors.imagesVisible()?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            if(menu.guestControl())option(g,91,ControlGlyph.SYMBOL,"Wallpaper",176,ControlGlyph.State.NORMAL,x,y);
+            else option(g,91,ControlGlyph.PARTICLES,"Particles",176,ClientLooks.options.particles?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
+            if(menu.guestControl())option(g,92,ControlGlyph.IMAGE,"Wall image",199,ControlGlyph.State.NORMAL,x,y);
+            else option(g,92,ControlGlyph.IMAGE,"Images",199,ClientInteriors.imagesVisible()?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
             option(g,93,ControlGlyph.MODELS,"Models",222,ClientLooks.options.models?ControlGlyph.State.ON:ControlGlyph.State.OFF,x,y);
             int hover=slotAt(x,y);
             for(int i=0;i<shown();i++){

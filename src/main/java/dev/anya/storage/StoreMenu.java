@@ -172,7 +172,7 @@ public final class StoreMenu extends AbstractContainerMenu {
                 | (opening==Opening.CHEST?PHYSICAL_CHEST:0);
         p.openMenu(new SimpleMenuProvider((id,inv,ignored)->{
             StoreMenu menu=new StoreMenu(id,inv,p,Page.CHEST,null,null,null,null,flags);menu.pocket=view;menu.render();menu.bump();return menu;
-        },Component.literal(view.localTablet()?"Home Void Cube":"Experimental pocket storage")));
+        },Component.literal(view.localTablet()?"Skygrid Cube":"Skygrid storage")));
     }
     public boolean hasPocket(UUID id){return pocket!=null&&pocket.id().equals(id);}
     public static void route(ServerPlayer p,StorageEntity hub,BlockPos pos){if(hub.ownedBy(p))open(p,Page.ROUTE,null,hub,null,pos.immutable());}
@@ -347,6 +347,9 @@ public final class StoreMenu extends AbstractContainerMenu {
                 viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
             }
             else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
+            else if(isStoragePage() && pocket!=null && pocket.localTablet() && (packet.verb().equals("wallpaper") || packet.verb().equals("wall_photo"))){
+                dev.anya.storage.pocket.SkygridWalls.cycle(owner,pocket.id(),packet.verb().equals("wall_photo"));
+            }
             else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("exit_color") && packet.value()==0){
                 dev.anya.storage.pocket.ExitGate.cycle(owner,pocket.id());
             }
@@ -472,7 +475,7 @@ public final class StoreMenu extends AbstractContainerMenu {
             return;
         }
         boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
-        String upgradeHint = "Enter through your linked Home Void Cube. Owners can build on arrival when room editing is enabled.";
+        String upgradeHint = "Enter through your linked Skygrid Cube. Owners can build on arrival when room editing is enabled.";
         String upgradeAccess = "Room editing must be enabled. Requires Build, View, Deposit and Withdraw.";
         String upgradeCommand = "Hold a plain Labelled Storage Chest and right-click a clear floor spot.";
         Consumer<Click> action = c -> {

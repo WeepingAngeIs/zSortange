@@ -160,7 +160,7 @@ public final class PocketService {
     public static void enter(ServerPlayer p,PocketContent.EntranceEntity entrance){
         try{
             if(!enabled())throw new IOException(disabledHint());
-            if(entrance.pocket==null)throw new IOException("Bind a Cupid Tablet or UwU Tablet to the home hub, then sneak-use it on this Home Void Cube.");
+            if(entrance.pocket==null)throw new IOException("Bind a Cupid Tablet or UwU Tablet to the home hub, then sneak-use it on this Skygrid Cube.");
             var l=ledger(p.getServer());var r=l.get(entrance.pocket);
             if(r==null||entrance.getLevel()!=p.level()||r.anchor().entrance()!=entrance.getBlockPos().asLong())throw new IOException("Unrecognized entrance identity");
             if(l.returning(p.getUUID())!=null){recover(p);return;}
@@ -222,12 +222,12 @@ public final class PocketService {
         for(Ticket t:desired){ServerLevel l=server.getLevel(t.dimension());if(l==null)continue;if(!TICKETS.contains(t)||clock%20==0)l.getChunkSource().addRegionTicket(TICKET,t.chunk(),2,t.pocket());TICKETS.add(t);}
     }
     private static List<Placement> shell(PocketLedger.Pocket p){
-        BlockState floor=switch(p.theme()){case "beach"->Blocks.SMOOTH_SANDSTONE.defaultBlockState();case "wasteland"->Blocks.POLISHED_BLACKSTONE.defaultBlockState();default->Blocks.BLACK_CONCRETE.defaultBlockState();};
-        BlockState wall=switch(p.theme()){case "beach"->Blocks.LIGHT_BLUE_STAINED_GLASS.defaultBlockState();case "wasteland"->Blocks.BROWN_STAINED_GLASS.defaultBlockState();default->Blocks.PURPLE_STAINED_GLASS.defaultBlockState();};
+        BlockState floor=PocketContent.TILE.get().defaultBlockState();
+        BlockState wall=PocketContent.PANEL.get().defaultBlockState();
         List<Placement> out=new ArrayList<>();
         for(int x=-1;x<=32;x++)for(int z=-1;z<=32;z++){
             out.add(new Placement(new BlockPos(p.x()+x,64,p.z()+z),floor));out.add(new Placement(new BlockPos(p.x()+x,97,p.z()+z),Blocks.BARRIER.defaultBlockState()));
-            if(x==-1||x==32||z==-1||z==32)for(int y=65;y<97;y++)out.add(new Placement(new BlockPos(p.x()+x,y,p.z()+z),y==78&&(x+z)%8==0?Blocks.SEA_LANTERN.defaultBlockState():wall));
+            if(x==-1||x==32||z==-1||z==32)for(int y=65;y<97;y++)out.add(new Placement(new BlockPos(p.x()+x,y,p.z()+z),(y==68 || y==81) && Math.floorMod(x+z,8)==0?PocketContent.LIGHT.get().defaultBlockState():wall));
         }
         return out;
     }
@@ -279,7 +279,7 @@ public final class PocketService {
             String reason=RoomEditor.setMode(p,true);
             help=reason.isEmpty()?"Right-click a clear floor spot to place a chest. Left-click an empty extra chest to pick it up.":reason;
         }else help="If you have Build access, open your linked tablet here to turn on Edit Mode.";
-        AnyaStorage.tell(p,"Welcome to Home Void. "+help+" Walk through the glowing exit to go home. You can also right-click the lodestone or use Leave room on your tablet.");
+        AnyaStorage.tell(p,"Welcome to Skygrid. "+help+" Walk through the glowing exit to go home. You can also right-click the lodestone or use Leave room on your tablet.");
     }
     public static void tick(MinecraftServer server){
         clock++;lastPreparedBlocks=0;
@@ -294,7 +294,7 @@ public final class PocketService {
             if(valid&&pending==null&&l.kind()==PocketLeases.Kind.REMOTE)valid=p.containerMenu instanceof StoreMenu m&&m.hasPocket(l.pocket());
             if(valid)valid=LEASES.renew(l.player(),r.epoch(),clock,80);
             if(!valid)endLease(l.player(),p);
-            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT){RoomHologram.visit(p,r,clock);ExitGate.visit(p,r,clock);}
+            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT){SkygridWalls.visit(p,r,clock);RoomHologram.visit(p,r,clock);ExitGate.visit(p,r,clock);}
         }
         LEASES.expire(clock);syncTickets(server);
         // One pocket receives preparation work per tick, never one budget per viewer.
@@ -413,7 +413,7 @@ public final class PocketService {
         LEASES.release(player);
         RoomEditor.endVisit(player);
         RoomPlans.endVisit(currentServer,player);
-        ExitGate.end(player);
+        SkygridWalls.end(player,currentServer);ExitGate.end(player);
         RoomHologram.end(currentServer,player);
     }
     public static void closeView(ServerPlayer p){var l=LEASES.get(p.getUUID());if(l!=null&&l.kind()==PocketLeases.Kind.REMOTE)release(p.getUUID());}

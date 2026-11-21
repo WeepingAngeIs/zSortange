@@ -27,6 +27,9 @@ import java.util.function.Supplier;
 public final class PocketContent {
     public static final DeferredBlock<EntranceBlock> ENTRANCE=Content.BLOCKS.register("home_void_cube",()->new EntranceBlock(BlockBehaviour.Properties.of().strength(8,3600000).lightLevel(s->6).pushReaction(PushReaction.BLOCK)));
     public static final DeferredItem<BlockItem> ITEM=Content.ITEMS.register("home_void_cube",()->new BlockItem(ENTRANCE.get(),new Item.Properties().stacksTo(1)));
+    public static final DeferredBlock<Block> PANEL=Content.BLOCKS.register("skygrid_panel",()->new Block(BlockBehaviour.Properties.of().strength(3).lightLevel(s->4)));
+    public static final DeferredBlock<Block> TILE=Content.BLOCKS.register("skygrid_floor",()->new Block(BlockBehaviour.Properties.of().strength(3)));
+    public static final DeferredBlock<Block> LIGHT=Content.BLOCKS.register("skygrid_light",()->new Block(BlockBehaviour.Properties.of().strength(3).lightLevel(s->12)));
     private static final DeferredRegister<BlockEntityType<?>> ENTITIES=DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE,AnyaStorage.ID);
     private static final DeferredRegister<RecipeSerializer<?>> RECIPES=DeferredRegister.create(Registries.RECIPE_SERIALIZER,AnyaStorage.ID);
     public static final Supplier<BlockEntityType<EntranceEntity>> ENTITY=ENTITIES.register("home_void_cube",()->BlockEntityType.Builder.of(EntranceEntity::new,ENTRANCE.get()).build(null));

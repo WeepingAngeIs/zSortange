@@ -1,0 +1,32 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def probe=p.sourceSets.create('imageProbe')
+    probe.java.srcDir 'fixtures/skygrid/java'
+    probe.resources.srcDir 'fixtures/skygrid/resources'
+    p.neoForge.addModdingDependenciesTo(probe)
+    def playable=p.file(p.property('imagePlayable'))
+    p.dependencies.add(probe.compileOnlyConfigurationName,p.files(playable))
+    def jar=p.tasks.register('imageProbeJar',Jar) {
+        dependsOn probe.classesTaskName
+        from probe.output
+        archiveBaseName='hosted-image-probe'
+        destinationDirectory=p.layout.buildDirectory.dir('skygrid/fixture')
+    }
+    def runtime=p.sourceSets.create('imageRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(playable,jar))
+    ['Server','Client'].each { side ->
+        def dir=p.file('build/skygrid/'+side)
+        p.neoForge.runs.create('image'+side) {
+            if(side=='Server'){server();programArgument '--nogui'}
+            else {client();programArguments.addAll '--username','ImageGuest','--quickPlayMultiplayer','127.0.0.1:25574','--width','960','--height','640'}
+            sourceSet=runtime
+            loadedMods=[]
+            gameDirectory=dir
+            jvmArguments.addAll '-Xmx1600m','-Xms256m'
+        }
+        p.tasks.register('prepareImage'+side){
+            dependsOn jar,'createImage'+side+'LaunchScript'
+            doLast{dir.mkdirs();new File(dir,'launch.txt').text=p.tasks.named('createImage'+side+'LaunchScript').get().launchScript.get().asFile.absolutePath}
+        }
+    }
+}}

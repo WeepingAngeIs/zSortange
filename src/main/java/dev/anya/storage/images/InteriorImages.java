@@ -134,12 +134,25 @@ public final class InteriorImages {
         if(!(attached||moderation)||!canView(p,e,moderation)){reply(p,3,w.token(),0,0,"Image unavailable or not shared with you",new byte[0]);return;}
         recipients.computeIfAbsent(e.id,id->new HashSet<>()).add(p.getUUID());
         if(w.sequence()==1){reply(p,4,e.id,0,0,"Access renewed",new byte[0]);return;}
+        byte[] bytes=readBounded(e);
+        int parts=(bytes.length+16383)/16384;
+        for(int i=0;i<parts;i++)reply(p,1,e.id,i,parts,"",Arrays.copyOfRange(bytes,i*16384,Math.min(bytes.length,(i+1)*16384)));
+    }
+    public static boolean wallAllowed(ServerPlayer p,UUID owner,UUID id){
+        if(id==null || !ExpansionRules.get().imagesEnabled)return false;
+        try{init(p.getServer());Entry e=entries.get(id);return e!=null && owner.equals(e.owner) && canView(p,e,false);}
+        catch(IOException unavailable){return false;}
+    }
+    public static byte[] wallBytes(ServerPlayer p,UUID owner,UUID id)throws IOException{
+        if(!wallAllowed(p,owner,id))throw new IOException("Wall image is private");
+        return readBounded(entries.get(id));
+    }
+    private static byte[] readBounded(Entry e)throws IOException{
         Path path=file(e.id);if(Files.isSymbolicLink(path)||!Files.isRegularFile(path,LinkOption.NOFOLLOW_LINKS)||Files.size(path)!=e.bytes)throw new IOException("Image unavailable");
         byte[] bytes;try(InputStream input=Files.newInputStream(path)){bytes=input.readNBytes(PngSanitizer.MAX_OUTPUT+1);}if(bytes.length!=e.bytes)throw new IOException("Image unavailable");
         long second=System.nanoTime()/1_000_000_000L;if(second!=downloadSecond){downloadSecond=second;downloadBytes=0;}
         if(downloadBytes+bytes.length>1048576)throw new IOException("Image download budget busy; retry shortly");downloadBytes+=bytes.length;
-        int parts=(bytes.length+16383)/16384;
-        for(int i=0;i<parts;i++)reply(p,1,e.id,i,parts,"",Arrays.copyOfRange(bytes,i*16384,Math.min(bytes.length,(i+1)*16384)));
+        return bytes;
     }
     public static String manage(ServerPlayer p,UUID id,String action,UUID viewer){
         try{

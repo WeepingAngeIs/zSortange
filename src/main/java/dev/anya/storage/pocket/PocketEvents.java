@@ -123,7 +123,7 @@ public final class PocketEvents {
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void entityUse(PlayerInteractEvent.EntityInteract e){if(PocketService.inPocket(e.getLevel()))e.setCanceled(true);}
     private static PocketContent.EntranceEntity lookingAt(ServerPlayer p){
         if(p.pick(6,0,false) instanceof BlockHitResult hit&&p.serverLevel().hasChunkAt(hit.getBlockPos())&&p.serverLevel().getBlockEntity(hit.getBlockPos()) instanceof PocketContent.EntranceEntity e)return e;
-        throw new IllegalArgumentException("Look at your nearby home void cube");
+        throw new IllegalArgumentException("Look at your nearby Skygrid Cube");
     }
     @SubscribeEvent public static void commands(RegisterCommandsEvent e){
         e.getDispatcher().register(Commands.literal("anya").then(StorageSettingsCommands.pocketCommands()
