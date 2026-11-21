@@ -56,6 +56,7 @@ final class ChestPanel {
     Box search(){return layout.screen(layout.search());}
     Box displayButton(){return layout.screen(layout.tab(false));}
     Box inventory(int i){return i>=0&&i<36?layout.screen(layout.inventory(i)):EMPTY;}
+    Box footer(){return layout.screen(layout.footer());}
     Box cell(int ordinal){return ordinal>=0&&ordinal<layout.rows()*layout.columns()?layout.screen(layout.cell(ordinal)):EMPTY;}
     Box control(int id){Box box=buttonBox(id);return box==null?EMPTY:layout.screen(box);}
     boolean settingsOpen(){return drawer==Drawer.SETTINGS;}
@@ -234,7 +235,7 @@ final class ChestPanel {
     void render(GuiGraphics g,Font font,int mx,int my,float partial,EditBox input,int[] colors){
         int x=layout.localX(mx),y=layout.localY(my),hover=hit(x,y);
         enter(g);
-        int w=layout.width(),h=layout.height();
+        int w=layout.width();
         String title=(menu.cubeView()?Content.CUBE:Content.CRATE).get().getName().getString();
         int titleWidth=layout.tab(true).x()-13-(screen.cameoVisible()?26:0);
         float titleScale=Math.min(1,titleWidth/(float)Math.max(1,font.width(title)));
@@ -269,7 +270,8 @@ final class ChestPanel {
             ItemStack s=menu.getSlot(id).getItem();
             if(!s.isEmpty()){g.renderItem(s,b.x(),b.y());g.renderItemDecorations(font,s,b.x(),b.y());}
         }
-        g.drawString(font,"Left: stack · Right: one",9,h-12,0xffc8bccd,false);
+        Box footer=layout.footer();
+        g.drawString(font,"Left: stack · Right: one",footer.x(),footer.y(),0xffc8bccd,false);
         if(drawer!=Drawer.CLOSED)drawDrawer(g,font,hover,colors);
         g.pose().popPose();
         paintedRevision=menu.revision();

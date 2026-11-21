@@ -97,5 +97,19 @@ def check(candidate_file, baseline_file):
     print("PASS modules: both shapeless crafting recipes consume their precise basic disc and three parts; each has its family gate, own model and distinct visible 32x32 icon.")
 
 
+def check_chest_client(candidate_file, chest_file):
+    # Compare the packaged client interaction, layout and EMI classes exercised by the two-client run.
+    pattern = re.compile(r"dev/anya/storage/(?:Client|ChestPanel|ui/ChestLayout|ui/StorageGrid|compat/StorageEmiPlugin)(?:\$[^/]*)?\.class$")
+    with ZipFile(chest_file) as reference, ZipFile(candidate_file) as candidate:
+        expected = {name for name in reference.namelist() if pattern.fullmatch(name)}
+        assert "dev/anya/storage/Client$Screen.class" in expected
+        assert "dev/anya/storage/compat/StorageEmiPlugin.class" in expected
+        assert expected == {name for name in candidate.namelist() if pattern.fullmatch(name)}
+        for name in sorted(expected):
+            assert candidate.read(name) == reference.read(name), name
+    print(f"PASS chest: {len(expected)} packaged client, layout and EMI classes match the two-client check byte for byte.")
+
+
 if __name__ == "__main__":
     check(Path(sys.argv[1]), Path(sys.argv[2]))
+    check_chest_client(Path(sys.argv[1]), Path(sys.argv[3]))

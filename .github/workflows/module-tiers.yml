@@ -37,6 +37,13 @@ jobs:
           path: reference
           github-token: ${{ github.token }}
           run-id: 44863859043
+      - name: Retrieve the chest verified with and without EMI
+        uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-chestemi.1
+          path: reference/chest
+          github-token: ${{ github.token }}
+          run-id: 44869319992
       - name: Build and freeze the playable before adding the test fixture
         shell: bash
         run: |
@@ -56,7 +63,9 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -y -qq python3-pil
           fi
-          /usr/bin/python3 -B fixtures/module-tiers/check_package.py "$jar" "$BASELINE" | tee upload/CHECKS.txt
+          (cd reference/chest && sha256sum --check SHA256SUMS.txt)
+          test "$(cat reference/chest/SOURCE_COMMIT.txt)" = 026672fad22c64e3f5b99798e63e97a5cb250163
+          /usr/bin/python3 -B fixtures/module-tiers/check_package.py "$jar" "$BASELINE" reference/chest/*.jar | tee upload/CHECKS.txt
           vanilla="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
           test -f "$vanilla"
           cp="$jar:$(cat build/durable-audit/classpath.txt):$vanilla"

@@ -187,6 +187,7 @@ public final class Client {
         public List<StorageGrid.Box> emiExtraBounds(){reflow();return menu.chestView()?chest.extra():List.of();}
         public StorageGrid.Box chestCellBounds(int ordinal){return menu.chestView()?chest.cell(ordinal):ChestPanel.EMPTY;}
         public StorageGrid.Box chestInventoryBounds(int ordinal){return menu.chestView()?chest.inventory(ordinal):ChestPanel.EMPTY;}
+        public StorageGrid.Box chestFooterBounds(){return menu.chestView()?chest.footer():ChestPanel.EMPTY;}
         public StorageGrid.Box chestDrawerBounds(){return menu.chestView()?chest.settingsButton():ChestPanel.EMPTY;}
         public StorageGrid.Box chestSettingsPanelBounds(){return menu.chestView()?chest.settingsPanel():ChestPanel.EMPTY;}
         public StorageGrid.Box chestDisplayButtonBounds(){return menu.chestView()?chest.displayButton():ChestPanel.EMPTY;}
