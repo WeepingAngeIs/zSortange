@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 24
     env:
       BASELINE: anya-storage-plus-0.3.0-beta.7-roombuild.1.jar
-      PLAYABLE: anya-storage-plus-0.3.0-beta.7-skyglass.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-skyglass.2.jar
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,11 +54,14 @@ jobs:
       - name: Show fixture failures
         if: failure()
         run: |
+          ls build/skygrid/Client/{noon,roof,night,rain} || true
+          cat build/skygrid/Client/last-camera || true
+          cat build/skygrid/Server/FAILED || true
           for f in build/skygrid/{Server,Client}/{console,restart}.log; do
             if test -f "$f"; then tail -45 "$f" | cut -c1-900; fi
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-skyglass.1
+          name: anya-storage-plus-skyglass.2
           path: upload/
           retention-days: 14

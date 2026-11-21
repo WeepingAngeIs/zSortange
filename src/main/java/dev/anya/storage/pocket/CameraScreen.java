@@ -45,7 +45,7 @@ public final class CameraScreen {
         }
         return null;
     }
-    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;}
+    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;SkyglassPixels.clear();}
     @SubscribeEvent public static void update(ClientTickEvent.Post event){
         tick++;
         var mc=Minecraft.getInstance();var d=pick(mc);
@@ -69,7 +69,7 @@ public final class CameraScreen {
             var buffers=mc.renderBuffers().bufferSource();var type=RenderType.lightning();var vertices=buffers.getBuffer(type);
             for(int y=0;y<16;y++)for(int x=0;x<16;x++){
                 int color=current==null?0x161722:current.pixels()[y*16+x];
-                if(color==CameraFeed.UNKNOWN || color==CameraFeed.SKY)color=0x161722;
+                if(current!=null)color=SkyglassPixels.color(color,current.background(),current.clarity());
                 float x0=side*(x/16f-.5f),z0=side*(y/16f-.5f),step=side/16;
                 int rgb=color|0xff000000;
                 vertices.addVertex(p.last(),x0,0,z0).setColor(rgb);
@@ -87,7 +87,7 @@ public final class CameraScreen {
         else{
             long hour=Math.floorMod(current.time()/1000+6,24);
             line="Outdoor camera  "+String.format(java.util.Locale.ROOT,"%02d:%02d",hour,Math.floorMod(current.time(),1000)*60/1000);
-            if(java.util.Arrays.stream(current.pixels()).anyMatch(value->value==CameraFeed.SKY))line+="  ·  Sky image unavailable";
+            if(current.background()<0 && java.util.Arrays.stream(current.pixels()).anyMatch(value->value==CameraFeed.SKY))line+="  ·  Sky image unavailable";
         }
         var gui=event.getGuiGraphics();gui.drawCenteredString(mc.font,line,gui.guiWidth()/2,gui.guiHeight()-63,0xffeedcec);
     }

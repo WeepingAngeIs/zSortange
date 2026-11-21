@@ -28,15 +28,15 @@ public final class CameraFeed {
     record Watch(BlockPos pos) implements CustomPacketPayload {
         static final Type<Watch> TYPE=new Type<>(ExpansionPackets.id("camera_watch"));public Type<Watch> type(){return TYPE;}
     }
-    record Frame(BlockPos pos,long time,boolean rain,int[] pixels) implements CustomPacketPayload {
+    record Frame(BlockPos pos,long time,int background,float clarity,int[] pixels) implements CustomPacketPayload {
         static final Type<Frame> TYPE=new Type<>(ExpansionPackets.id("camera_frame"));public Type<Frame> type(){return TYPE;}
     }
     static BiConsumer<Connection,Frame> receiver=(c,f)->{};
     public static void register(RegisterPayloadHandlersEvent e){
-        var channel=e.registrar("skyglass1").optional();
+        var channel=e.registrar("skyglass2").optional();
         StreamCodec<RegistryFriendlyByteBuf,Watch> watch=StreamCodec.ofMember((w,b)->b.writeBlockPos(w.pos),b->new Watch(b.readBlockPos()));
-        StreamCodec<RegistryFriendlyByteBuf,Frame> frame=StreamCodec.ofMember((f,b)->{b.writeBlockPos(f.pos);b.writeLong(f.time);b.writeBoolean(f.rain);b.writeVarIntArray(f.pixels);},
-                b->new Frame(b.readBlockPos(),b.readLong(),b.readBoolean(),b.readVarIntArray(256)));
+        StreamCodec<RegistryFriendlyByteBuf,Frame> frame=StreamCodec.ofMember((f,b)->{b.writeBlockPos(f.pos);b.writeLong(f.time);b.writeInt(f.background);b.writeFloat(f.clarity);b.writeVarIntArray(f.pixels);},
+                b->new Frame(b.readBlockPos(),b.readLong(),b.readInt(),b.readFloat(),b.readVarIntArray(256)));
         channel.playToServer(Watch.TYPE,watch,(w,c)->{if(c.player() instanceof ServerPlayer p)watch(p,w.pos);});
         channel.playToClient(Frame.TYPE,frame,(f,c)->receiver.accept(c.connection(),f));
     }
@@ -83,34 +83,41 @@ public final class CameraFeed {
             var d=session.device;
             try{
                 var cam=source(p,d);
-                if(cam==null || p.serverLevel().getGameTime()-session.renewed>18){sessions.remove(p);send(p,d,-1,false,new int[0]);continue;}
+                if(cam==null || p.serverLevel().getGameTime()-session.renewed>18){sessions.remove(p);send(p,d,-1,null,new int[0]);continue;}
                 if(Math.floorMod(e.getServer().getTickCount()+p.getId(),12)!=0)continue;
                 var level=(ServerLevel)cam.getLevel();
                 boolean sky=d.getBlockState().is(CameraDevices.SKY.get());
-                if(sky && normal(cam).y!=1){send(p,d,-1,false,new int[0]);continue;}
-                int[] pixels=capture(p,level,cam,sky);
-                if(source(p,d)!=cam || Arrays.stream(pixels).allMatch(pixel->pixel==UNKNOWN)){send(p,d,-1,false,new int[0]);continue;}
-                send(p,d,level.getDayTime(),level.isRaining(),pixels);
-            }catch(RuntimeException unavailable){sessions.remove(p);send(p,d,-1,false,new int[0]);}
+                if(sky && normal(cam).y!=1){send(p,d,-1,null,new int[0]);continue;}
+                var atmosphere=SourceSky.observe(level,cam.getBlockPos());
+                int[] pixels=capture(p,level,cam,sky,atmosphere);
+                if(source(p,d)!=cam || Arrays.stream(pixels).allMatch(pixel->pixel==UNKNOWN)){send(p,d,-1,null,new int[0]);continue;}
+                send(p,d,level.getDayTime(),atmosphere,pixels);
+            }catch(RuntimeException unavailable){sessions.remove(p);send(p,d,-1,null,new int[0]);}
         }
     }
-    private static void send(ServerPlayer p,CameraDevices.Device d,long time,boolean rain,int[] pixels){
-        PacketDistributor.sendToPlayer(p,new Frame(d.getBlockPos(),time,rain,pixels));
+    private static void send(ServerPlayer p,CameraDevices.Device d,long time,SourceSky sky,int[] pixels){
+        PacketDistributor.sendToPlayer(p,new Frame(d.getBlockPos(),time,sky==null?-1:sky.background(),sky==null?0:sky.clarity(),pixels));
     }
     private static int[] capture(ServerPlayer p,ServerLevel level,CameraDevices.Device cam,boolean sky){
+        return capture(p,level,cam,sky,null);
+    }
+    private static int[] capture(ServerPlayer p,ServerLevel level,CameraDevices.Device cam,boolean sky,SourceSky atmosphere){
         var loaded=new LoadedPocketBlocks(level);
         var face=cam.getBlockState().getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING);
         var eye=Vec3.atCenterOf(cam.getBlockPos()).add(normal(cam).scale(.58));
         var access=new HashMap<BlockPos,Boolean>();var pixels=new int[256];
         var target=!sky && cam.glances && Math.floorMod(level.getGameTime(),300)<80?glance(p,level,eye):null;
         var forward=target==null?null:target.getEyePosition().subtract(eye).normalize();
-        for(int y=0;y<16;y++)for(int x=0;x<16;x++){
+        // Spend the access budget on the center first; unknown peripheral rays stay masked.
+        for(int row=0;row<16;row++)for(int col=0;col<16;col++){
+            int x=8+((col&1)==0?col/2:-(col+1)/2),y=8+((row&1)==0?row/2:-(row+1)/2);
             Vec3 ray=CameraOptics.ray(face,x,y);
             if(forward!=null){
                 var right=forward.cross(new Vec3(0,1,0)).normalize();var up=right.cross(forward);
                 ray=forward.add(right.scale((x-7.5)/8)).add(up.scale((7.5-y)/8)).normalize();
             }
-            pixels[y*16+x]=sample(p,level,loaded,eye,ray,access,target);
+            int pixel=sample(p,level,loaded,eye,ray,access,target);
+            pixels[y*16+x]=pixel==SKY && atmosphere!=null?atmosphere.direction(ray):pixel;
         }
         return pixels;
     }
@@ -124,7 +131,7 @@ public final class CameraFeed {
         return net.minecraft.world.level.BlockGetter.traverseBlocks(eye,end,ray,(dir,pos)->{
             if(!allowed(p,level,pos,access))return UNKNOWN;
             var state=blocks.getBlockState(pos);
-            if(!blocks.complete())return UNKNOWN;
+            if(blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null)return UNKNOWN;
             if(state.hasBlockEntity())return UNKNOWN;
             if(!state.isAir()){
                 var shape=state.getShape(blocks,pos);
@@ -137,7 +144,17 @@ public final class CameraFeed {
             return null;
         },dir->{
             var pos=BlockPos.containing(end);
-            return dir.y>0 && level.dimensionType().hasSkyLight() && allowed(p,level,pos,access) && level.canSeeSky(pos)?SKY:UNKNOWN;
+            if(dir.y<=.15 || !level.dimensionType().hasSkyLight() || !allowed(p,level,pos,access))return UNKNOWN;
+            // Prove there is no roof farther along this slanted ray, without loading more chunks.
+            double distance=(level.getMaxBuildHeight()-end.y)/dir.y;
+            if(distance<=0)return SKY;
+            if(distance>600)return UNKNOWN;
+            return net.minecraft.world.level.BlockGetter.traverseBlocks(end,end.add(dir.scale(distance)),blocks,
+                    (columns,cell)->{
+                        var chunk=columns.chunk(cell.getX()>>4,cell.getZ()>>4);
+                        if(chunk==null || chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE,cell.getX()&15,cell.getZ()&15)>=cell.getY())return UNKNOWN;
+                        return null;
+                    },columns->SKY);
         });
     }
     private static Mob glance(ServerPlayer p,ServerLevel level,Vec3 eye){

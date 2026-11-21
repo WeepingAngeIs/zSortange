@@ -67,7 +67,10 @@ public final class CameraProbe {
         check(java.util.Arrays.stream(pixels).anyMatch(value->value==0x1000000),"Observed open sky");
         tag.putUUID("Identity",UUID.randomUUID());camera.loadWithComponents(tag,outside.registryAccess());
         check(resolve.invoke(null,player,screen)==null,"Replaced camera inherited old link");
-        room.removeBlock(monitor,false);player.connection.teleport(saved.x,saved.y,saved.z,yaw,pitch);
+        tag.putUUID("Identity",sourceId);camera.loadWithComponents(tag,outside.registryAccess());
+        outside.setWeatherParameters(12000,0,false,false);
+        outside.setDayTime(6000);outside.setRainLevel(0);
+        player.connection.teleport(monitor.getX()+.5,65,monitor.getZ()+.5,0,-90);
     }
     static ServerPlayer guest;
     static int stage,start;
@@ -92,7 +95,7 @@ public final class CameraProbe {
             var lines=Files.readAllLines(Path.of("entry.txt"));var room=PocketService.ledger(server).get(UUID.fromString(lines.get(0)));
             var actor=join(server,lines.get(1),UUID.fromString(lines.get(2)));
             check(ExitGate.color(actor,room.id())==1 && PocketService.ownedTicketRequests()==0,"Restart color or empty room tickets");
-            Files.writeString(Path.of("CHECKS.txt"),"PASS outdoor camera source changes between gold and diamond, upward sky indication, replacement link rejection. Skygrid floor and panels, changing decor, private owner image and guest denial, persisted owner color, guest denial, lodestone backup return, arrival outside gate, owner walk-through, preserved decoration and final ticket cleanup.\n");
+            Files.writeString(Path.of("CHECKS.txt"),"PASS client Skyglass noon, occluded, midnight and rainy noon frame observations. Outdoor camera source changes between gold and diamond, upward sky indication, replacement link rejection. Skygrid floor and panels, changing decor, private owner image and guest denial, persisted owner color, guest denial, lodestone backup return, arrival outside gate, owner walk-through, preserved decoration and final ticket cleanup.\n");
             stage=99;server.halt(false);return;
         }
         if(server.getPlayerList().getPlayers().isEmpty())return;
@@ -131,6 +134,13 @@ public final class CameraProbe {
             check(dev.anya.storage.images.InteriorImages.wallAllowed(p,room.owner(),image),"Owner image access");
             check(!dev.anya.storage.images.InteriorImages.wallAllowed(guest,room.owner(),image),"Guest saw private image");
             if(!Files.exists(Path.of("../Client/photo")))return;
+            var outside=server.overworld();var roof=new BlockPos(1,93,1);
+            if(!Files.exists(Path.of("../Client/noon")))return;
+            if(!Files.exists(Path.of("../Client/roof"))){outside.setBlockAndUpdate(roof,Blocks.GOLD_BLOCK.defaultBlockState());return;}
+            outside.removeBlock(roof,false);
+            if(!Files.exists(Path.of("../Client/night"))){outside.setDayTime(18000);return;}
+            if(!Files.exists(Path.of("../Client/rain"))){outside.setDayTime(6000);outside.setWeatherParameters(0,12000,true,false);outside.setRainLevel(1);return;}
+
             ExitGate.cycle(guest,id);check(ExitGate.color(guest,id)==1,"Guest changed color");
             var stone=PocketService.exitPosition(room);
             var obstacle=stone.offset(0,0,-2);p.serverLevel().setBlockAndUpdate(obstacle,Blocks.CHERRY_PLANKS.defaultBlockState());
