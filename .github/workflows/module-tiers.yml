@@ -77,6 +77,8 @@ jobs:
           cp docs/MODULE_PROGRESSION.md docs/STORAGE_UPGRADE_REFERENCE.md upload/
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt && sha256sum --check SHA256SUMS.txt)
+          printf '\n## This packaged build\n\nCommit `%s`. SHA-256 `%s`. [Hosted server and package checks](%s/%s/actions/runs/%s).\n' \
+            "$GITHUB_SHA" "$(cut -d' ' -f1 upload/SHA256SUMS.txt)" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> upload/MODULE_PROGRESSION.md
       - uses: actions/upload-artifact@v4
         with:
           name: anya-storage-plus-modules.1
