@@ -30,6 +30,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.RenderFrameEvent;
 import net.neoforged.neoforge.client.event.RenderTooltipEvent;
 import org.lwjgl.glfw.GLFW;
 
@@ -37,19 +38,19 @@ import org.lwjgl.glfw.GLFW;
 @EventBusSubscriber(modid="anyamoonreview", value=Dist.CLIENT)
 public final class ChestCamera {
     private static final BlockPos CRATE=new BlockPos(0,80,0), CUBE=CRATE.east(2);
-    private enum Step { JOIN, USE, CRATE, HOVER, TAKE, DEPOSIT, DRAWER, FILTER, UNFILTER, DRAWER_CLOSED, DISPLAY, OFF,
+    private enum Step { JOIN, USE, CRATE, HOVER, TAKE, DEPOSIT, DRAWER, FAVORITES_ON, FILTER, FAVORITES_OFF, UNFILTER, DRAWER_CLOSED, DISPLAY, OFF,
         ON, EMPTY, RESIZE, COMPACT_DRAWER, COMPACT_HOVER, COMPACT_WHEEL, COMPACT, SCROLLED, CUBE_USE, CUBE_COMPACT, HOTBAR, DEPOSIT_HOTBAR, WIDE, WHEEL, BOTTOM, RETURN_TOP,
         EMI_SEARCH, EMI_CELL, EMI_HOVER, EMI_RECIPE, RESUMED, POST_CLICK, FINISH, RECEIPT, DONE }
     private static Step step=Step.JOIN;
     private static final int HOTBAR_SLOT=4, HOTBAR_ORDINAL=27+HOTBAR_SLOT;
-    private static int ticks, filledTips, emptyTips, compactTips, cubeId;
+    private static int ticks, filledTips, emptyTips, favoritesTips, cubeId;
     private static CompletableFuture<Void> job;
     private static Box sidebar;
     private static final List<String> notes=new ArrayList<>(), shots=new ArrayList<>();
 
     static boolean withEmi(){return "1".equals(System.getenv("ANYA_CHEST_EMI"));}
     private static void require(boolean ok,String why){if(!ok)throw new IllegalStateException("Chest review "+step+": "+why);}
-    private static void next(Step s){step=s;ticks=0;System.out.println("Chest review "+s);}
+    private static void next(Step s){step=s;ticks=0;favoritesTips=0;System.out.println("Chest review "+s);}
     private static void server(Minecraft mc,Consumer<ServerPlayer> action){
         var srv=mc.getSingleplayerServer();var id=mc.player.getUUID();
         job=srv.submit(()->action.accept(srv.getPlayerList().getPlayer(id)));
@@ -139,13 +140,35 @@ public final class ChestCamera {
         if(step==Step.HOVER&&e.getItemStack().is(Items.IRON_INGOT))filledTips++;
         if(step==Step.EMPTY&&e.getItemStack().isEmpty()&&!e.getComponents().isEmpty())emptyTips++;
     }
-    @SubscribeEvent public static void compactHover(RenderTooltipEvent.GatherComponents e){
-        if(step!=Step.COMPACT_HOVER || !"1".equals(System.getenv("ANYA_CHEST_REVIEW")))return;
+    @SubscribeEvent public static void favoritesHover(RenderTooltipEvent.GatherComponents e){
+        if((step!=Step.COMPACT_HOVER && step!=Step.FAVORITES_ON && step!=Step.FAVORITES_OFF)
+                || !"1".equals(System.getenv("ANYA_CHEST_REVIEW")))return;
         var mc=Minecraft.getInstance();
         if(mc.screen instanceof Client.Screen && mc.player.containerMenu instanceof StoreMenu menu && !e.getTooltipElements().isEmpty()){
             String title=menu.getSlot(52).getItem().getHoverName().getString();
-            if(!title.isBlank() && e.getTooltipElements().getFirst().left().map(t->t.getString().equals(title)).orElse(false))compactTips++;
+            if(!title.isBlank() && e.getTooltipElements().getFirst().left().map(t->t.getString().equals(title)).orElse(false))favoritesTips++;
         }
+    }
+    private static String favoritesState(StoreMenu menu){
+        return "menu="+menu.containerId+" session="+menu.session()+" revision="+menu.revision()
+                +" filtered="+menu.filteredView()+" results="+menu.resultCount()+" button="+menu.getSlot(52).getItem().getHoverName().getString();
+    }
+    @SubscribeEvent public static void afterFrame(RenderFrameEvent.Post e){
+        if((step!=Step.FAVORITES_ON && step!=Step.FAVORITES_OFF) || favoritesTips==0)return;
+        var mc=Minecraft.getInstance();
+        if(!(mc.screen instanceof Client.Screen screen) || !(mc.player.containerMenu instanceof StoreMenu menu))return;
+        require(screen.chestDrawerOpen(),"Drawer closed before its hovered button was clicked");
+        if(withEmi())require(!EmiProbe.hoveringSidebarItem()&&!EmiProbe.searchFocused(),"EMI intercepted Favorites hover");
+        Step after=step==Step.FAVORITES_ON?Step.FILTER:Step.UNFILTER;
+        var box=screen.chestControlBounds(52);
+        System.out.println("Chest review clicking rendered Favorites "+box+" "+favoritesState(menu));
+        click(mc,box,0);next(after);
+    }
+    private static void missingFavoriteAck(Minecraft mc,StoreMenu menu){
+        if(ticks!=80)return;
+        var client=favoritesState(menu);
+        server(mc,p->{String server=p.containerMenu instanceof StoreMenu actual?favoritesState(actual):p.containerMenu.getClass().getName();
+            throw new IllegalStateException("Chest review Favorites click received no matching update. Client "+client+" / server "+server);});
     }
     static void tick(Minecraft mc)throws Exception{
         if(step==Step.DONE)return;
@@ -178,10 +201,11 @@ public final class ChestCamera {
                 require(!overlap(screen.emiMainBounds(),drawer)&&screen.emiExtraBounds().stream().anyMatch(b->inside(b,drawer)),
                         "Wide settings drawer must have a separate exclusion outside the main panel");
                 if(withEmi())EmiProbe.clearOfSidebar(screen.chestSettingsPanelBounds());
-                shot(mc,"chest-settings");click(mc,screen.chestControlBounds(52),0);next(Step.FILTER);}
-            case FILTER->{if(!menu.filteredView()||menu.resultCount()!=0)return;
-                click(mc,screen.chestControlBounds(52),0);next(Step.UNFILTER);}
-            case UNFILTER->{if(menu.filteredView()||menu.resultCount()!=54)return;
+                shot(mc,"chest-settings");point(mc,screen.chestControlBounds(52));next(Step.FAVORITES_ON);}
+            case FAVORITES_ON,FAVORITES_OFF->{if(ticks==80)throw new IllegalStateException("Chest review did not render the Favorites hover: "+favoritesState(menu));}
+            case FILTER->{if(!menu.filteredView()||menu.resultCount()!=0){missingFavoriteAck(mc,menu);return;}
+                point(mc,screen.chestControlBounds(52));next(Step.FAVORITES_OFF);}
+            case UNFILTER->{if(menu.filteredView()||menu.resultCount()!=54){missingFavoriteAck(mc,menu);return;}
                 click(mc,screen.chestDrawerBounds(),0);next(Step.DRAWER_CLOSED);}
             case DRAWER_CLOSED->{require(!screen.chestDrawerOpen(),"Settings did not close");
                 click(mc,screen.chestDisplayButtonBounds(),0);next(Step.DISPLAY);}
@@ -198,7 +222,7 @@ public final class ChestCamera {
                 require(screen.chestDrawerOpen() && inside(screen.emiMainBounds(),screen.chestSettingsPanelBounds()),"Compact settings drawer escaped main bounds after resize");
                 if(withEmi())EmiProbe.clearOfSidebar(screen.chestSettingsPanelBounds());
                 point(mc,screen.chestControlBounds(52));next(Step.COMPACT_HOVER);}
-            case COMPACT_HOVER->{if(compactTips==0)return;
+            case COMPACT_HOVER->{if(favoritesTips==0)return;
                 if(withEmi())require(!EmiProbe.hoveringSidebarItem(),"EMI sidebar hover under the drawer action");
                 shot(mc,"chest-compact-settings");wheel(mc,screen.chestControlBounds(52),-1);next(Step.COMPACT_WHEEL);}
             case COMPACT_WHEEL->{if(ticks<12)return;

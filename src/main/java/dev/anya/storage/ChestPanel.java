@@ -31,11 +31,13 @@ final class ChestPanel {
     private Drawer drawer=Drawer.CLOSED;
     private int requestedRow=-1,lastRequest=-20,paintedRevision=-1,focus=NONE;
     private String pendingText;
+    private Boolean requestedFavorites;
+    private int lastFilterRequest=-20,currentTick;
     private int textRevision;
     private boolean dragging;
 
     ChestPanel(Client.Screen screen, StoreMenu menu){this.screen=screen;this.menu=menu;}
-    void reset(){drawer=Drawer.CLOSED;requestedRow=-1;focus=NONE;dragging=false;paintedRevision=-1;pendingText=null;}
+    void reset(){drawer=Drawer.CLOSED;requestedRow=-1;focus=NONE;dragging=false;paintedRevision=-1;pendingText=null;requestedFavorites=null;}
     void reflow(int width,int height,EditBox input,int bottomSpace){
         ChestLayout next=ChestLayout.fit(width,height,menu.cubeView(),menu.privateView(),bottomSpace);
         if(!next.equals(layout)){
@@ -70,6 +72,11 @@ final class ChestPanel {
         requestedRow=0;lastRequest=-20;
     }
     void tick(int ticks){
+        currentTick=ticks;
+        if(requestedFavorites!=null){
+            if(requestedFavorites.equals(favoritesState()))requestedFavorites=null;
+            else if(ticks-lastFilterRequest>=4){sendFilter();lastFilterRequest=ticks;}
+        }
         if(pendingText!=null){
             if(menu.chestSearchRevision()==textRevision)pendingText=null;
             else{
@@ -87,7 +94,14 @@ final class ChestPanel {
         }
     }
     private boolean dimensionsMatch(){return menu.visibleColumns()==layout.columns() && menu.visibleRows()==layout.rows();}
-    private boolean ready(){return pendingText==null && dimensionsMatch() && (requestedRow<0||row()==requestedRow);}
+    private boolean ready(){return requestedFavorites==null && pendingText==null && dimensionsMatch() && (requestedRow<0||row()==requestedRow);}
+    private Boolean favoritesState(){
+        if(!menu.controlSlot(52))return null;
+        ControlGlyph.Face face=ControlGlyph.read(menu.getSlot(52).getItem());
+        if(face==null || face.glyph()!=ControlGlyph.FAVORITES)return null;
+        return switch(face.state()){case ON -> true;case OFF -> false;default -> null;};
+    }
+    private void sendFilter(){screen.send("chest_favorites","",requestedFavorites?1:0);}
     private List<Integer> options(){return settingsOpen()?ACTIONS:drawer==Drawer.DISPLAY?PERSONAL:List.of();}
     private boolean available(int id){return id>=200 || !menu.getSlot(id).getItem().isEmpty();}
     private Box buttonBox(int id){
@@ -148,6 +162,14 @@ final class ChestPanel {
             return;
         }
         if(id==45||id==46){if(button==0)scroll((requestedRow<0?row():requestedRow)+(id==45?-1:1));return;}
+        if(id==52 && button==0){
+            Boolean current=favoritesState();
+            if(current!=null && requestedFavorites==null){
+                requestedFavorites=!current;requestedRow=0;lastFilterRequest=currentTick;
+                screen.press(id);sendFilter();
+            }
+            return;
+        }
         if(button>2 || button<0 || !ready() || menu.revision()!=paintedRevision)return;
         if(menu.controlSlot(id)){
             ControlGlyph.Face face=ControlGlyph.read(menu.getSlot(id).getItem());

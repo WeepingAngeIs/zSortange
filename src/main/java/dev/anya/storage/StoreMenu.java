@@ -265,12 +265,40 @@ public final class StoreMenu extends AbstractContainerMenu {
         }
         if(active){
             long now=owner.serverLevel().getGameTime();
-            if(accessChanged()||(isStoragePage()&&now-lastRefresh>=10)){render();bump();lastRefresh=now;}
+            if(accessChanged()||(isStoragePage()&&now-lastRefresh>=10)){
+                if(physicalChestPage())refreshPhysicalProjection();
+                else{render();bump();}
+                lastRefresh=now;
+            }
         }
         super.broadcastChanges();
         if(active)syncAppearance();
     }
     private boolean accessChanged(){return page==Page.ACCESS&&hub!=null&&shownAccessRevision!=hub.profileRevision;}
+    /** A periodic poll must invalidate a painted click only when its authoritative projection changed. */
+    private void refreshPhysicalProjection(){
+        // render() replaces these snapshots. Keep references to their old immutable copies for this poll.
+        Map<Integer,Entry> previousEntries=new HashMap<>(entries);
+        Set<Integer> previousActions=Set.copyOf(buttons.keySet());
+        ItemStack[] previousPlayer=playerSeen.clone();
+        ItemStack[] previousDisplay=new ItemStack[display.getContainerSize()];
+        Arrays.setAll(previousDisplay,display::getItem);
+        int[] previousFields=new int[sync.getCount()];
+        Arrays.setAll(previousFields,sync::get);
+        render();
+        for(int i=0;i<previousFields.length;i++)if(previousFields[i]!=sync.get(i)){bump();return;}
+        for(int i=0;i<previousDisplay.length;i++)if(!ItemStack.matches(previousDisplay[i],display.getItem(i))){bump();return;}
+        for(int i=0;i<previousPlayer.length;i++)if(!ItemStack.matches(previousPlayer[i],playerSeen[i])){bump();return;}
+        if(!previousActions.equals(buttons.keySet()) || previousEntries.size()!=entries.size()){bump();return;}
+        // Distinct source slots or original components can produce exactly the same sanitized display icon.
+        for(var mapped:entries.entrySet()){
+            Entry old=previousEntries.get(mapped.getKey()), current=mapped.getValue();
+            if(old==null || old.inventory()!=current.inventory() || old.slot()!=current.slot()
+                    || !Objects.equals(old.position(),current.position()) || !ItemStack.matches(old.snapshot(),current.snapshot())){
+                bump();return;
+            }
+        }
+    }
     public void action(Packets.Action packet){
         if(owner==null||owner.containerMenu!=this||packet.menu()!=containerId||packet.session()!=session())return;
         boolean physical=physicalChestSession();
@@ -287,6 +315,16 @@ public final class StoreMenu extends AbstractContainerMenu {
             }
             sync.set(18,hide?1:0);
             super.broadcastChanges();return;
+        }
+        if(packet.verb().equals("chest_favorites") && physicalChestPage()){
+            if(packet.value()!=0 && packet.value()!=1)return;
+            boolean desired=packet.value()==1;
+            if(favoritesOnly==desired)return;
+            long tick=owner.serverLevel().getGameTime();
+            if(lastAction==tick)return;
+            lastAction=tick;
+            favoritesOnly=desired;offset=0;
+            render();bump();sendAllDataToRemote();return;
         }
         if(packet.revision()!=revision()){sendAllDataToRemote();return;}
         if(!physical && !stillValid(owner)){owner.closeContainer();return;}
