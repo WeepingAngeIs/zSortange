@@ -103,6 +103,12 @@ public final class RoomServer {
         var level=builder.serverLevel();var axis=net.minecraft.world.level.block.RotatedPillarBlock.AXIS;
         if(restart){
             check(level.getBlockState(log).is(Blocks.CHERRY_LOG) && level.getBlockState(log).getValue(axis)==Direction.Axis.X,"Restart axis");
+            // The cross-dimension arrival can precede the FULL chunk future used by the editor raycast.
+            builder.connection.teleport(log.getX()+.5,log.getY()+2.2,log.getZ()+.5,0,90);
+            builder.setXRot(90);builder.setYRot(0);
+            try{if(!RoomEditor.looking(builder).getBlockPos().equals(log))return;}
+            catch(IllegalArgumentException pending){return;}
+            if(!RoomEditor.active(builder))check(RoomEditor.setMode(builder,true).isEmpty(),"Restart builder lease");
             int before=builder.getInventory().countItem(Items.CHERRY_LOG);click(builder,log,true);
             check(level.isEmptyBlock(log) && builder.getInventory().countItem(Items.CHERRY_LOG)==before+1,"Restart refund");
             Files.writeString(Path.of("CHECKS.txt"),"PASS clicked-side placement, precise state, rejection of modified item, claim denial, ordinary removal and exact refund after restart.\n");
