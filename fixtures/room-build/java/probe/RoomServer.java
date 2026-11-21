@@ -128,6 +128,9 @@ public final class RoomServer {
         }else if(stage==6 && flag("revoked")){
             var hub=(StorageEntity)server.overworld().getBlockEntity(HUB);hub.setMember(server.getPlayerList().getPlayerByName("ImageGuest").getUUID(),BasePermissions.VIEW);stage++;
         }else if(stage==7 && flag("regained")){
+            // Changing the member list invalidates every edit session tied to that policy revision.
+            check(!RoomEditor.active(builder),"Stale build session survived a grant change");
+            check(RoomEditor.setMode(builder,true).isEmpty() && RoomEditor.active(builder),"Owner could not resume building");
             click(builder,log,true);check(level.isEmptyBlock(log) && builder.getInventory().countItem(Items.CHERRY_LOG)==2,"Remove refund");start=server.getTickCount();stage++;
         }else if(stage==8 && flag("removed") && server.getTickCount()-start>=6){
             side(builder,log.east());check(level.getBlockState(log).getValue(axis)==Direction.Axis.X,"Replace");stage++;
