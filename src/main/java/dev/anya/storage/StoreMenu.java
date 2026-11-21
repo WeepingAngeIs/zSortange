@@ -347,6 +347,9 @@ public final class StoreMenu extends AbstractContainerMenu {
                 viewportRows=StorageGrid.clampRows(value&7);offset=StorageGrid.start(resultCount(),value>>>3,viewportRows);
             }
             else if(packet.verb().equals("appearance")&&bag!=null){navigate(Page.WARDROBE);}
+            else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("exit_color") && packet.value()==0){
+                dev.anya.storage.pocket.ExitGate.cycle(owner,pocket.id());
+            }
             else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("remove_guests") && packet.value()==0){
                 PocketService.removeGuests(owner,pocket.id());
             }

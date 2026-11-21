@@ -1,0 +1,67 @@
+name: Home Void exit and ambient Cupid
+on:
+  push:
+    branches: [experiment/void-ambient]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  void-ambient:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      BASELINE: anya-storage-plus-0.3.0-beta.7-opsettings.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-voidambient.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-opsettings.1
+          run-id: 44898431631
+          github-token: ${{ github.token }}
+          path: reference
+      - name: Build the playable from the verified backpack version
+        run: |
+          set -euo pipefail
+          test "$(cat reference/SOURCE_COMMIT.txt)" = 939ae0e0610df55078ff1b3ce12efcd92baa2299
+          (cd reference && sha256sum --check SHA256SUMS.txt)
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir -p upload
+          cp "build/libs/$PLAYABLE" upload/
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/void-ambient/fixture.gradle -PimagePlayable="$PWD/upload/$PLAYABLE" prepareImageServer prepareImageClient
+      - name: Check mascot choreography, return gate and color persistence
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          ALSOFT_DRIVERS: 'null'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          mkdir -p build/ambient-check
+          javac -cp "upload/$PLAYABLE" -d build/ambient-check fixtures/moon-console/RoomVisitCheck.java
+          java -cp "upload/$PLAYABLE:build/ambient-check" dev.anya.storage.pocket.RoomVisitCheck | tee upload/CHECKS.txt
+          python3 -B fixtures/void-ambient/run.py | tee -a upload/CHECKS.txt
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Show fixture failures
+        if: failure()
+        run: |
+          for f in build/void-ambient/{Server,Client}/{console,restart}.log; do
+            if test -f "$f"; then tail -45 "$f" | cut -c1-900; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-voidambient.1
+          path: upload/
+          retention-days: 14

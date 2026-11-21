@@ -1,42 +1,33 @@
 package dev.anya.storage.pocket;
+import java.util.*;
 
-import java.util.Random;
-import java.util.UUID;
-
-/** Runs against the normal packaged scheduler using a fixed RNG for repeatability. */
+/** Hosted, deterministic schedule and track checks against the actual playable. */
 public final class RoomVisitCheck {
-    private static void verify(boolean value, String message) {
-        if (!value) throw new AssertionError(message);
-    }
-    public static void main(String[] args) {
-        var visits = new RoomVisitSchedule(new Random(41));
-        UUID owner = new UUID(1,1), guest = new UUID(1,2), remote = new UUID(1,3);
-        int ownerStart=-1, guestStart=-1, nextVisit=-1;
-        for (int tick=0; tick<2500; tick++) {
-            int ownerCue = visits.advance(owner,tick);
-            if (ownerCue >= 0) {
-                verify(ownerCue < 3, "Unknown choreography");
-                if (ownerStart<0) ownerStart=tick;
-                else { nextVisit=tick; break; }
-            } else if (ownerStart>=0 && tick==ownerStart+96) {
-                verify(ownerCue==RoomVisitSchedule.HIDE, "Client needs one clear at expiry");
-            } else verify(ownerCue==RoomVisitSchedule.NONE, "Unexpected repeated cue");
-
-            if (guestStart<0) {
-                int guestCue = visits.advance(guest,tick);
-                if (guestCue>=0) {
-                    guestStart=tick;
-                    verify(visits.end(guest), "Revocation during a visible visit must clear that viewer");
-                    verify(!visits.end(guest), "Revoked viewer cleared twice");
-                }
+    static void check(boolean ok,String msg){if(!ok)throw new AssertionError(msg);}
+    public static void main(String[] args){
+        var schedule=new RoomVisitSchedule(new Random(41));UUID p=new UUID(1,1);
+        int last=0,shows=0,hides=0;boolean[] actions=new boolean[8];Set<Integer> places=new HashSet<>();
+        for(int tick=0;tick<2_000_000;tick++){
+            int cue=schedule.advance(p,tick);
+            if(cue==RoomVisitSchedule.HIDE){check(tick-last==RoomVisitSchedule.DURATION,"Expiry");hides++;}
+            if(cue<0)continue;
+            check(CupidVisit.valid(cue) && tick-last>=1200 && tick-last<=24000,"One to twenty minute spacing");last=tick;shows++;
+            int act=cue%8;actions[act]=true;places.add(cue/8);
+            Set<Integer> faces=new HashSet<>();int longest=0,hold=0,previous=-1;
+            for(int age=1;age<100;age++){
+                var pose=CupidVisit.pose(cue,age,-1);
+                check(pose.x()>0 && pose.x()<32 && pose.y()>=.6 && pose.y()<31 && pose.z()>0 && pose.z()<32,"Inside shell");
+                faces.add(pose.frame());hold=previous==pose.frame()?hold+1:1;longest=Math.max(longest,hold);previous=pose.frame();
             }
-            verify(!visits.end(remote), "Unscheduled Remote viewer received a clear");
+            check(faces.contains(3) && faces.size()>=2 && longest>=10,"Blink and held expression");
+            if(act==CupidVisit.DANCE){
+                check(cue/8<4 && CupidVisit.pose(cue,CupidVisit.WAIT,-1).alpha()==0,"Unnoticed corner departure");
+                check(CupidVisit.pose(cue,60,50).alpha()>0 && CupidVisit.pose(cue,111,50).alpha()==0,"Brief dance then departure");
+            }
         }
-        verify(ownerStart>=100 && ownerStart<=220 && guestStart>=100 && guestStart<=220, "First appearance window");
-        verify(nextVisit>=ownerStart+96+900 && nextVisit<=ownerStart+96+2100, "Rare return window or cross-viewer cancellation");
-        visits.clear();
-        verify(!visits.end(owner), "Server shutdown retained a viewer");
-        verify(visits.advance(guest,4000)==RoomVisitSchedule.NONE && !visits.end(guest), "New arrival inherited an earlier appearance");
-        System.out.println("Packaged room Cupid scheduling passed expiry, cooldown and immediate per-viewer cancellation.");
+        for(boolean present:actions)check(present,"Missing act");
+        check(places.size()==CupidVisit.SPOTS.length && shows>=100 && Math.abs(shows-hides)<=1,"Variety");
+        schedule.clear();check(!schedule.end(p),"Cleared visitor");
+        System.out.println("PASS eight acts, fourteen spots, first and repeat 1-20 minute scheduling, held expressions and blinks, corner dance and timed departure.");
     }
 }

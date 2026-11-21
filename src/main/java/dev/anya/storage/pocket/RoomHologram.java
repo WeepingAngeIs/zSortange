@@ -35,6 +35,21 @@ public record RoomHologram(BlockPos origin, int act) implements CustomPacketPayl
         if (player.connection == null || !player.connection.getConnection().isConnected() || !player.connection.hasChannel(TYPE)) return;
         int act = visits.advance(player.getUUID(), tick);
         if (act == RoomVisitSchedule.NONE) return;
+        if(act>=0){
+            int attempts=act%8==CupidVisit.DANCE?4:1;
+            boolean clear=false;
+            for(int i=0;i<attempts;i++){
+                var spot=CupidVisit.SPOTS[act/8];
+                var center=new BlockPos(pocket.x()+spot[0],65+spot[1],pocket.z()+spot[2]);
+                clear=true;
+                for(var block:BlockPos.betweenClosed(center.offset(-1,-1,-1),center.offset(1,1,1))){
+                    if(!player.serverLevel().hasChunkAt(block) || !player.serverLevel().isEmptyBlock(block)){clear=false;break;}
+                }
+                if(clear)break;
+                if(attempts==4)act=((act/8+1)%4)*8+CupidVisit.DANCE;
+            }
+            if(!clear)return;
+        }
         var cue = act == RoomVisitSchedule.HIDE ? CLEAR : new RoomHologram(new BlockPos(pocket.x(), 65, pocket.z()), act);
         PacketDistributor.sendToPlayer(player, cue);
     }

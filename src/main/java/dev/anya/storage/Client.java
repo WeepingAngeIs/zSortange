@@ -275,6 +275,7 @@ public final class Client {
                 return true;
             }
             if(button==0&&x>=12&&x<90){
+                if(y>=127&&y<145&&menu.guestControl()){press(96);send("exit_color","",0);return true;}
                 if(y>=153&&y<171&&menu.localRoomPanel()){
                     if(menu.guestControl()){press(90);send("remove_guests","",0);}
                     else if(menu.roomEditAllowed()){press(90);send("room_plan","",0);}
@@ -478,6 +479,7 @@ public final class Client {
                 g.drawString(font,font.plainSubstrByWidth(member.isEmpty()?"Select a member":member.getHoverName().getString(),78),12,131,colors[2],false);
             }else if(menu.localRoomPanel()){
                 roomWrench(g,x,y,colors);
+                if(menu.guestControl())option(g,96,ControlGlyph.SYMBOL,"Exit color",127,ControlGlyph.State.NORMAL,x,y);
             }else{
                 if(custom!=null){int[] size=ClientInteriors.size();float scale=Math.min(74f/size[0],83f/size[1]);g.pose().pushPose();g.pose().translate(51-size[0]*scale/2,80-size[1]*scale/2,0);g.pose().scale(scale,scale,1);g.blit(custom,0,0,0,0,size[0],size[1],size[0],size[1]);g.pose().popPose();}
                 else{g.pose().pushPose();g.pose().translate(17,43,0);g.pose().scale(4.2f,4.2f,1);g.renderItem(ClientLooks.shell(texture),0,0);g.pose().popPose();}

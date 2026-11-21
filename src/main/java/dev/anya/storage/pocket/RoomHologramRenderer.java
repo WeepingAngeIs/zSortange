@@ -36,13 +36,15 @@ public final class RoomHologramRenderer {
         }
     }
     private static Visit visit;
+    private static float danceStart=-1;
     static { RoomHologram.receiver = RoomHologramRenderer::receive; }
 
     private static void receive(Connection connection, RoomHologram cue) {
         var mc = Minecraft.getInstance();
         if (mc.getConnection() == null || mc.getConnection().getConnection() != connection) return;
         visit = null;
-        if (cue.act() < 0 || cue.act() > 2 || mc.level == null || mc.player == null
+        danceStart=-1;
+        if (!CupidVisit.valid(cue.act()) || mc.level == null || mc.player == null
                 || !PocketService.inPocket(mc.level) || !mc.player.isAlive() || mc.player.isSpectator()) return;
         var next = new Visit(mc.level, cue.origin(), cue.act(), mc.level.getGameTime());
         if (next.contains(mc.player.position())) visit = next;
@@ -70,30 +72,14 @@ public final class RoomHologramRenderer {
                 || !visit.contains(camera.getPosition()) || camera.getPosition().distanceToSqr(mc.player.getEyePosition()) > 36
                 || GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING) != mc.getMainRenderTarget().frameBufferId) return;
 
-        float entrance = smooth(age / 30), exit = smooth((age-64) / 32);
-        float act = Mth.clamp((age-30) / 34, 0, 1);
-        float bow = Mth.sin(act * Mth.PI);
-        double x = visit.room().getX() + 8.75 + 3.75 * entrance + 3.5 * exit;
-        double y = visit.room().getY() + .91;
-        double z = visit.room().getZ() + 7.85 - bow * .26;
-        boolean strolling = age < 30 || age > 64;
-        float roll = strolling ? Mth.sin(age*.62f)*3 : -9*bow;
-        int row = 0, column = 1;
-        if (strolling) {
-            float stride = Mth.sin(age*.62f);
-            y += .075*Math.abs(stride);
-            column = stride < -.35 ? 0 : stride > .35 ? 2 : 1;
-        } else if (visit.act() == 2) {
-            roll = 360*smooth(act);
-            y += .42*bow;
-            row = 1;
-        } else if (visit.act() == 1) {
-            row = 1;
-            column = (int) (act*8)%3;
-            roll = 7*bow;
-        } else {
-            column = act < .28f ? 0 : act > .72f ? 2 : 1;
-        }
+        var anchor=CupidVisit.SPOTS[visit.act()/8];
+        if(visit.act()%8==CupidVisit.DANCE && danceStart<0 && age<CupidVisit.WAIT-12
+                && mc.player.distanceToSqr(visit.room().getX()+anchor[0]+.5,visit.room().getY()+anchor[1],visit.room().getZ()+anchor[2]+.5)<12.25)
+            danceStart=age;
+        var motion=CupidVisit.pose(visit.act(),age,danceStart);
+        if(motion.alpha()<=0)return;
+        double x=visit.room().getX()+motion.x(), y=visit.room().getY()+motion.y(), z=visit.room().getZ()+motion.z();
+        int row=motion.frame()/3,column=motion.frame()%3;
 
         var cameraPos = camera.getPosition();
         var pose = event.getPoseStack();
@@ -102,15 +88,23 @@ public final class RoomHologramRenderer {
             pose.mulPose(event.getModelViewMatrix());
             pose.translate(x-cameraPos.x, y-cameraPos.y, z-cameraPos.z);
             pose.mulPose(camera.rotation());
-            pose.mulPose(Axis.ZP.rotationDegrees(roll));
+            pose.mulPose(Axis.ZP.rotationDegrees(motion.roll()));
+            pose.scale(motion.width(),1,1);
             var buffers = mc.renderBuffers().bufferSource();
             var vertices = buffers.getBuffer(INK);
-            int alpha = Math.round(225*Math.min(smooth(age/9), smooth((RoomVisitSchedule.DURATION-age)/10)));
+            int alpha = Math.round(225*motion.alpha());
             float u = column/3f, v = row/2f;
-            vertex(vertices, pose.last(), -.86f, -.86f, u, v+.5f, alpha);
-            vertex(vertices, pose.last(), .86f, -.86f, u+1/3f, v+.5f, alpha);
-            vertex(vertices, pose.last(), .86f, .86f, u+1/3f, v, alpha);
-            vertex(vertices, pose.last(), -.86f, .86f, u, v, alpha);
+            // Fold the boot section forward for sitting and dance bends, keeping the face at full size.
+            float knee=-.27f,bottom=knee-.59f*motion.knees(),shift=(1-motion.knees())*.48f;
+            float kneeV=v+.5f*(.86f-knee)/1.72f;
+            vertex(vertices,pose.last(),-.86f+shift,bottom,u,v+.5f,alpha);
+            vertex(vertices,pose.last(),.86f+shift,bottom,u+1/3f,v+.5f,alpha);
+            vertex(vertices,pose.last(),.86f,knee,u+1/3f,kneeV,alpha);
+            vertex(vertices,pose.last(),-.86f,knee,u,kneeV,alpha);
+            vertex(vertices,pose.last(),-.86f,knee,u,kneeV,alpha);
+            vertex(vertices,pose.last(),.86f,knee,u+1/3f,kneeV,alpha);
+            vertex(vertices,pose.last(),.86f,.86f,u+1/3f,v,alpha);
+            vertex(vertices,pose.last(),-.86f,.86f,u,v,alpha);
             buffers.endBatch(INK);
         } finally { pose.popPose(); }
     }

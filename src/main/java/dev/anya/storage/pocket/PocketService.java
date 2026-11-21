@@ -279,7 +279,7 @@ public final class PocketService {
             String reason=RoomEditor.setMode(p,true);
             help=reason.isEmpty()?"Right-click a clear floor spot to place a chest. Left-click an empty extra chest to pick it up.":reason;
         }else help="If you have Build access, open your linked tablet here to turn on Edit Mode.";
-        AnyaStorage.tell(p,"Welcome to Home Void. "+help+" Right-click the exit lodestone to go home.");
+        AnyaStorage.tell(p,"Welcome to Home Void. "+help+" Walk through the glowing exit to go home. You can also right-click the lodestone or use Leave room on your tablet.");
     }
     public static void tick(MinecraftServer server){
         clock++;lastPreparedBlocks=0;
@@ -294,7 +294,7 @@ public final class PocketService {
             if(valid&&pending==null&&l.kind()==PocketLeases.Kind.REMOTE)valid=p.containerMenu instanceof StoreMenu m&&m.hasPocket(l.pocket());
             if(valid)valid=LEASES.renew(l.player(),r.epoch(),clock,80);
             if(!valid)endLease(l.player(),p);
-            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT)RoomHologram.visit(p,r,clock);
+            else if(pending==null && l.kind()==PocketLeases.Kind.VISIT){RoomHologram.visit(p,r,clock);ExitGate.visit(p,r,clock);}
         }
         LEASES.expire(clock);syncTickets(server);
         // One pocket receives preparation work per tick, never one budget per viewer.
@@ -413,6 +413,7 @@ public final class PocketService {
         LEASES.release(player);
         RoomEditor.endVisit(player);
         RoomPlans.endVisit(currentServer,player);
+        ExitGate.end(player);
         RoomHologram.end(currentServer,player);
     }
     public static void closeView(ServerPlayer p){var l=LEASES.get(p.getUUID());if(l!=null&&l.kind()==PocketLeases.Kind.REMOTE)release(p.getUUID());}
@@ -426,7 +427,7 @@ public final class PocketService {
         try{if(!physicalAllowed(p,chest))throw new IOException("Pocket chest access denied");var r=ledger.get(chest.pocketId);StoreMenu.pocketChest(p,new PocketView(p,r,PocketLeases.Kind.VISIT,chest));}catch(Exception e){error(p,e);}
     }
     public static void stop(MinecraftServer server){
-        REMOTE_TABLETS.clear();RoomHologram.clear();
+        REMOTE_TABLETS.clear();RoomHologram.clear();ExitGate.clear();
         for(Ticket t:TICKETS){ServerLevel l=server.getLevel(t.dimension());if(l!=null)l.getChunkSource().removeRegionTicket(TICKET,t.chunk(),2,t.pocket());}
         TICKETS.clear();RECOVERY_TICKETS.clear();LEASES.clear();PENDING.clear();RECOVERY.clear();RETRY.clear();PREPARING.clear();TEST_PLAYERS.clear();RoomEditor.clear();ledger=null;failure=null;currentServer=null;clock=0;
     }
