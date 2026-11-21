@@ -52,24 +52,6 @@ generate_furniture(ROOT)
 
 
 # The starter shell is generated only for new pockets. Keep the original dimension key for saves.
-from PIL import Image, ImageDraw
-for name in ('skygrid_panel','skygrid_floor','skygrid_light'):
-    img=Image.new('RGB',(32,32),(39,40,47))
-    draw=ImageDraw.Draw(img)
-    floor=name=='skygrid_floor'
-    draw.rectangle((0,0,31,31), outline=(24,23,32))
-    draw.line(((2,28),(2,5),(5,2),(28,2)),fill=(82,74,89))
-    draw.line(((3,29),(27,29),(29,27),(29,4)),fill=(29,27,38))
-    draw.line(((4,21),(13,21),(17,17),(28,17)),fill=(54,53,63))
-    draw.line(((4,22),(14,22),(18,18),(28,18)),fill=(26,25,34))
-    draw.rectangle((6,6,12,7),fill=(111,101,117) if floor else (201,148,175))
-    if name=='skygrid_light':
-        for pad,c in [(0,(77,54,76)),(1,(137,91,117)),(2,(207,146,175)),(3,(252,207,221))]:
-            draw.rounded_rectangle((3+pad,10+pad,28-pad,20-pad),radius=4-pad,fill=c)
-    out=ROOT/f'assets/anyastorage/textures/block/{name}.png'
-    out.parent.mkdir(parents=True,exist_ok=True);img.save(out)
-    js(f'assets/anyastorage/blockstates/{name}.json',{'variants':{'':{'model':'anyastorage:block/'+name}}})
-    js(f'assets/anyastorage/models/block/{name}.json',{'parent':'minecraft:block/cube_all','textures':{'all':'anyastorage:block/'+name}})
 data=json.loads(lang.read_text())
 data.update({'dimension.anyastorage.pockets':'Skygrid','block.anyastorage.skygrid_panel':'Skygrid Wall Panel','block.anyastorage.skygrid_floor':'Skygrid Floor Tile','block.anyastorage.skygrid_light':'Skygrid Light Panel'})
 js('assets/anyastorage/lang/en_us.json',data)

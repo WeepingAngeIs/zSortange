@@ -132,3 +132,25 @@ nbt+=named(9,'entities',b'\x0a'+struct.pack('>i',0))+named(9,'blocks',b'\x0a'+st
 nbt+=named(9,'palette',b'\x0a'+struct.pack('>i',1)+named(8,'Name',utf('minecraft:air'))+b'\0')+b'\0'
 p=ROOT/f'data/{MOD}/structure/empty.nbt';p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(gzip.compress(nbt,mtime=0))
 print('Generated original storage assets, recipes, loot tables and test structure.')
+
+# Bevels, recessed routes and rose light strips in the Skygrid shell.
+for panel in ('skygrid_panel','skygrid_floor','skygrid_light'):
+    colors=[]
+    for y in range(32):
+        for x in range(32):
+            edge=min(x,y,31-x,31-y)
+            rgb=(39,40,47)
+            if edge==0: rgb=(24,23,32)
+            if (y==2 and 5<=x<29) or (x==2 and 5<=y<29): rgb=(82,74,89)
+            if (y==29 and 3<=x<=27) or (x==29 and 4<=y<28): rgb=(29,27,38)
+            route=21-min(4,max(0,x-13))
+            if 4<=x<=28 and y==route: rgb=(54,53,63)
+            if 4<=x<=28 and y==route+1: rgb=(26,25,34)
+            if 6<=x<=12 and 6<=y<=7: rgb=(111,101,117) if panel=='skygrid_floor' else (201,148,175)
+            if panel=='skygrid_light' and 4<=x<=27 and 10<=y<=20:
+                glow=min(3,x-4,27-x,y-10,20-y)
+                rgb=((77,54,76),(137,91,117),(207,146,175),(252,207,221))[glow]
+            colors.append((*rgb,255))
+    png(f'assets/{MOD}/textures/block/{panel}.png',32,32,colors)
+    js(f'assets/{MOD}/blockstates/{panel}.json',{'variants':{'':{'model':f'{MOD}:block/{panel}'}}})
+    js(f'assets/{MOD}/models/block/{panel}.json',{'parent':'minecraft:block/cube_all','textures':{'all':f'{MOD}:block/{panel}'}})
