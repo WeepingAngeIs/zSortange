@@ -24,14 +24,13 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
-/** Temporary storage access for one real Creative player's currently held, locally bound tablet. */
+/** Temporary storage access for one player's currently held, locally bound UwU Tablet. */
 @EventBusSubscriber(modid=AnyaStorage.ID)
 public final class CreativeTabletAccess {
     private static final TicketType<UUID> HOME_TICKET=TicketType.create("anya_creative_tablet",UUID::compareTo,80);
@@ -52,23 +51,28 @@ public final class CreativeTabletAccess {
         SigningKey(CompoundTag tag,HolderLookup.Provider lookup){key=tag.getByteArray("Key");}
         @Override public CompoundTag save(CompoundTag tag,HolderLookup.Provider lookup){tag.putByteArray("Key",key);return tag;}
         byte[] sign(Binding binding) {
-            if(key.length!=32)throw new IllegalStateException("Creative Tablet world key unavailable");
+            if(key.length!=32)throw new IllegalStateException("UwU Tablet world key unavailable");
             try{Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(key,"HmacSHA256"));return mac.doFinal(binding.bytes());}
-            catch(java.security.GeneralSecurityException e){throw new IllegalStateException("Creative Tablet signing unavailable",e);}
+            catch(java.security.GeneralSecurityException e){throw new IllegalStateException("UwU Tablet signing unavailable",e);}
         }
     }
     private static SigningKey signing(MinecraftServer server){
         return server.overworld().getDataStorage().computeIfAbsent(new SavedData.Factory<>(SigningKey::new,SigningKey::new,null),"anya_creative_tablet_key");
     }
+    static boolean mayUse(ServerPlayer player, ItemStack tablet) {
+        return StorageItem.isCreativeTablet(tablet) && tablet.getCount()==1 && player.isAlive() && !player.isSpectator()
+                && player.server.getPlayerList().getPlayer(player.getUUID())==player
+                && player.connection!=null && player.connection.getConnection().isConnected();
+    }
     public static void bind(ServerPlayer p,ItemStack tablet,StorageEntity hub){
-        if(!StorageItem.isCreativeTablet(tablet)||p.gameMode.getGameModeForPlayer()!=GameType.CREATIVE
+        if(!mayUse(p,tablet)
                 ||(p.getMainHandItem()!=tablet&&p.getOffhandItem()!=tablet)||!hub.kind().equals("hub")||!Network.inRange(p,hub)
                 ||!p.canInteractWithBlock(hub.getBlockPos(),1)||!Network.hubReason(p,hub).isEmpty())return;
         stamp(p,tablet,hub);
         Network.observeLoadedBase(hub);
     }
     public static void bindPocket(ServerPlayer p,ItemStack tablet,StorageEntity hub,PocketLedger.Pocket room){
-        if(!StorageItem.isCreativeTablet(tablet)||p.gameMode.getGameModeForPlayer()!=GameType.CREATIVE||
+        if(!mayUse(p,tablet)||
                 (p.getMainHandItem()!=tablet&&p.getOffhandItem()!=tablet)||!Network.inRange(p,hub)||!Objects.equals(room.owner(),p.getUUID())
                 ||!p.canInteractWithBlock(BlockPos.of(room.anchor().entrance()),1)||PocketService.home(p,room)!=hub
                 ||!room.id().equals(BagInventory.data(tablet).getUUID("PocketId")))return;
@@ -103,9 +107,8 @@ public final class CreativeTabletAccess {
             this.home=home; this.binding=binding; hubPos=BlockPos.of(binding.pos); started=player.server.overworld().getGameTime();
         }
         boolean held() {
-            return sessions.get(player.getUUID())==this && player.server.getPlayerList().getPlayer(player.getUUID())==player
-                    && player.isAlive() && player.gameMode.getGameModeForPlayer()==GameType.CREATIVE && player.getItemInHand(hand)==stack
-                    && stack.getCount()==1 && stack.get(DataComponents.CUSTOM_DATA)==components;
+            return sessions.get(player.getUUID())==this && mayUse(player,stack) && player.getItemInHand(hand)==stack
+                    && stack.get(DataComponents.CUSTOM_DATA)==components;
         }
         boolean matchesHub(ServerPlayer p,StorageEntity target) {
             return p==player && held() && target!=null && hub==target && target.getLevel()==home
@@ -135,11 +138,11 @@ public final class CreativeTabletAccess {
     }
     public static void open(ServerPlayer p,InteractionHand hand) {
         var tablet=p.getItemInHand(hand);
-        if(!StorageItem.isCreativeTablet(tablet)||tablet.getCount()!=1||p.gameMode.getGameModeForPlayer()!=GameType.CREATIVE||!p.isAlive())return;
+        if(!mayUse(p,tablet))return;
         if(p.containerMenu!=p.inventoryMenu||session(p)!=null)return;
         var tag=BagInventory.data(tablet);var binding=Binding.read(tag);
         if(binding==null||!MessageDigest.isEqual(tag.getByteArray("CreativeSeal"),signing(p.server).sign(binding))){
-            hint(p,"Bind this Creative Tablet to the hub in person first.");return;
+            hint(p,"Bind this UwU Tablet to the hub in person first.");return;
         }
         var home=p.server.getLevel(ResourceKey.create(Registries.DIMENSION,ResourceLocation.parse(binding.dim)));
         BlockPos pos=BlockPos.of(binding.pos);
@@ -147,7 +150,7 @@ public final class CreativeTabletAccess {
                 || p.server.isUnderSpawnProtection(home,pos,p) || (binding.pocket!=null && (!PocketService.enabled()||PocketService.lease(p.getUUID())!=null))){
             hint(p,"The linked storage is unavailable.");return;
         }
-        if(sessions.size()>=MAX_SESSIONS){hint(p,"Creative Tablet session limit reached.");return;}
+        if(sessions.size()>=MAX_SESSIONS){hint(p,"UwU Tablet session limit reached.");return;}
         var s=new Session(p,hand,home,binding);sessions.put(p.getUUID(),s);
         progress(s);
     }
@@ -191,7 +194,7 @@ public final class CreativeTabletAccess {
         }
         if(p.containerMenu!=p.inventoryMenu){stop(s,null);return;}
         var center=new ChunkPos(s.hubPos);
-        if(!s.add(center)){stop(s,"The saved hub chunk is unavailable or the Creative Tablet chunk budget is full.");return;}
+        if(!s.add(center)){stop(s,"The saved hub chunk is unavailable or the UwU Tablet chunk budget is full.");return;}
         if(!ready(s,center))return;
         if(s.hub==null) {
             if(!(s.home.getBlockEntity(s.hubPos) instanceof StorageEntity found)||!found.kind().equals("hub")
@@ -207,7 +210,7 @@ public final class CreativeTabletAccess {
                     stop(s,"This linked pocket is unavailable.");return;
                 }
                 var entrance=new ChunkPos(BlockPos.of(r.anchor().entrance()));
-                if(!s.add(entrance)){stop(s,"The saved entrance chunk is unavailable or the Creative Tablet chunk budget is full.");return;}
+                if(!s.add(entrance)){stop(s,"The saved entrance chunk is unavailable or the UwU Tablet chunk budget is full.");return;}
                 if(!ready(s,entrance))return;
                 s.requested=true;PocketService.remote(p,s.stack,s.hub);
                 if(PocketService.lease(p.getUUID())==null)release(s);
@@ -217,11 +220,11 @@ public final class CreativeTabletAccess {
         if(s.destinations==null) {
             Network.observeLoadedBase(s.hub);
             s.destinations=s.hub.knownStorageChunks.stream().map(ChunkPos::new).filter(pos->Network.chunkInRange(s.hub,pos)).toList();
-            if(s.destinations.size()>MAX_BASE_CHUNKS){stop(s,"This base exceeds the Creative Tablet chunk budget.");return;}
+            if(s.destinations.size()>MAX_BASE_CHUNKS){stop(s,"This base exceeds the UwU Tablet chunk budget.");return;}
         }
         int issued=0;
         for(var pos:s.destinations)if(!s.tickets.contains(pos)) {
-            if(!s.add(pos)){stop(s,"A saved storage chunk is unavailable or the Creative Tablet chunk budget is full.");return;}
+            if(!s.add(pos)){stop(s,"A saved storage chunk is unavailable or the UwU Tablet chunk budget is full.");return;}
             if(++issued==4)return;
         }
         if(s.destinations.stream().anyMatch(pos->!ready(s,pos)))return;

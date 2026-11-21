@@ -1,0 +1,80 @@
+name: Backpack shoulders and UwU Tablet
+on:
+  push:
+    branches: [experiment/backpack-shoulder-seam]
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: shoulders-tablet-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Get the verified roomeditor.1 comparison JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-roomeditor.1
+          path: reference
+          github-token: ${{ github.token }}
+          run-id: 44829392678
+      - name: Verify reference
+        run: |
+          echo 'a06372287b271b49069b07f61c23060f461c73ac84de75d6a6bee5d39b6bd96a  reference/anya-storage-plus-0.3.0-beta.7-roomeditor.1.jar' | sha256sum --check
+          test "$(cat reference/SOURCE_COMMIT.txt)" = e465c36e0a112ce253a528afa04d72bc4e8cb729
+      - name: Ensure the hosted runner can draw the model comparison
+        run: |
+          if ! /usr/bin/python3 -c 'import PIL.Image, PIL.ImageFont'; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq python3-pil
+          fi
+      - name: Compile the mod and separate gameplay fixture
+        run: gradle --no-daemon --max-workers=2 -I scripts/durable-audit-init.gradle -I fixtures/moon-console/init.gradle jar moonCameraJar durableAuditClasspath
+      - name: Check the packaged backpack shoulders and tablet access
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar=$(realpath build/libs/anya-storage-plus-*-roomeditor.2.jar)
+          # Offline item registries read the vanilla language and registry resources.
+          # Place the original archive after the mapped libraries so it supplies data only.
+          vanilla="${GRADLE_USER_HOME:-$HOME/.gradle}/caches/neoformruntime/artifacts/minecraft_1.21.1_client.jar"
+          test -f "$vanilla"
+          printf ':%s' "$vanilla" >> build/durable-audit/classpath.txt
+          cp_file="$PWD/build/durable-audit/check.args"
+          printf -- '-classpath\n"%s"\n' "$(cat build/durable-audit/classpath.txt)" > "$cp_file"
+          args=(--jdk "$JAVA_HOME" --classpath-file "$cp_file" --support-jar "$jar")
+          mkdir -p upload
+          record() { "$@" | tee -a upload/SHOULDER-TABLET-CHECKS.txt; }
+          baseline="$PWD/reference/anya-storage-plus-0.3.0-beta.7-roomeditor.1.jar"
+          record python3 -B scripts/check_backpack_shoulder.py "$jar" "$baseline"
+          record /usr/bin/python3 -B scripts/backpack_shoulder_figure.py "$baseline" "$jar" upload/shoulders.png
+          record python3 -B fixtures/room-editor/check_package.py "$jar" build/moon-fixture/moon-camera-fixture-*.jar "$baseline"
+          record python3 -B fixtures/uwu-tablet/run_access.py "${args[@]}"
+          record python3 -B fixtures/room-editor/run_binding.py "${args[@]}"
+          record python3 -B fixtures/tablet-chance/check_opening_sources.py "$jar"
+          sha256sum "$jar" | cut -d' ' -f1 | tee -a upload/SHOULDER-TABLET-CHECKS.txt
+          cp "$jar" docs/FIELD_KIT.md upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-roomeditor.2
+          path: upload/
+          if-no-files-found: error
+          retention-days: 14

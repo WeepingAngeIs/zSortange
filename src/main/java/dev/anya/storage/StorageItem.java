@@ -22,7 +22,7 @@ public final class StorageItem extends Item {
     public static boolean isCreativeTablet(ItemStack stack) { return stack.is(Content.CREATIVE_TABLET.get()); }
     public static boolean isTerminal(ItemStack stack) { return isTablet(stack) || stack.is(Content.REMOTE.get()); }
     public static boolean permittedTablet(ServerPlayer player,ItemStack stack) {
-        return isTerminal(stack) && (!isCreativeTablet(stack) || player.gameMode.getGameModeForPlayer()==net.minecraft.world.level.GameType.CREATIVE);
+        return isCreativeTablet(stack) ? CreativeTabletAccess.mayUse(player,stack) : isTerminal(stack);
     }
     public static ItemStack tabletInHand(ServerPlayer player,InteractionHand hand) {
         ItemStack current=player.getItemInHand(hand);
@@ -57,7 +57,7 @@ public final class StorageItem extends Item {
             else {
                 stack=tabletInHand(p,hand);
                 if (!permittedTablet(p,stack)) {
-                    p.displayClientMessage(Component.literal("The Creative Tablet requires Creative mode."),true);
+                    p.displayClientMessage(Component.literal("You cannot use this tablet right now."),true);
                     return InteractionResultHolder.fail(stack);
                 }
                 if (PocketService.openVisitedTablet(p,hand)) return InteractionResultHolder.consume(stack);
@@ -82,7 +82,7 @@ public final class StorageItem extends Item {
         if(!(player instanceof ServerPlayer p))return InteractionResult.PASS;
         ItemStack tablet=tabletInHand(p,context.getHand());
         if (!permittedTablet(p,tablet)) {
-            p.displayClientMessage(Component.literal("The Creative Tablet requires Creative mode."),true);
+            p.displayClientMessage(Component.literal("You cannot use this tablet right now."),true);
             return InteractionResult.FAIL;
         }
         var be=context.getLevel().getBlockEntity(context.getClickedPos());
@@ -101,7 +101,7 @@ public final class StorageItem extends Item {
             }
             if (creative) CreativeTabletAccess.bind(p,tablet,hub);
             if (same) return InteractionResult.CONSUME;
-            AnyaStorage.tell(p,creative ? "Creative Tablet bound to "+hub.baseName+"."
+            AnyaStorage.tell(p,creative ? "UwU Tablet bound to "+hub.baseName+"."
                     : "Bound to "+hub.baseName+". Hub radius is "+hub.radius()+" blocks.");
             return InteractionResult.CONSUME;
         }
@@ -133,11 +133,11 @@ public final class StorageItem extends Item {
             lines.add(Component.literal("Slots: "+(tag.contains("Capacity")?tag.getInt("Capacity"):27)+" | Upgrades: "+(tag.contains("UpgradeSlots")?tag.getInt("UpgradeSlots"):1)));lines.add(Component.literal("Right-click: open | Sneak-use in air: upgrades"));lines.add(Component.literal("Sneak-use on the ground to place. Apply upgrades by hand; sneak-use empty-handed to pick up."));lines.add(Component.literal("Backpacks and filled portable containers cannot nest."));var look=dev.anya.storage.appearance.Looks.of(stack);lines.add(Component.literal("Element: "+look.element()+" | Skin: "+look.skin()));lines.add(Component.literal("Accessories back slot supported when installed. Wardrobe remains available."));}
         else {
             if(stack.is(Content.REMOTE.get()))lines.add(Component.literal("Becomes a Cupid Tablet when carried. Your existing binding carries over."));
-            lines.add(Component.literal(isCreativeTablet(stack) ? "Creative mode only. Bind at a hub, then open your linked storage from any distance."
+            lines.add(Component.literal(isCreativeTablet(stack) ? "Sneak-use on a permitted hub to bind. Use in air from any distance or dimension."
                     : "Sneak-use on a hub to bind. Use in air within its radius to open storage."));
             lines.add(Component.literal("Sneak-use on a Home Void Cube to link pocket storage."));
             lines.add(Component.literal("Right-click a linked cube to visit with permission."));
-            lines.add(Component.literal("Inside your linked room, use the tablet in air for storage and Edit Mode."));
+            lines.add(Component.literal("Inside your linked room, use the tablet in air. Edit Mode requires Build permission."));
             lines.add(Component.literal("Owners can sneak-use on a chest to edit its routing."));
         }
     }

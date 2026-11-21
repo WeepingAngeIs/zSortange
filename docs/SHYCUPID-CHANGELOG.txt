@@ -1,3 +1,5 @@
+Historical Shy Cupid build. For current UwU Tablet controls in Survival and Creative, see FIELD_KIT.md.
+
 Anya Storage Plus beta.7-creativetablet.1
 Minecraft 1.21.1 • NeoForge 21.1.249 • Java 21
 

@@ -91,9 +91,9 @@ public final class Network {
     }
     static String hubReason(ServerPlayer p,StorageEntity hub,CreativeTabletAccess.Session session) {
         if(session==null)return hubReason(p,hub);
-        if(!Config.get().network||!session.matchesHub(p,hub))return "Creative Tablet access ended";
+        if(!Config.get().network||!session.matchesHub(p,hub))return "UwU Tablet access ended";
         String reason=Safety.inHubLevel(p,session.home,hub,null);
-        return !reason.isEmpty()||session.matchesHub(p,hub)?reason:"Creative Tablet access ended";
+        return !reason.isEmpty()||session.matchesHub(p,hub)?reason:"UwU Tablet access ended";
     }
     public static boolean supported(BlockEntity be){
         if(be instanceof StorageEntity storage)return storage.pocketId==null&&!storage.kind().equals("hub");

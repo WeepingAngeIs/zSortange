@@ -119,7 +119,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(!Network.hubReason(p,hub).isEmpty())return;
         if(hub.ownedBy(p))open(p,Page.BASE,null,hub,null,null);
         else if(hub.canReadActivity(p))open(p,Page.ACTIVITY,null,hub,null,null);
-        else p.displayClientMessage(Component.literal("Use your linked Cupid Tablet to open base storage."),true);
+        else p.displayClientMessage(Component.literal("Use your linked tablet to open base storage."),true);
     }
     private static ItemStack heldNetworkTablet(ServerPlayer p,StorageEntity hub) {
         if(hub==null)return null;
@@ -943,7 +943,7 @@ public final class StoreMenu extends AbstractContainerMenu {
                     if(percent<0||percent>100)throw new IllegalArgumentException("Enter a whole percentage from 0 to 100.");
                     if(tabletChance)draft.expansion.tabletOpeningChancePercent=percent;
                     else draft.expansion.chestCameoChancePercent=percent;
-                },tabletChance?"Only authorized Cupid Tablet opens. 0% skips the intro.":"Direct Anya chests only, with Chest Cupid cameo enabled.",
+                },tabletChance?"Authorized Cupid and UwU Tablet openings. 0% skips the intro.":"Direct Anya chests only, with Chest Cupid cameo enabled.",
                         "Left +1%, right -1%. Shift-click sets the typed percentage.",
                         "Back, then Review changes and Apply server settings to save.");
                 continue;

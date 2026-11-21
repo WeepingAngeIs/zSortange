@@ -99,7 +99,12 @@ for name in ORDER:
   if front:
    faces['north']={'texture':'#'+front,'uv':[0,0,16,16]};faces['south']={'texture':'#'+front,'uv':[0,0,16,16]}
   elements.append({'from':a,'to':b,'faces':faces})
- box([3,2,5],[13,14,10],'side','front')
+ # The flap covers the upper 1.5 units of the body. End its side faces at that seam.
+ box([3,2,5],[13,12.5,10],'side','front')
+ body_faces=elements[-1]['faces']
+ del body_faces['up']
+ for direction in ('north','south','west','east'):
+  body_faces[direction]['uv'][1]=2  # Crop the old 12-unit-tall mapping, preserving stitch height.
  box([3,12.5,4.6],[13,14.5,10.5],'top','front')
  box([4,2.5,10],[12,7.5,12],'side','pocket')
  box([1.5,3,6],[3.5,9,10.5],'side','pocket');box([12.5,3,6],[14.5,9,10.5],'side','pocket')

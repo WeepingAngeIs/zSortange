@@ -1,3 +1,5 @@
+Historical Shy Cupid build. For current UwU Tablet controls in Survival and Creative, see FIELD_KIT.md.
+
 Suggested checks in a disposable world with matching test builds
 
 1. Craft a leaf backpack and put a named item in it. Crouch-right-click the ground with the bag. Apply one completed skin patch, an elemental binding, a matching upgrade disc and enough material for its next storage tier. Check the bag name, the consumed item count and the contents. Try a duplicate upgrade and an insufficient stack. Crouch with an empty hand and use the bag to retrieve it.

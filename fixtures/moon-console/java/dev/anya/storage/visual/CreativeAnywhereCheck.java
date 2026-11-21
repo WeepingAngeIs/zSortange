@@ -22,12 +22,12 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
-/** Integrated runner with a real connected client, including a cold base and a non-op Creative player. */
+/** Integrated runner with a real connected client, including a cold base and a non-operator Survival player. */
 final class CreativeAnywhereCheck {
     private static final BlockPos HUB=new BlockPos(-2,80,0), CUBE=new BlockPos(0,80,0), ENTRANCE=new BlockPos(-3,80,0);
     private static final InteractionHand HAND=InteractionHand.MAIN_HAND;
     private enum Step { BIND, LEAVE, COLD, REGULAR, DENIED, NETWORK, SEARCH, TAKE, DROP, CLOSED, RESTORE,
-        DENY_RIGHTS, COLD_POCKET, POCKET, DOWNGRADE, SURVIVAL, CLEAN, DONE }
+        DENY_RIGHTS, COLD_POCKET, POCKET, CREATIVE, SURVIVAL, SPECTATOR, CLEAN, DONE }
     private static Step step=Step.BIND;
     private static int ticks;
     private static ItemStack aggregate, pocketTablet, standard;
@@ -97,24 +97,21 @@ final class CreativeAnywhereCheck {
                 p.closeContainer();
                 if(PocketService.lease(p.getUUID())!=null)return false;
                 p.setItemInHand(InteractionHand.OFF_HAND,ItemStack.EMPTY);
-                p.setGameMode(GameType.CREATIVE);
+                p.setGameMode(GameType.SURVIVAL);
+                p.getServer().getPlayerList().getOps().add(new ServerOpListEntry(p.getGameProfile(),0,false));
+                require(!p.hasPermissions(2) && !p.getAbilities().instabuild,"Ordinary Survival actor");
                 p.setItemInHand(HAND,new ItemStack(Content.CREATIVE_TABLET.get()));bind(p,HUB);
                 aggregate=p.getMainHandItem();
-                require(BagInventory.data(aggregate).contains("HubPos"),"Genuine local Creative hub binding");
+                require(BagInventory.data(aggregate).contains("HubPos"),"Local UwU Tablet hub binding in Survival");
                 p.setItemInHand(HAND,new ItemStack(Content.CREATIVE_TABLET.get()));bind(p,HUB);bind(p,ENTRANCE);
                 pocketTablet=p.getMainHandItem();
-                require(pocketId.equals(BagInventory.data(pocketTablet).getUUID("PocketId")),"Genuine local Creative pocket binding");
+                require(pocketId.equals(BagInventory.data(pocketTablet).getUUID("PocketId")),"Local UwU Tablet pocket binding in Survival");
                 p.getInventory().setItem(23,aggregate);p.getInventory().setItem(24,pocketTablet);
                 p.setItemInHand(HAND,standard);
-                // Use the same real player under level-zero permissions so Creative cannot borrow operator bypass.
-                p.getServer().getPlayerList().getOps().add(new ServerOpListEntry(p.getGameProfile(),0,false));
-                require(!p.hasPermissions(2),"Non-operator Creative actor");
                 p.getServer().saveEverything(false,true,false);
                 var away=p.getServer().getLevel(Level.NETHER);
-                p.teleportTo(away,320.5,200,320.5,0,0);
-                p.getAbilities().flying=true;p.onUpdateAbilities();
-                // A safe ledge for the subsequent switch to Survival in the disposable dimension.
                 away.setBlockAndUpdate(new BlockPos(320,199,320),net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+                p.teleportTo(away,320.5,200,320.5,0,0);
                 next(Step.COLD);
             }
             case COLD -> {
@@ -174,7 +171,7 @@ final class CreativeAnywhereCheck {
             }
             case DENY_RIGHTS -> {
                 if(ticks<24 || CreativeTabletAccess.ticketCount()!=0)return false;
-                require(p.containerMenu==p.inventoryMenu,"Revoked Creative player cannot reopen storage");
+                require(p.containerMenu==p.inventoryMenu,"Revoked Survival player cannot reopen storage");
                 var h=home(p);h.owner=p.getUUID();h.profileChanged();
                 p.getInventory().setItem(23,p.getMainHandItem());p.setItemInHand(HAND,p.getInventory().removeItemNoUpdate(24));
                 next(Step.COLD_POCKET);
@@ -186,19 +183,31 @@ final class CreativeAnywhereCheck {
             case POCKET -> {
                 if(!(p.containerMenu instanceof StoreMenu m) || m.capacity()!=216)return false;
                 require(m.hasPocket(pocketId) && m.creativeTabletOpening() && p.level().dimension()==Level.NETHER,"Remote pocket should never teleport");
-                p.setGameMode(GameType.SURVIVAL);next(Step.DOWNGRADE);
+                p.setGameMode(GameType.CREATIVE);next(Step.CREATIVE);
             }
-            case DOWNGRADE -> {
-                if(p.containerMenu!=p.inventoryMenu || CreativeTabletAccess.ticketCount()!=0 || PocketService.lease(p.getUUID())!=null)return false;
-                use(p);next(Step.SURVIVAL);
+            case CREATIVE -> {
+                if(ticks<20)return false;
+                require(p.containerMenu instanceof StoreMenu m && m.hasPocket(pocketId) && m.stillValid(p),
+                        "Authorized UwU Tablet remains usable in Creative");
+                p.setGameMode(GameType.SURVIVAL);next(Step.SURVIVAL);
             }
             case SURVIVAL -> {
                 if(ticks<20)return false;
-                require(p.containerMenu==p.inventoryMenu && CreativeTabletAccess.ticketCount()==0 && PocketService.ownedTicketRequests()==0,
-                        "Survival must never open or retain Creative access");
-                next(Step.CLEAN);
+                require(p.containerMenu instanceof StoreMenu m && m.hasPocket(pocketId) && m.stillValid(p)
+                        && !p.getAbilities().instabuild && !p.getAbilities().mayfly && !p.hasPermissions(2),
+                        "Authorized UwU Tablet in Survival with ordinary abilities");
+                p.setGameMode(GameType.SPECTATOR);next(Step.SPECTATOR);
             }
-            case CLEAN -> {next(Step.DONE);}
+            case SPECTATOR -> {
+                if(p.containerMenu!=p.inventoryMenu || CreativeTabletAccess.ticketCount()!=0 || PocketService.ownedTicketRequests()!=0)return false;
+                use(p);next(Step.CLEAN);
+            }
+            case CLEAN -> {
+                if(ticks<20)return false;
+                require(p.containerMenu==p.inventoryMenu && CreativeTabletAccess.ticketCount()==0,
+                        "Spectating cannot reopen the signed tablet");
+                p.setGameMode(GameType.SURVIVAL);next(Step.DONE);
+            }
             case DONE -> {return true;}
         }
         return false;
@@ -209,7 +218,7 @@ final class CreativeAnywhereCheck {
             boolean done=task.join();task=null;
             if(done){
                 Files.writeString(mc.gameDirectory.toPath().resolve("creative-tablet.txt"),
-                    "Creative non-operator in Nether. Overworld hub and neighboring chest confirmed unloaded first. Genuine creative binding retrieved 1 shard from 17, leaving 16 at home. Revoke, removed tablet, forged coordinates, Survival, released tickets, separate 216-slot pocket and preserved legacy binding verified.\n");
+                    "Survival non-operator in Nether. Overworld hub and neighboring chest confirmed unloaded first. Genuine UwU Tablet binding retrieved 1 shard from 17, leaving 16 at home. Revoke, removed tablet, forged coordinates, permitted mode changes, Spectator closure, released tickets, separate 216-slot pocket and preserved legacy binding verified.\n");
                 return true;
             }
         }

@@ -113,7 +113,7 @@ public final class PocketEvents {
             if(p.isShiftKeyDown()&&StorageItem.isTerminal(e.getItemStack())){
                 var tablet=StorageItem.tabletInHand(p,e.getHand());
                 if(StorageItem.permittedTablet(p,tablet)) PocketService.link(p,entrance,tablet);
-                else p.displayClientMessage(net.minecraft.network.chat.Component.literal("The Creative Tablet requires Creative mode."),true);
+                else p.displayClientMessage(net.minecraft.network.chat.Component.literal("You cannot use this tablet right now."),true);
             }else PocketService.enter(p,entrance);
         }
     }

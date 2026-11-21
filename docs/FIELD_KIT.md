@@ -1,6 +1,6 @@
 # Anya Storage Plus field kit
 
-Experimental candidate `0.3.0-beta.7-roomeditor.1` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
+Experimental candidate `0.3.0-beta.7-roomeditor.2` for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. The Room upgrades link opens the one-chest planner during an authorized visit. Use matching builds for the disposable client and server. The mod ID is `anyastorage`.
 
 ## Use a backpack on the ground
 
@@ -57,11 +57,11 @@ Open storage and select **Field kit and storage information** in the action colu
 - **Undo a dump.** Within one minute, Shift-click **Dump** or choose **Undo last dump** in Field kit. For a nearby dump made with a key or command, use `/anya dump undo`. Undo needs the same storage and current View and Withdraw permission. Anya can trace deposits into its own backpacks and storage blocks. External containers can receive a dump but are excluded from undo. Changed stacks and space in your inventory can reduce how many items return.
 - **Partial deposits.** After a manual or bulk deposit in the menu, check the report and the briefly highlighted inventory slots to see what stayed with you.
 
-## Cupid Tablet and Creative Tablet
+## Cupid Tablet and UwU Tablet
 
 Craft a **Cupid Tablet** when terminal recipes are enabled. Sneak-right-click a hub with the tablet to bind it, then use it in air within the hub radius to open connected storage. For a pocket, sneak-use the bound tablet on its Home Void Cube. Physical chests and backpacks open directly. A heart Remote already in a chest becomes a regular Cupid Tablet when you carry or use it. Its hub, pocket link and custom name carry over.
 
-The **Creative Tablet** is in the Anya Storage Creative tab. Bind it at the hub the same way. A player in Creative mode can use it at a distance, including across dimensions, to open the one bound network or pocket. The server checks the acting player and destination permissions each time. A Creative Tablet given to a Survival player cannot open storage.
+The curved **UwU Tablet** comes from the Anya Storage Creative tab. A Survival player who receives one can sneak-right-click a permitted hub to bind it, then use it in air from any distance, including across dimensions. A tablet linked to a Home Void Cube opens that pocket’s storage. Existing curved tablets keep their links. The server checks the current holder’s storage permissions and the destination’s claims each time.
 
 An unselected tablet sometimes shows a close-up of Cupid squinting. Selecting that tablet finishes her blink and sideways glance, then both its hotbar icon and its held screen go dark.
 

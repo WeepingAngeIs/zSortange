@@ -97,14 +97,14 @@ public final class BindingCheck {
         wrong = tablet(); wrong.data.tag().pos = null; refused(wrong,"Missing long position");
         wrong = tablet(); wrong.data.tag().dimension="minecraft:the_nether"; refused(wrong,"Foreign hub dimension");
         wrong = tablet(); wrong.tablet=false; refused(wrong,"Other item copied the tablet data");
-        var creative = tablet(); creative.creative=true; refused(creative,"Creative Tablet in Survival");
-        player.creative=true; refused(creative,"Unsigned Creative Tablet");
-        creative.sealed=true; player.main=creative;
-        var creativeView=PocketView.localTablet(player,room,InteractionHand.MAIN_HAND);
-        check(creativeView.valid(),"Locally proven Creative Tablet in Creative");
-        player.creative=false;
-        check(!creativeView.valid(),"Changing game mode revoked the live Creative panel");
-        System.out.println("BEHAVIOR: pocket, home position, dimension, tablet kind and Creative gate checked at open and during use.");
+        var uwu = tablet(); uwu.creative=true; refused(uwu,"Unsigned UwU Tablet in Survival");
+        uwu.sealed=true; player.main=uwu;
+        var uwuView=PocketView.localTablet(player,room,InteractionHand.MAIN_HAND);
+        check(uwuView.valid(),"Locally signed UwU Tablet in Survival");
+        player.spectator=true;
+        check(!uwuView.valid(),"Spectating revoked the live panel");
+        player.spectator=false;
+        System.out.println("BEHAVIOR: pocket, home position, dimension, tablet kind, Survival and spectator gating.");
 
         player.main=original;
         view=PocketView.localTablet(player,room,InteractionHand.MAIN_HAND);

@@ -56,7 +56,7 @@ for index,name in enumerate(items):
     js(f'assets/{MOD}/models/item/{name}.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{MOD}:item/{name}'}})
 lang={f'item.{MOD}.{name}':name.replace('_',' ').title() for name in items}
 lang[f'item.{MOD}.cupid_tablet']='Cupid Tablet'
-lang[f'item.{MOD}.creative_tablet']='Creative Tablet'
+lang[f'item.{MOD}.creative_tablet']='UwU Tablet'
 lang[f'item.{MOD}.remote']='Cupid Tablet (Former Remote)'
 lang.update({'subtitles.anyastorage.chest_open':'Storage chest opens','subtitles.anyastorage.chest_close':'Storage chest closes'})
 lang.update({'subtitles.anyastorage.cube_open':'UwU storage cube opens','subtitles.anyastorage.cube_close':'UwU storage cube closes'})

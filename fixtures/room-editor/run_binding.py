@@ -40,7 +40,7 @@ HOST = {
         public final java.util.UUID id=java.util.UUID.randomUUID();
         public final net.minecraft.world.entity.player.Inventory inv=new net.minecraft.world.entity.player.Inventory();
         public net.minecraft.world.item.ItemStack main=net.minecraft.world.item.ItemStack.EMPTY,off=main;
-        public boolean creative;
+        public boolean spectator;
         public net.minecraft.server.MinecraftServer getServer(){return dev.anya.storage.pocket.PocketService.server;}
         public java.util.UUID getUUID(){return id;}
         public net.minecraft.world.entity.player.Inventory getInventory(){return inv;}
@@ -66,7 +66,9 @@ HOST = {
     }""",
     "dev.anya.storage.StorageItem": """public class StorageItem {
         public static boolean isTablet(net.minecraft.world.item.ItemStack s){return s.tablet;}
-        public static boolean permittedTablet(net.minecraft.server.level.ServerPlayer p,net.minecraft.world.item.ItemStack s){return !s.creative || p.creative;}
+        public static boolean permittedTablet(net.minecraft.server.level.ServerPlayer p,net.minecraft.world.item.ItemStack s){
+            return s.tablet && (!s.creative || (!p.spectator && s.count==1));
+        }
     }""",
     "dev.anya.storage.BagInventory": """public class BagInventory {
         public static net.minecraft.nbt.CompoundTag data(net.minecraft.world.item.ItemStack s){

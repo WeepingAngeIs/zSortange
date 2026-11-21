@@ -1,6 +1,6 @@
 # Edit your Home Void room
 
-In a world where pockets and room editing are enabled, visit through your linked Home Void Cube. Inside the room, right-click the air with the Cupid Tablet linked to that cube. The Creative Tablet uses the same controls for a player in Creative mode.
+In a world where pockets and room editing are enabled, visit through your linked Home Void Cube. Inside the room, right-click the air with the Cupid Tablet linked to that cube. The curved UwU Tablet uses the same room controls in Survival and Creative.
 
 1. Click the wrench marked **Edit Mode · OFF**. The panel closes and the action bar confirms editing is on.
 2. Hold a plain supported block in your main hand. Right-click a face to place one block beside it. Left-click a removable decoration to return its item to your inventory. Leave space for the returned item.

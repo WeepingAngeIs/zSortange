@@ -4,7 +4,7 @@
 
 The Twin Tails tablet beta restores eight close-up Cupid sequences on both physical tablets. [Expression guide and timings](docs/TWIN_TAILS_EXPRESSIONS.md).
 
-For the experimental field-kit build, see [player controls for storage, Keepsake Globes, Delivery Hatches, room planning, and regular and Creative tablets](docs/FIELD_KIT.md).
+For the experimental field-kit build, see [player controls for storage, Keepsake Globes, Delivery Hatches, room planning, the Cupid Tablet and the UwU Tablet](docs/FIELD_KIT.md).
 
 **0.3.0-beta.6, gated room-editing safety milestone.** Continues beta.5 in the same mod and branch. See [the exact narrow editing scope and acceptance boundaries](docs/ROOM_EDITING_BETA6.md). No profile or player world is modified by building this source.
 
