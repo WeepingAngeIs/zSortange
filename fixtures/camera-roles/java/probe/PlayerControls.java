@@ -26,7 +26,7 @@ public final class PlayerControls {
     private static Orders.Order order;
     private static int positive,empty,atPositive,atEmpty,age,stable;
     private static boolean tapped,done,clicked;
-    private static int ceilingPackets,initialCeiling;
+    private static int ceilingPackets,initialCeiling,blankCeiling,initialBlank;
     private static String diagnostic="";
     private static Field field(Class<?> type,String name)throws Exception{
         var f=type.getDeclaredField(name);f.setAccessible(true);return f;
@@ -55,6 +55,7 @@ public final class PlayerControls {
                     ceilingPackets++;
                     if(!OWNER)Orders.write("FAIL-"+ROLE,"Received another player's live ceiling");
                 }
+                if(pixels(frame).length==0)blankCeiling++;
                 show.accept(connection,frame);
             }catch(Exception failure){throw new IllegalStateException(failure);}
         });
@@ -72,7 +73,7 @@ public final class PlayerControls {
         if(!Files.exists(file))return;
         var next=Orders.JSON.fromJson(Files.readString(file),Orders.Order.class);
         if(order==null || !order.step().equals(next.step())){
-            order=next;done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;initialCeiling=ceilingPackets;clicked=false;diagnostic="";
+            order=next;done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;initialCeiling=ceilingPackets;initialBlank=blankCeiling;clicked=false;diagnostic="";
             if(!order.action().equals("use"))mc.gui.getChat().clearMessages(false);
         }
         if(done)return;
@@ -114,14 +115,22 @@ public final class PlayerControls {
         if(order.action().startsWith("ui.")||order.action().equals("tablet"))return;
         if(order.action().startsWith("sky.")){
             var active=field(Class.forName("dev.anya.storage.pocket.SkyCeilingClient"),"current").get(null);
+            if(order.action().equals("sky.unavailable")){
+                if(active!=null&&pixels(active).length==0&&blankCeiling>initialBlank){
+                    photo("Source denied, camera unavailable and all previous sky samples cleared");return;
+                }
+                return;
+            }
             if(active==null||initialCeiling==ceilingPackets)return;
             var data=pixels(active);if(data.length!=1024)return;
+            long known=java.util.Arrays.stream(data).filter(c->c!=0x2000000).count();
+            if(known*100<90L*data.length)throw new AssertionError("Too little observable ceiling: "+known+"/"+data.length);
             long count=java.util.Arrays.stream(data).filter(c->c==0x47384f||c==0x6c5874||c==0x927d93).count();
             boolean expected=order.action().equals("sky.fly");
             if(expected!=(count>0))return;
             int center=data[16*32+16];
             if(order.color()>=0&&(order.color()>=0x4000000?(center&0xff000000)!=order.color():center!=order.color()))return;
-            photo("Sky camera samples="+data.length+" visible player pixels="+count+" center="+Integer.toHexString(center));return;
+            photo("Sky camera samples="+data.length+" observable pixels="+known+" visible player pixels="+count+" center="+Integer.toHexString(center));return;
         }
         int sensor=-1;
         if(!order.action().equals("photo")){

@@ -334,6 +334,9 @@ public final class Scenario {
         ceiling("ceiling-after-flyover","clear",0x4000000);
         verify("occlude-outdoor-lens",()->home.setBlockAndUpdate(UP.above(),Blocks.GOLD_BLOCK.defaultBlockState()));
         ceiling("ceiling-source-roof","clear",MapColor.GOLD.col);
+        verify("claim-denies-current-sky-camera",()->StudioEvidence.denied=UP);
+        ceiling("ceiling-camera-unavailable","unavailable",-1);
+        verify("restore-source-claim",()->StudioEvidence.denied=null);
         verify("switch-to-outdoor-midnight",()->{home.removeBlock(UP.above(),false);home.setDayTime(18000);});
         ceiling("ceiling-night","clear",0x5000000);
     }

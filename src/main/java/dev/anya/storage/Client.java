@@ -246,6 +246,10 @@ public final class Client {
         private static final StorageGrid.Box ROOM_WRENCH=new StorageGrid.Box(12,41,78,79);
         private int thumbHeight(){var box=layout.scroll();return Math.max(8,(int)(box.height()*Math.min(1,layout.rows()/(double)Math.max(1,dev.anya.storage.ui.StorageGrid.rows(menu.resultCount())))));}
         private int shown(){return menu.storageView()?Math.min(menu.shownSlots(),layout.rows()*9):45;}
+        private StorageGrid.Box actionBox(int index){
+            var box=layout.control(index);
+            return menu.roomCosmeticsView()?new StorageGrid.Box(268,box.y(),102,box.height()):box;
+        }
         private int slotAt(double x,double y){
             if(menu.accessView()){
                 for(int i=28;i<=34;i++)if(!menu.getSlot(i).getItem().isEmpty()&&memberBox(i).contains(x,y))return i;
@@ -253,7 +257,7 @@ public final class Client {
             int cell=layout.storageAt(x,y,shown());
             if(cell>=0&&(!menu.accessView()||cell<18)&&(menu.storageView()||!menu.getSlot(cell).getItem().isEmpty()))return cell;
             int inv=layout.inventoryAt(x,y);if(inv>=0)return 54+inv;
-            for(int i=0;i<9;i++)if(layout.control(i).contains(x,y)&&!menu.getSlot(45+i).getItem().isEmpty())return 45+i;
+            for(int i=0;i<9;i++)if(actionBox(i).contains(x,y)&&!menu.getSlot(45+i).getItem().isEmpty())return 45+i;
             return -1;
         }
         @Override public boolean mouseClicked(double mx,double my,int button){
@@ -264,7 +268,7 @@ public final class Client {
             reflow();
             if(menu.chestView())return chest.click(mx,my,button,hasShiftDown(),input);
             double x=layout.x(mx),y=layout.y(my);
-            if(input.mouseClicked(x,y,button)){focusSearch(true);return true;}focusSearch(false);
+            if(!menu.roomCosmeticsView()&&input.mouseClicked(x,y,button)){focusSearch(true);return true;}focusSearch(false);
             if(button==0 && TOOLTIP_BUTTON.contains(x,y)){
                 press(94);send("tooltips","",menu.tooltipsEnabled()?0:1);return true;
             }
@@ -472,7 +476,8 @@ public final class Client {
             boolean tips=menu.tooltipsEnabled();
             ControlSprites.button(g,font,ControlGlyph.INFO,tips?ControlGlyph.State.ON:ControlGlyph.State.OFF,
                 TOOLTIP_BUTTON.x(),TOOLTIP_BUTTON.y(),TOOLTIP_BUTTON.width(),TOOLTIP_BUTTON.height(),tips?"Tooltips: On":"Tooltips: Off",TOOLTIP_BUTTON.contains(x,y),pressed(94));
-            g.drawString(font,"ACTIONS",290,29,colors[2],false);input.render(g,x,y,partial);
+            g.drawString(font,menu.roomCosmeticsView()?"Room controls":"ACTIONS",menu.roomCosmeticsView()?268:290,29,colors[2],false);
+            if(!menu.roomCosmeticsView())input.render(g,x,y,partial);else if(input.isFocused())focusSearch(false);
             String texture=look==null?"plain":look.texture();
             g.fill(12,35,90,126,colors[1]);ResourceLocation custom=ClientInteriors.texture();
             if(menu.roomCosmeticsView()){
@@ -522,7 +527,7 @@ public final class Client {
                 g.fill(box.x()+1,sy,box.x()+box.width()-1,sy+thumb,colors[2]);
             }
             for(int i=0;i<9;i++){
-                var stack=menu.getSlot(45+i).getItem();if(stack.isEmpty())continue;var box=layout.control(i);
+                var stack=menu.getSlot(45+i).getItem();if(stack.isEmpty())continue;var box=actionBox(i);
                 drawSlot(g,45+i,box,hover==45+i,actionLabel(45+i,stack),colors);
             }
             int iy=layout.inventoryY();String summary=menu.privateView()?"Private contents":menu.storageView()?(menu.filteredView()?menu.resultCount()+" matches / "+menu.capacity()+" slots":menu.occupiedSlots()+" occupied / "+menu.capacity()+" slots"):"Your inventory";
@@ -535,8 +540,8 @@ public final class Client {
                 frame(g,box,hover==54+i?0xff53605c:left?0xff52452b:0xff202733,left?0xffffc575:colors[1]);var stack=menu.getSlot(54+i).getItem();
                 if(!stack.isEmpty()){g.renderItem(stack,box.x(),box.y());g.renderItemDecorations(font,stack,box.x(),box.y());}
             }
-            g.drawString(font,menu.accessView()?"Choose a member to edit rights.":remaining!=0?"Amber = items left in your pack":"Left: stack / Right: one",104,layout.height()-19,0xffc6c6c8,false);
-            g.drawString(font,menu.accessView()?"Changes apply immediately.":"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
+            if(!menu.roomCosmeticsView())g.drawString(font,menu.accessView()?"Choose a member to edit rights.":remaining!=0?"Amber = items left in your pack":"Left: stack / Right: one",104,layout.height()-19,0xffc6c6c8,false);
+            if(!menu.roomCosmeticsView())g.drawString(font,menu.accessView()?"Changes apply immediately.":"Inventory: deposit. Wheel: scroll.",104,layout.height()-10,0xffb2b9c2,false);
             drawStorageCameo(g);
             g.pose().popPose();
             containerForeground(g,mx,my);

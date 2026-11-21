@@ -148,7 +148,10 @@ public final class CameraFeed {
         var eye=eye(cam);
         var access=new HashMap<BlockPos,Boolean>();var pixels=new int[side*side];
         var flyers=new ArrayList<CameraFigure>();
-        if(cam.getBlockState().is(CameraDevices.SKY_CAMERA.get())){
+        boolean upwardLens=cam.getBlockState().is(CameraDevices.SKY_CAMERA.get());
+        double aperture=upwardLens?CameraOptics.skyAperture(level,eye):1;
+        int accessBudget=upwardLens?3072:1024;
+        if(upwardLens){
             var bounds=new AABB(eye.x-24,eye.y,eye.z-24,eye.x+24,eye.y+24,eye.z+24);
             var people=new ArrayList<ServerPlayer>();
             level.getEntities(net.minecraft.world.level.entity.EntityTypeTest.forClass(ServerPlayer.class),bounds,
@@ -160,22 +163,25 @@ public final class CameraFeed {
         // Spend the access budget on the center first; unknown peripheral rays stay masked.
         for(int row=0;row<side;row++)for(int col=0;col<side;col++){
             int x=side/2+((col&1)==0?col/2:-(col+1)/2),y=side/2+((row&1)==0?row/2:-(row+1)/2);
-            Vec3 ray=CameraOptics.ray(face,x,y,side);
+            Vec3 ray=CameraOptics.ray(face,x,y,side,aperture);
             if(forward!=null){
                 var right=forward.cross(new Vec3(0,1,0)).normalize();var up=right.cross(forward);
                 ray=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
             }
-            int pixel=sample(p,level,loaded,eye,ray,access,target,cam.getBlockPos(),flyers);
+            int pixel=sample(p,level,loaded,eye,ray,access,target,cam.getBlockPos(),flyers,accessBudget);
             pixels[y*side+x]=pixel==SKY && atmosphere!=null?atmosphere.direction(ray):pixel;
         }
         return pixels;
     }
     private static boolean allowed(ServerPlayer p,ServerLevel level,BlockPos pos,Map<BlockPos,Boolean> cache){
+        return allowed(p,level,pos,cache,1024);
+    }
+    private static boolean allowed(ServerPlayer p,ServerLevel level,BlockPos pos,Map<BlockPos,Boolean> cache,int limit){
         var old=cache.get(pos);if(old!=null)return old;
-        if(cache.size()>=1024 || !level.hasChunkAt(pos))return false;
+        if(cache.size()>=limit || !level.hasChunkAt(pos))return false;
         boolean ok=Safety.locationReason(p,level,pos).isEmpty();cache.put(pos.immutable(),ok);return ok;
     }
-    private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob,BlockPos camera,List<CameraFigure> flyers){
+    private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob,BlockPos camera,List<CameraFigure> flyers,int budget){
         var end=eye.add(ray.scale(24));
         Vec3 first=mob==null?null:mob.getBoundingBox().clip(eye,end).orElse(null);
         int tint=0xd4b9db;
@@ -186,7 +192,7 @@ public final class CameraFeed {
         final BlockPos silhouette=first==null?null:BlockPos.containing(first.add(ray.scale(.0001)));
         final int actorColor=tint;
         return net.minecraft.world.level.BlockGetter.traverseBlocks(eye,end,ray,(dir,pos)->{
-            if(!allowed(p,level,pos,access))return UNKNOWN;
+            if(!allowed(p,level,pos,access,budget))return UNKNOWN;
             var state=blocks.getBlockState(pos);
             if(blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null)return UNKNOWN;
             if(pos.equals(camera))return null; // The smaller lens starts inside its own cell.
@@ -202,18 +208,30 @@ public final class CameraFeed {
             return null;
         },dir->{
             var pos=BlockPos.containing(end);
-            if(dir.y<=.15 || !level.dimensionType().hasSkyLight() || !allowed(p,level,pos,access))return UNKNOWN;
+            if(dir.y<=.15 || !level.dimensionType().hasSkyLight() || !allowed(p,level,pos,access,budget))return UNKNOWN;
             // Prove there is no roof farther along this slanted ray, without loading more chunks.
             double distance=(level.getMaxBuildHeight()-end.y)/dir.y;
             if(distance<=0)return SKY;
             if(distance>600)return UNKNOWN;
-            return net.minecraft.world.level.BlockGetter.traverseBlocks(end,end.add(dir.scale(distance)),blocks,
-                    (columns,cell)->{
-                        var chunk=columns.chunk(cell.getX()>>4,cell.getZ()>>4);
-                        if(chunk==null || chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE,cell.getX()&15,cell.getZ()&15)>=cell.getY())return UNKNOWN;
-                        return null;
-                    },columns->SKY);
+            return skyBeyond(blocks,end,dir,distance);
         });
+    }
+    // An upward ray reaches its lowest height when it enters each horizontal column.
+    // One heightmap read per crossed column proves the same clearance as visiting every air block.
+    private static int skyBeyond(LoadedPocketBlocks blocks,Vec3 end,Vec3 dir,double distance){
+        var start=new Vec3(end.x,.5,end.z);
+        var finish=start.add(dir.x*distance,0,dir.z*distance);
+        if(!clearColumn(blocks,end,dir,BlockPos.containing(start)))return UNKNOWN;
+        return net.minecraft.world.level.BlockGetter.traverseBlocks(start,finish,blocks,
+                (world,cell)->clearColumn(world,end,dir,cell)?null:UNKNOWN,world->SKY);
+    }
+    private static boolean clearColumn(LoadedPocketBlocks blocks,Vec3 end,Vec3 dir,BlockPos cell){
+        int x=cell.getX(),z=cell.getZ();
+        var chunk=blocks.chunk(x>>4,z>>4);if(chunk==null)return false;
+        double tx=dir.x==0?0:((dir.x>0?x:x+1)-end.x)/dir.x;
+        double tz=dir.z==0?0:((dir.z>0?z:z+1)-end.z)/dir.z;
+        int lowest=net.minecraft.util.Mth.floor(end.y+Math.max(0,Math.max(tx,tz))*dir.y-1e-7);
+        return chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE,x&15,z&15)<lowest;
     }
     static List<Mob> nearby(ServerLevel level,Vec3 eye,java.util.function.Predicate<Mob> filter){
         var mobs=new ArrayList<Mob>();
