@@ -66,7 +66,7 @@ public final class Scenario {
                 && order.sneak()==p.isShiftKeyDown())receivedClicks.add(role);
     }
     @SubscribeEvent public static void tick(ServerTickEvent.Post event)throws Exception{
-        if(finished)return;
+        if(finished || FLAVOR.equals("guide-solo"))return;
         try{update(event.getServer());}
         catch(Throwable failure){
             finished=true;Orders.write("FAIL-Server",current+" "+failure);throw failure;

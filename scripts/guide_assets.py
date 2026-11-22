@@ -31,7 +31,7 @@ rect(p,32,7,28,18,1,color('F2E2C5'));rect(p,32,7,30,18,1,color('342C44'))
 for y in range(8,24,4):rect(p,32,4,y,2,1,color('E1BF8D'))
 stamp(p,32,STAR,14,11,color('EFCCA2'));stamp(p,32,HEART,14,20,color('C391AE'))
 rect(p,32,22,26,3,5,color('C88BA6'));png(f'assets/{M}/textures/item/ancient_technology.png',32,32,p)
-js(f'assets/{M}/models/item/ancient_technology.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{M}:item/ancient_technology'}})
+js(f'assets/{M}/models/item/ancient_technology.json',{'parent':'minecraft:item/generated','textures':{'layer0':f'{M}:item/ancient_codex'}})
 langpath=ROOT/f'assets/{M}/lang/en_us.json';lang=json.loads(langpath.read_text());lang[f'item.{M}.ancient_technology']='Ancient Technology';js(f'assets/{M}/lang/en_us.json',lang)
 js(f'data/{M}/recipe/ancient_technology.json',{'type':'minecraft:crafting_shapeless','category':'misc','neoforge:conditions':[{'type':f'{M}:recipe_group','group':'guide'}],'ingredients':[{'item':'minecraft:book'},{'item':'minecraft:paper'}],'result':{'id':f'{M}:ancient_technology','count':1}})
 # Distinct fine motifs on the default lining. Re-decode our own simple RGBA generator output.

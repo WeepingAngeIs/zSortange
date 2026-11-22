@@ -20,6 +20,13 @@ public final class GuideScreen extends Screen {
     private final List<GuidePage> pages;private final long revision;
     private int page,scroll,indexOffset,left,top,bookW,bookH,rightX,textW,bodyY,bodyH;
     private boolean index;
+    private final long openedAt=net.minecraft.Util.getMillis();
+    private boolean skipped;
+    private boolean revealing(){return !skipped && net.minecraft.Util.getMillis()-openedAt<650;}
+    @Override public boolean mouseClicked(double x,double y,int button){
+        if(revealing()){skipped=true;return true;}
+        return super.mouseClicked(x,y,button);
+    }
     private final List<Button> indexButtons=new ArrayList<>();
     public GuideScreen(GuidePacket packet){super(Component.literal("Ancient Technology"));pages=packet.pages();revision=packet.revision();}
     public void setPage(int number){page=Math.max(0,Math.min(pages.size()-1,number));scroll=0;index=false;rebuildWidgets();}
@@ -100,6 +107,15 @@ public final class GuideScreen extends Screen {
     @Override public void render(GuiGraphics g,int mx,int my,float partial){
         super.renderBackground(g,mx,my,partial);
         g.fill(0,0,width,height,0xc5111524);
+        if(revealing()){
+            int frame=(int)Math.min(12,(net.minecraft.Util.getMillis()-openedAt)/50);
+            int w=Math.min(280,Math.min(width-8,(height-8)*4/3)),h=w*3/4;
+            g.pose().pushPose();g.pose().translate((width-w)/2f,(height-h)/2f,0);g.pose().scale(w/112f,h/84f,1);
+            g.blit(ExpansionPackets.id("textures/gui/ancient_reveal.png"),0,0,0,frame*84,112,84,112,1092);
+            g.pose().popPose();return;
+        }
+        g.fill(left-3,top-3,left+bookW+3,top+bookH+3,0xff332c40);
+        g.fill(left-2,top-2,left+bookW+2,top+bookH+2,0xffbb859f);
         g.pose().pushPose();g.pose().translate(left,top,0);g.pose().scale(bookW/460f,bookH/286f,1);
         g.blit(ExpansionPackets.id("textures/gui/ancient_technology.png"),0,0,0,0,460,286,460,286);g.pose().popPose();
         g.drawCenteredString(font,title,left+bookW/2,top+12,0xfff4dec0);
@@ -107,7 +123,7 @@ public final class GuideScreen extends Screen {
         g.drawString(font,font.plainSubstrByWidth(index?"FIELD INDEX":p.chapter().toUpperCase(Locale.ROOT),leftW),left+25,top+36,0xff806359,false);
         float scale=Math.max(2.0f,Math.min(5.8f,Math.min(leftW/28f,(bookH-165)/16f)));
         g.pose().pushPose();g.pose().translate(left+bookW/4-8*scale,top+53,0);g.pose().scale(scale,scale,1);if(!index&&p.cells().isEmpty()&&p.art().startsWith("item:minecraft:"))ControlSprites.sprite(g,chapterGlyph(p),0,0);
-        else g.renderItem(art(index?"bow_cat":p.art()),0,0);g.pose().popPose();
+        else if(!index && page==0)g.renderItem(new ItemStack(Content.GUIDE.get()),0,0);else g.renderItem(art(index?"bow_cat":p.art()),0,0);g.pose().popPose();
         int recipeY=top+bookH-104;
         if(!index&&(p.note().startsWith("UNAVAILABLE")||p.note().startsWith("RECIPE UNAVAILABLE")))g.drawString(font,"RECIPE UNAVAILABLE",left+25,top+49,0xffa04450,false);
         if(!index&&!p.cells().isEmpty()){

@@ -70,6 +70,7 @@ public final class PlayerControls {
         if(Files.exists(Orders.ROOT.resolve("quit"))){mc.stop();return;}
         if(SharpChecks.single())SharpChecks.startSolo(mc);
         if(mc.player==null || mc.level==null || mc.gameMode==null)return;
+        if("guide-solo".equals(System.getProperty("roomroles.trial"))){GuideProof.tick(mc);return;}
         if(!tapped)observeWire();
         var file=Orders.ROOT.resolve(ROLE+".json");
         if(!Files.exists(file))return;
