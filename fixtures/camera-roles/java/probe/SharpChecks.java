@@ -220,6 +220,22 @@ final class SharpChecks {
             if(!types.contains(person)||!types.contains(cow)||!blockTypes.contains(Blocks.STONE_BRICKS)||rain!=0)return null;
             return transfer(mc,target,scene);
         }
+        if(order.step().equals("large-brick")||order.step().equals("large-cow")||order.step().equals("large-player")){
+            // Record only what the actual client received. 0 = masked/unknown, 1 = authorized
+            // background, 2 = the exposed top of the specific moss floor being compared.
+            var moss=new java.util.HashSet<Integer>();
+            for(int i=0;i<surfaces.size();i++){
+                var s=surfaces.get(i);
+                if(prop(s,"face")==net.minecraft.core.Direction.UP &&
+                        net.minecraft.world.level.block.Block.stateById(((Number)prop(s,"stateId")).intValue()).is(Blocks.MOSS_BLOCK))moss.add(i+2);
+            }
+            int[] backdrop=(int[])prop(scene,"backdrop"),witness=new int[cells.length];
+            for(int i=0;i<cells.length;i++){
+                int surface=cells[i]<0?backdrop[i]:cells[i];
+                witness[i]=moss.contains(surface)?2:surface>0?1:0;
+            }
+            Files.writeString(path.resolveSibling(path.getFileName()+".floor.json"),Orders.JSON.toJson(witness));
+        }
         if(action.equals("player")){
             for(var actor:actors)if(((Number)prop(actor,"typeId")).intValue()==person){
                 Vec3 rel=((Vec3)prop(actor,"feet")).add(0,.9,0).subtract((Vec3)prop(scene,"eye"));

@@ -173,6 +173,36 @@ data["synthetic_stock_transfer_mean_rgb_error"]=transferred_error
 assert max(transferred_error)<29,("Wrong picture on the fixture's transferred monitor",data)
 contact("stock-transfer-experiment.png",["Playable wall feed","Test-only stock transfer","Stock lens source"],[[
         displayed["day"],transferred,stock]])
+
+# Compare flat moss immediately outside the actual cow/player silhouette against the identical
+# unoccupied floor. These patches avoid their feet, any legitimate contact shadow and all UI.
+floor_patches={
+    "large-cow":[(6,153,25,160),(53,153,83,162),(13,165,25,173)],
+    "large-player":[(138,127,164,137),(142,140,154,147)],
+}
+def floor_proof(shot):
+    return json.loads((base/new/"control"/f"{shot}-CamOwner.png.floor.json").read_text())
+bare,known=panel(new,"large-brick"),floor_proof("large-brick")
+for shot,patches in floor_patches.items():
+    drawn,observed=panel(new,shot),floor_proof(shot)
+    checked=dark=0
+    for x0,y0,x1,y1 in patches:
+        for y in range(y0,y1):
+            for x in range(x0,x1):
+                gx,gy=x//6,y//6
+                cell=gy*32+gx
+                nearby=[(gy+j)*32+gx+i for j in (-1,0,1) for i in (-1,0,1)]
+                # Respect opaque/unknown cells. Require an actually published upward moss face
+                # within one sample of the authorized foreground in both observations.
+                if not known[cell] or not observed[cell] or not all(any(proof[k]==2 for k in nearby) for proof in (known,observed)):
+                    continue
+                a,b=bare.getpixel((x,y)),drawn.getpixel((x,y))
+                checked+=1
+                dark+=min(a[0]-b[0],a[1]-b[1])>14 and b[1]<a[1]*.7
+    total=sum((x1-x0)*(y1-y0) for x0,y0,x1,y1 in patches)
+    data[shot+"_verified_moss_pixels"]=checked
+    data[shot+"_false_dark_moss_pixels"]=dark
+    assert checked>total*.70 and dark<=checked*.025,(shot,"New dark seams on authorized exposed moss",checked,dark,total)
 hardware, fallback = panel(new, "same-scene-world-renderer"), panel(new, "same-scene-software")
 contact("same-observation.png", ["World block renderer", "Software fallback"], [[hardware, fallback]])
 data["same_observation_renderer_difference"] = difference(hardware, fallback, 3)

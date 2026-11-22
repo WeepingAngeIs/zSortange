@@ -63,6 +63,51 @@ final class CameraPicture {
 
     record ModelFace(int state, Direction direction) {}
 
+    // Nine angular samples plus the eight physical neighbours of a face at an actor edge.
+    static final int MAX_NEIGHBOURS = 17;
+
+    static int nearbyFaces(CameraScene scene, int row, int col, int[] indices) {
+        int grid = CameraScene.SIDE, mid = row * grid + col;
+        int cell = scene.cells()[mid], backing = cell < 0 ? scene.backdrop()[mid] : cell;
+        var faces = scene.surfaces();
+        var anchor = backing >= 2 && backing != CameraScene.ATMOSPHERE ? faces.get(backing - 2) : null;
+        if (cell == 0 || cell == CameraScene.ATMOSPHERE || (cell < 0 && anchor == null)) return 0;
+        int count = 0;
+        boolean besideActor = cell < 0;
+        for (int r = Math.max(0, row - 1); r <= Math.min(grid - 1, row + 1); r++) {
+            for (int c = Math.max(0, col - 1); c <= Math.min(grid - 1, col + 1); c++) {
+                int i = r * grid + c, neighbour = scene.cells()[i];
+                int code = neighbour < 0 ? scene.backdrop()[i] : neighbour;
+                if (code < 2 || code == CameraScene.ATMOSPHERE) continue;
+                if (cell < 0 || neighbour < 0) {
+                    if (anchor == null || !adjacentOnPlane(anchor, faces.get(code - 2))) continue;
+                    besideActor = true;
+                }
+                count = include(indices, count, code - 2);
+            }
+        }
+        // The edge of a real floor tile can project between two sample centers. Its adjoining
+        // physical face may have been seen on the other side of a wide cow. Use only faces the
+        // server actually sent, in the same plane and touching this independently verified one.
+        if (besideActor && anchor != null) {
+            for (int i = 0; i < faces.size(); i++)
+                if (adjacentOnPlane(anchor, faces.get(i))) count = include(indices, count, i);
+        }
+        return count;
+    }
+
+    private static boolean adjacentOnPlane(CameraScene.Surface a, CameraScene.Surface b) {
+        if (a.face() != b.face() || a.plane() != b.plane()) return false;
+        int dx = a.x() - b.x(), dy = a.y() - b.y(), dz = a.z() - b.z();
+        return a.face().getAxis().choose(dx, dy, dz) == 0 && Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && Math.abs(dz) <= 1;
+    }
+
+    private static int include(int[] indices, int count, int index) {
+        for (int i = 0; i < count; i++) if (indices[i] == index) return count;
+        if (count < indices.length) indices[count++] = index;
+        return count;
+    }
+
     private static void drawScene(CameraScene scene, NativeImage out) {
         var models = new HashMap<ModelFace, List<Facet>>();
         var surfaces = new ProjectedSurface[scene.surfaces().size()];
@@ -73,7 +118,7 @@ final class CameraPicture {
             surfaces[i] = new ProjectedSurface(s, facets, scene);
         }
         int grid = CameraScene.SIDE, tile = SIZE / grid;
-        int[] cells = scene.cells(), neighbours = new int[9];
+        int[] cells = scene.cells(), neighbours = new int[MAX_NEIGHBOURS];
         Vec3 eye = scene.eye(), forward = scene.forward(), up = scene.up(), right = scene.right();
         double stepX = right.x * 2 / SIZE, stepY = right.y * 2 / SIZE, stepZ = right.z * 2 / SIZE;
         for (int row = 0; row < grid; row++) for (int col = 0; col < grid; col++) {
@@ -82,25 +127,8 @@ final class CameraPicture {
                 out.fillRect(startX, startY, tile, tile, MASK);
                 continue;
             }
-            // A ray sample identifies a public face. Its exact projected edges may cross into an
-            // adjacent allowed sample. Gather only faces actually visible in this 3x3 neighborhood.
-            int count = 0;
+            int count = nearbyFaces(scene, row, col, neighbours);
             int backing = cell < 0 ? scene.backdrop()[row * grid + col] : cell;
-            if (cell < 0) {
-                // An animal's bounding box precedes a background ray. Only its independently
-                // observed backdrop may show between the legs or around the actual model.
-                if (backing >= 2 && backing != CameraScene.ATMOSPHERE) neighbours[count++] = backing - 2;
-            } else if (cell != CameraScene.ATMOSPHERE) {
-                for (int r = Math.max(0, row - 1); r <= Math.min(grid - 1, row + 1); r++) {
-                    for (int c = Math.max(0, col - 1); c <= Math.min(grid - 1, col + 1); c++) {
-                        int index = cells[r * grid + c] - 2;
-                        if (index < 0 || index >= surfaces.length) continue;
-                        int n = 0;
-                        while (n < count && neighbours[n] != index) n++;
-                        if (n == count) neighbours[count++] = index;
-                    }
-                }
-            }
             double u = (startX + .5) * 2 / SIZE - 1;
             for (int y = startY; y < startY + tile; y++) {
                 double v = 1 - (y + .5) * 2 / SIZE;

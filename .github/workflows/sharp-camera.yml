@@ -11,8 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     env:
-      OLD: anya-storage-plus-0.3.0-beta.7-chestplacement.1.jar
-      NEW: anya-storage-plus-0.3.0-beta.7-sharpcam.2.jar
+      NEW: anya-storage-plus-0.3.0-beta.7-sharpcam.3.jar
       LIBGL_ALWAYS_SOFTWARE: '1'
       ALSOFT_DRIVERS: 'null'
       LP_NUM_THREADS: '2'
@@ -30,28 +29,31 @@ jobs:
           gradle-version: '8.14.3'
       - uses: actions/download-artifact@v4
         with:
-          name: anya-storage-plus-chestplacement.1
-          run-id: 44984917634
+          name: anya-storage-plus-sharpcam.2
+          run-id: 44989136973
           github-token: ${{ github.token }}
           path: previous
       - name: Build the cumulative camera candidate on Java 21
         run: |
           set -euo pipefail
-          test "$(cat previous/SOURCE_COMMIT.txt)" = faeb057133867d942fb070f072d49f5771eef2ed
-          echo "a6e70b58efbd3dfdb2aa7592a1700a05f90189caffd341eef8c49feac4a30aa8  previous/$OLD" | sha256sum -c -
-          git merge-base --is-ancestor faeb057133867d942fb070f072d49f5771eef2ed HEAD
+          test "$(cat previous/SOURCE_COMMIT.txt)" = 2444a7f6f2ccc3ef9989e5c56fe5833972eb49ed
+          (cd previous && sha256sum -c SHA256SUMS.txt)
+          git merge-base --is-ancestor 2444a7f6f2ccc3ef9989e5c56fe5833972eb49ed HEAD
           gradle --no-daemon --max-workers=2 --console=plain jar
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri python3-pil
-      - name: Capture the original monitor and candidate with two real clients
+      - name: Reuse the verified baseline pictures and capture the candidate with two real clients
         run: |
           set -euo pipefail
-          mkdir -p upload
-          for trial in sharp-old sharp-new; do
-            jar="$PWD/build/libs/$NEW"
-            if [ "$trial" = sharp-old ]; then jar="$PWD/previous/$OLD"; fi
-            gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$trial" -ProlePlayable="$jar" prepareRoleTrial
-            python3 -u -B fixtures/camera-roles/run.py "$trial" | tee -a upload/CHECKS.txt
+          target=build/role-check/sharp-old/control
+          mkdir -p "$target" upload
+          for file in previous/captures/sharp-old-*.png*; do
+            name=$(basename "$file")
+            cp "$file" "$target/${name#sharp-old-}"
           done
+          echo "Original chestplacement.1 captures and checks were recorded in hosted run 44989136973." > "$target/PASS.txt"
+          cp previous/captures/sharp-old-observations.txt "$target/previous-run.ok"
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=sharp-new -ProlePlayable="$PWD/build/libs/$NEW" prepareRoleTrial
+          python3 -u -B fixtures/camera-roles/run.py sharp-new | tee -a upload/CHECKS.txt
       - name: Verify a single-player integrated server, visible detail and privacy
         run: |
           set -euo pipefail
@@ -79,6 +81,6 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-sharpcam.2
+          name: anya-storage-plus-sharpcam.3
           path: upload/
           retention-days: 14

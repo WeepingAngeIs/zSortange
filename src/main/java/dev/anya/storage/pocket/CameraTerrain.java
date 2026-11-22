@@ -134,7 +134,8 @@ final class CameraTerrain {
     private static void composite(CameraScene scene, NativeImage out, float[] sceneDepth) {
         int grid = CameraScene.SIDE, size = out.getWidth(), tile = size / grid;
         int[] samples = scene.cells();
-        CameraScene.Surface[] neighbours = new CameraScene.Surface[9];
+        int[] indices = new int[CameraPicture.MAX_NEIGHBOURS];
+        CameraScene.Surface[] neighbours = new CameraScene.Surface[indices.length];
         var eye = scene.eye();
         var forward = scene.forward();
         var up = scene.up();
@@ -147,21 +148,8 @@ final class CameraTerrain {
                 continue;
             }
             int backing = cell < 0 ? scene.backdrop()[index] : cell;
-            int count = 0;
-            if (cell < 0) {
-                // An actor silhouette can only reveal its specifically authorized background.
-                if (backing >= 2 && backing != CameraScene.ATMOSPHERE) neighbours[count++] = scene.surfaces().get(backing - 2);
-            } else if (cell != CameraScene.ATMOSPHERE) {
-                for (int r = Math.max(0, row - 1); r <= Math.min(grid - 1, row + 1); r++)
-                    for (int c = Math.max(0, col - 1); c <= Math.min(grid - 1, col + 1); c++) {
-                        int code = samples[r * grid + c];
-                        if (code < 2 || code == CameraScene.ATMOSPHERE) continue;
-                        var face = scene.surfaces().get(code - 2);
-                        int n = 0;
-                        while (n < count && neighbours[n] != face) n++;
-                        if (n == count) neighbours[count++] = face;
-                    }
-            }
+            int count = CameraPicture.nearbyFaces(scene, row, col, indices);
+            for (int i = 0; i < count; i++) neighbours[i] = scene.surfaces().get(indices[i]);
             for (int y = sy; y < sy + tile; y++) {
                 double ny = 1 - (y + .5) * 2 / size;
                 int glY = size - 1 - y;
