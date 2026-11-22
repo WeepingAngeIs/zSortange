@@ -6,6 +6,10 @@ import net.minecraft.world.phys.Vec3;
 /** Rays for a square Skyglass sensor. Upward cameras keep north at the top of the monitor. */
 final class CameraOptics {
     static final int SIDE=16;
+    static final double WIDE_APERTURE=Math.tan(Math.toRadians(104.0/2));
+    static double wallAperture(CameraDevices.Device camera){
+        return camera.tracking.wideLens?WIDE_APERTURE:1;
+    }
     static Vec3 ray(Direction direction,int column,int row){
         return ray(direction,column,row,SIDE);
     }

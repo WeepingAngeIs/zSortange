@@ -16,12 +16,14 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 /** A visible-surface observation local to the lens. The only absolute position is the viewer's monitor. */
 public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sky, float rain, float thunder,
                           Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
-                          List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop, int[] edgeBackdrop) implements CustomPacketPayload {
+                          List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop, int[] edgeBackdrop,
+                          int[] detail) implements CustomPacketPayload {
     public static final int SIDE = 32, ATMOSPHERE = Short.MAX_VALUE;
-    static final int RANGE = 64;
+    static final int RANGE = 96;
     static final float FAR_CLIP = RANGE + 4;
-    static final int MAX_SURFACES = 512, MAX_ACTORS = 6, MAX_EDGE_CELLS = 48;
-    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v4"));
+    static final int MAX_SURFACES = 1024, MAX_ACTORS = 6, MAX_EDGE_CELLS = 48;
+    static final int DETAIL_SIDE = 6, DETAIL_AREA = DETAIL_SIDE * DETAIL_SIDE, MAX_DETAIL_CELLS = 48;
+    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v5"));
     public static BiConsumer<Connection, CameraScene> receiver = (connection, scene) -> {};
 
     public record Surface(int stateId, int x, int y, int z, Direction face, float plane,
@@ -54,12 +56,12 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
 
     static CameraScene empty(BlockPos monitor) {
         return new CameraScene(monitor, -1, 0, null, 0, 0, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO,
-                List.of(), List.of(), new int[0], new int[0], new int[0]);
+                List.of(), List.of(), new int[0], new int[0], new int[0], new int[0]);
     }
 
     static void register(RegisterPayloadHandlersEvent event) {
         StreamCodec<RegistryFriendlyByteBuf, CameraScene> codec = StreamCodec.ofMember(CameraScene::write, CameraScene::read);
-        event.registrar("sharpcamera4").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
+        event.registrar("sharpcamera5").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
     }
 
     private void write(RegistryFriendlyByteBuf out) {
@@ -101,6 +103,18 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
             out.writeShort(i);
             for(int q=0;q<4;q++)out.writeShort(edgeBackdrop[4*i+q]);
         }
+        int tiles=0;
+        for(int i=0;detail.length!=0 && i<cells.length;i++)if(hasDetail(detail,i))tiles++;
+        out.writeByte(tiles);
+        for(int i=0;detail.length!=0 && i<cells.length;i++)if(hasDetail(detail,i)){
+            out.writeShort(i);
+            for(int j=0;j<DETAIL_AREA;j++)out.writeShort(detail[i*DETAIL_AREA+j]);
+        }
+    }
+
+    private static boolean hasDetail(int[] refs,int cell) {
+        for(int i=0;i<DETAIL_AREA;i++)if(refs[cell*DETAIL_AREA+i]!=0)return true;
+        return false;
     }
 
     private static boolean hasEdgeProof(int[] refs,int cell) {
@@ -115,7 +129,15 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
         SourceSky sky = in.readBoolean() ? new SourceSky(in.readInt() & 0xffffff, bounded(in.readFloat(),0,1),
                 bounded(in.readFloat(),-7,7), bounded(in.readUnsignedByte(),7)) : null;
         float rain=bounded(in.readFloat(),0,1), thunder=bounded(in.readFloat(),0,1);
-        Vec3 eye=vector(in,0,1), forward=vector(in,-1,1), right=vector(in,-1,1), up=vector(in,-1,1);
+        float maxAperture=(float)CameraOptics.WIDE_APERTURE+.0001f;
+        Vec3 eye=vector(in,0,1), forward=vector(in,-1,1);
+        Vec3 right=vector(in,-maxAperture,maxAperture), up=vector(in,-maxAperture,maxAperture);
+        double aperture=right.length();
+        if(Math.abs(forward.lengthSqr()-1)>.001 || aperture<.07 || aperture>maxAperture
+                || up.length()>maxAperture || Math.abs(up.length()-aperture)>.0001
+                || Math.abs(forward.dot(right))>.0001 || Math.abs(forward.dot(up))>.0001
+                || Math.abs(right.dot(up))>.0001 || right.cross(forward).dot(up)<=0)
+            throw new IllegalArgumentException("Invalid camera lens orientation");
         int count=bounded(in.readVarInt(),MAX_SURFACES);
         List<Surface> surfaces=new ArrayList<>(count);
         for (int i=0;i<count;i++) {
@@ -162,7 +184,21 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
                 edge[4*i+q]=code;
             }
         }
-        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop,edge);
+        int tiles=bounded(in.readUnsignedByte(),MAX_DETAIL_CELLS);
+        int[] detail=new int[tiles==0?0:cells.length*DETAIL_AREA];
+        previous=-1;
+        for(int n=0;n<tiles;n++){
+            int cell=bounded(in.readUnsignedShort(),cells.length-1);
+            if(cell<=previous || cells[cell]<2 || cells[cell]==ATMOSPHERE)
+                throw new IllegalArgumentException("Invalid detail tile");
+            previous=cell;
+            for(int j=0;j<DETAIL_AREA;j++){
+                int ref=in.readShort();
+                if(ref< -1 || ref==1 || ref>=surfaces.size()+2)throw new IllegalArgumentException("Invalid detail surface");
+                detail[cell*DETAIL_AREA+j]=ref;
+            }
+        }
+        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop,edge,detail);
     }
 
     private static int bounded(int value,int max) {

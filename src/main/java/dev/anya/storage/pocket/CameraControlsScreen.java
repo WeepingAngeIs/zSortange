@@ -64,6 +64,11 @@ final class CameraControlsScreen extends Screen {
             button(left,y,half,"Aim: "+MODES[v.mode()],()->change("mode",(v.mode()+1)%MODES.length,""));
             button(left+half+4,y,panel-half-4,"Targets: "+GROUPS[v.group()],()->change("group",(v.group()+1)%GROUPS.length,""));
             y+=22;
+            if(v.lens()>=0){
+                button(left,y,panel,v.lens()==1?"Wide lens (104°)":"Standard lens (90°)",()->change("lens",1-v.lens(),""))
+                        .setTooltip(Tooltip.create(Component.literal("Switch between the standard view and a wider view of the same scene.")));
+                y+=21;
+            }
             search=new EditBox(font,left,y,panel-48,18,Component.literal("Find a mob"));
             search.setHint(Component.literal("Find a mob by name or mod"));search.setMaxLength(100);search.setValue(query);
             addRenderableWidget(search);

@@ -9,8 +9,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.anya.storage.AnyaStorage;
 import java.nio.FloatBuffer;
-import java.util.HashMap;
-import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -32,7 +30,7 @@ final class CameraTerrain {
     private static FloatBuffer depth;
     private static boolean failed;
 
-    static boolean draw(CameraScene scene, NativeImage frame, float[] sceneDepth) {
+    static boolean draw(CameraScene scene, CameraPicture.SurfaceView view, NativeImage frame, float[] sceneDepth) {
         if (failed) return false;
         RenderSystem.assertOnRenderThread();
         var mc = Minecraft.getInstance();
@@ -57,7 +55,8 @@ final class CameraTerrain {
             modelView.identity();
             RenderSystem.applyModelViewMatrix();
             float fov = (float)(2 * Math.atan(scene.up().length()));
-            RenderSystem.setProjectionMatrix(new Matrix4f().perspective(fov, 1, NEAR, FAR), VertexSorting.DISTANCE_TO_ORIGIN);
+            var lensProjection = new Matrix4f().perspective(fov, 1, NEAR, FAR);
+            RenderSystem.setProjectionMatrix(lensProjection, VertexSorting.DISTANCE_TO_ORIGIN);
             RenderSystem.setShaderColor(1, 1, 1, 1);
             RenderSystem.setShaderFogStart(FAR + 1);
             RenderSystem.setShaderFogEnd(FAR + 2);
@@ -69,13 +68,13 @@ final class CameraTerrain {
             var pose = new PoseStack();
             pose.mulPose(lens.rotation().conjugate(new Quaternionf()));
             pose.translate(-scene.eye().x, -scene.eye().y, -scene.eye().z);
-            drawFaces(scene, pose);
+            drawFaces(view, pose);
             target.bindWrite(false);
             depth.clear();
             GL11.glReadPixels(0, 0, size, size, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, depth);
             RenderSystem.bindTexture(target.getColorTextureId());
             color.downloadTexture(0, false);
-            composite(scene, frame, sceneDepth);
+            composite(scene, view, lensProjection, frame, sceneDepth);
             return true;
         } catch (RuntimeException unavailable) {
             failed = true;
@@ -94,19 +93,15 @@ final class CameraTerrain {
         }
     }
 
-    private static void drawFaces(CameraScene scene, PoseStack pose) {
-        var models = new HashMap<CameraPicture.ModelFace, List<CameraPicture.Facet>>();
+    private static void drawFaces(CameraPicture.SurfaceView view, PoseStack pose) {
         var batch = MultiBufferSource.immediate(storage);
         // The native atlas pass uses source lighting in vertex colors, independent of Skygrid's lightmap.
         var vertices = batch.getBuffer(RenderType.beaconBeam(InventoryMenu.BLOCK_ATLAS, false));
-        for (var s : scene.surfaces()) {
-            var key = new CameraPicture.ModelFace(s.stateId(), s.face());
-            float brightness = CameraPicture.light(s.skyLight(), s.blockLight(), scene) * switch (s.face()) {
-                case UP -> 1f; case DOWN -> .5f; case NORTH, SOUTH -> .8f; default -> .6f;
-            };
-            int origin = s.face().getAxis().choose(s.x(), s.y(), s.z());
-            for (var facet : models.computeIfAbsent(key, CameraPicture::model)) {
-                if (Math.abs(origin + facet.a.plane() - s.plane()) > .009) continue;
+        for (var face : view.surfaces) {
+            var s = face.s;
+            float brightness = face.brightness;
+            for (var facet : face.facets) {
+                if (Math.abs(facet.a.plane() - face.localPlane) > .009) continue;
                 int rgb = facet.tinted ? s.tint() : 0xffffff;
                 int argb = 0xff000000 | (int)((rgb >> 16 & 255) * brightness) << 16
                         | (int)((rgb >> 8 & 255) * brightness) << 8 | (int)((rgb & 255) * brightness);
@@ -131,12 +126,10 @@ final class CameraTerrain {
                 .setNormal(pose, s.face().getStepX(), s.face().getStepY(), s.face().getStepZ());
     }
 
-    private static void composite(CameraScene scene, NativeImage out, float[] sceneDepth) {
+    private static void composite(CameraScene scene, CameraPicture.SurfaceView view, Matrix4f projection,
+                                  NativeImage out, float[] sceneDepth) {
         int grid = CameraScene.SIDE, size = out.getWidth(), tile = size / grid;
         int[] samples = scene.cells();
-        int[] indices = new int[CameraPicture.MAX_NEIGHBOURS];
-        int[] edges = new int[4];
-        CameraScene.Surface[] neighbours = new CameraScene.Surface[indices.length];
         var eye = scene.eye();
         var forward = scene.forward();
         var up = scene.up();
@@ -149,34 +142,43 @@ final class CameraTerrain {
                 continue;
             }
             int backing = cell < 0 ? scene.backdrop()[index] : cell;
-            int count = CameraPicture.nearbyFaces(scene, row, col, indices);
-            for (int i = 0; i < count; i++) neighbours[i] = scene.surfaces().get(indices[i]);
-            CameraPicture.edgeFaces(scene, index, indices, count, edges);
             for (int y = sy; y < sy + tile; y++) {
                 double ny = 1 - (y + .5) * 2 / size;
                 int glY = size - 1 - y;
                 for (int x = sx; x < sx + tile; x++) {
-                    int edge = edges[CameraPicture.quadrant(x - sx, y - sy, tile)];
-                    if (edge < 0) {
+                    var permitted = view.at(scene, index, x-sx, y-sy);
+                    if (permitted == null) {
                         sceneDepth[y * size + x] = 0;
                         out.setPixelRGBA(x, y, CameraPicture.MASK);
                         continue;
                     }
-                    var adjoining = edge >= 2 ? scene.surfaces().get(edge - 2) : null;
                     double nx = (x + .5) * 2 / size - 1;
                     double dx = forward.x + nx * right.x + ny * up.x;
                     double dy = forward.y + nx * right.y + ny * up.y;
                     double dz = forward.z + nx * right.z + ny * up.z;
                     int sample = color.getPixelRGBA(x, glY);
                     float z = depth.get(glY * size + x);
-                    float distance = NEAR * FAR / (FAR - z * (FAR - NEAR));
-                    if ((sample >>> 24) >= 32 && z < 1 && matches(neighbours, count, adjoining,
+                    double distance = linearDepth(z,projection);
+                    if ((sample >>> 24) >= 32 && z < 1 && matches(view, permitted,
                             eye.x + dx * distance, eye.y + dy * distance, eye.z + dz * distance)) {
-                        sceneDepth[y * size + x] = distance;
+                        sceneDepth[y * size + x] = (float)distance;
                         out.setPixelRGBA(x, y, sample | 0xff000000);
                     } else {
-                        sceneDepth[y * size + x] = Float.POSITIVE_INFINITY;
-                        out.setPixelRGBA(x, y, CameraPicture.background(scene.sky(), backing, dx, dy, dz));
+                        // Distant depth values can quantize outside a block's bounds. Re-intersect
+                        // only authorized baked triangles, and read their own texture. Never adopt
+                        // the color of an unrecognized hardware surface or look behind its depth.
+                        double maxDepth = z < 1 ? linearDepth(Math.nextUp(z),projection) : Double.POSITIVE_INFINITY;
+                        double nearest = Double.POSITIVE_INFINITY;
+                        int approved = 0;
+                        for (int ref : permitted) {
+                            var face = view.surfaces[ref];
+                            double t = face.intersection(dx,dy,dz);
+                            if (!(t >= NEAR && t < FAR && t <= maxDepth && t < nearest)) continue;
+                            int rgba = face.sample(eye.x + dx*t,eye.y + dy*t,eye.z + dz*t);
+                            if (rgba != 0) { nearest = t; approved = rgba; }
+                        }
+                        sceneDepth[y * size + x] = (float)nearest;
+                        out.setPixelRGBA(x, y, approved == 0 ? CameraPicture.background(scene.sky(), backing, dx, dy, dz) : approved);
                     }
                 }
             }
@@ -184,15 +186,20 @@ final class CameraTerrain {
     }
 
     /** Depth unprojects to a unique point. A face visible in a different part of the image is insufficient. */
-    private static boolean matches(CameraScene.Surface[] faces, int count, CameraScene.Surface adjoining, double x, double y, double z) {
-        for (int i = 0; i < count + (adjoining == null ? 0 : 1); i++) {
-            var s = i == count ? adjoining : faces[i];
+    private static boolean matches(CameraPicture.SurfaceView view, int[] permitted, double x, double y, double z) {
+        for (int ref : permitted) {
+            var s = view.surfaces[ref].s;
             if (Math.abs(s.face().getAxis().choose(x, y, z) - s.plane()) <= .010
                     && x >= s.x() - .001 && x <= s.x() + 1.001
                     && y >= s.y() - .001 && y <= s.y() + 1.001
                     && z >= s.z() - .001 && z <= s.z() + 1.001) return true;
         }
         return false;
+    }
+
+    static double linearDepth(float sample, Matrix4f projection) {
+        // Use the matrix actually submitted to GL and avoid subtracting nearly equal floats.
+        return projection.m32() / ((2.0*sample-1.0) + projection.m22());
     }
 
     static void clear() {

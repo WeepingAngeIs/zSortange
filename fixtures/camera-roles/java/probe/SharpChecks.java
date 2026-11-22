@@ -151,15 +151,17 @@ final class SharpChecks {
         var action=order.action().substring(6);
         var mc=Minecraft.getInstance();
         var path=Orders.ROOT.resolve(order.step()+"-"+System.getProperty("roomroles.name")+".png");
+        if(action.startsWith("native."))return HostedNativeLens.capture(order,action,path,blankScenes-startBlank+legacyBlankDelta);
         if(action.startsWith("range."))return RangeChecks.capture(mc,order,path,age,scenes-startScenes,blankScenes-startBlank,legacyBlankDelta);
-        if(action.equals("reference")){
+        if(action.startsWith("horizon."))return HorizonChecks.capture(mc,order,path,age,scenes-startScenes,blankScenes-startBlank+legacyBlankDelta);
+        if(action.equals("reference")||action.equals("reference-wide")){
             referenceInProgress=true;
             try{
                 var camera=mc.getCameraEntity();var level=mc.level;var pose=mc.player.position();
                 var rot=mc.options.getCameraType();var main=mc.getMainRenderTarget();var yaw=mc.player.getYRot();var pitch=mc.player.getXRot();
                 check(camera==mc.player,"Outdoor player is not in ordinary first person");
                 screenshot(mc,Orders.ROOT.resolve(order.step()+"-outside-before.png"));
-                long started=System.nanoTime();SharpReference.capture(mc,order.target(),path);
+                long started=System.nanoTime();SharpReference.capture(mc,order.target(),path,action.equals("reference-wide")?104:90);
                 double millis=(System.nanoTime()-started)/1_000_000.0;
                 check(mc.getCameraEntity()==camera && mc.level==level && mc.getMainRenderTarget()==main && mc.options.getCameraType()==rot
                         && pose.equals(mc.player.position()) && yaw==mc.player.getYRot() && pitch==mc.player.getXRot(),"Native reference failed to restore the outside player");

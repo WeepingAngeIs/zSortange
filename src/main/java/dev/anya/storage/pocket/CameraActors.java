@@ -88,9 +88,10 @@ final class CameraActors {
             }
             modelView.identity();
             RenderSystem.applyModelViewMatrix();
-            RenderSystem.setProjectionMatrix(new Matrix4f().perspective((float)(2 * Math.atan(scene.up().length())), 1, NEAR, FAR), VertexSorting.DISTANCE_TO_ORIGIN);
-            RenderSystem.setShaderFogStart(64);
-            RenderSystem.setShaderFogEnd(80);
+            var lensProjection = new Matrix4f().perspective((float)(2 * Math.atan(scene.up().length())), 1, NEAR, FAR);
+            RenderSystem.setProjectionMatrix(lensProjection, VertexSorting.DISTANCE_TO_ORIGIN);
+            RenderSystem.setShaderFogStart(FAR + 1);
+            RenderSystem.setShaderFogEnd(FAR + 2);
             RenderSystem.setShaderColor(1, 1, 1, 1);
             RenderSystem.enableDepthTest();
             RenderSystem.depthMask(true);
@@ -141,7 +142,7 @@ final class CameraActors {
                         int pixel = readback.getPixelRGBA(x, glY);
                         if ((pixel >>> 24) <= 127) continue;
                         float z = depth.get(glY * size + x);
-                        float distance = NEAR * FAR / (FAR - z * (FAR - NEAR));
+                        float distance = (float)CameraTerrain.linearDepth(z,lensProjection);
                         int i = y * size + x;
                         if (z < 1 && distance < sceneDepth[i]) {
                             frame.setPixelRGBA(x, y, pixel);

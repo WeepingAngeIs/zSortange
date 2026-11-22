@@ -32,7 +32,8 @@ final class SharpReference {
     }
     private static boolean rendering;
 
-    static void capture(Minecraft mc, BlockPos cameraPos, Path image) throws IOException {
+    static void capture(Minecraft mc, BlockPos cameraPos, Path image) throws IOException {capture(mc,cameraPos,image,90);}
+    static void capture(Minecraft mc, BlockPos cameraPos, Path image,int verticalDegrees) throws IOException {
         RenderSystem.assertOnRenderThread();
         if (rendering) throw new IOException("Recursive stock camera reference");
         if (mc.level == null || mc.player == null || !mc.level.hasChunkAt(cameraPos)
@@ -59,7 +60,7 @@ final class SharpReference {
             var view = new Matrix4f().rotation(lens.rotation().conjugate(new Quaternionf()));
             int width=primary.width,height=primary.height;
             if(width<height)throw new IOException("Fixture expects a landscape client");
-            var perspective = new Matrix4f().perspective((float)Math.PI / 2,(float)width/height,.05f,128);
+            var perspective = new Matrix4f().perspective((float)Math.toRadians(verticalDegrees),(float)width/height,.05f,128);
             // LevelRenderer internally rebinds getMainRenderTarget() after outline/translucent passes.
             // Redirect that field only inside this disposable client render and restore it in finally.
             var main = Minecraft.class.getDeclaredField("mainRenderTarget");

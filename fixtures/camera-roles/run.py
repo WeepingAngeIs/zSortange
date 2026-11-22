@@ -13,11 +13,13 @@ control.mkdir(parents=True, exist_ok=True)
 server = root / "Server"
 solo = sys.argv[1].endswith('-solo')
 sharp = sys.argv[1].startswith('sharp-')
+horizon = sys.argv[1].startswith('sharp-horizon-')
+view_distance = 10 if horizon else 4
 server.mkdir(exist_ok=True)
 (server / "eula.txt").write_text("eula=true\n")
 (server / "server.properties").write_text(
     "server-ip=127.0.0.1\nserver-port=25574\nonline-mode=false\ngamemode=survival\n"
-    "spawn-protection=0\nlevel-type=minecraft:flat\nview-distance=4\nsimulation-distance=3\n")
+    f"spawn-protection=0\nlevel-type=minecraft:flat\nview-distance={view_distance}\nsimulation-distance=3\n")
 roles = ["CamOwner"] if solo else ["CamOwner","RoomBuilder"]
 if sys.argv[1] == "candidate":
     roles.append("RoomVisitor")
@@ -40,7 +42,7 @@ def start(name, display):
         command = ["xvfb-run", "-a"] + command
         (folder / "options.txt").write_text(
             "onboardAccessibility:false\ntutorialStep:none\nenableVsync:false\n"
-            "renderDistance:4\nsimulationDistance:3\nmaxFps:35\n")
+            f"renderDistance:{view_distance}\nsimulationDistance:3\nmaxFps:35\n")
     processes[name] = subprocess.Popen(command, cwd=folder, stdin=subprocess.PIPE,
                                         stdout=console, stderr=subprocess.STDOUT, text=True, env=env)
 
@@ -60,7 +62,7 @@ try:
         time.sleep(1)
     # The sharp trial exercises actual GPU draws on the software-hosted runners; its
     # last step also waits for a genuine vanilla chunk eviction, not a simulated signal.
-    budget = 720 if sharp else 630 if sys.argv[1]=="studio" else 380
+    budget = 1100 if horizon else 720 if sharp else 630 if sys.argv[1]=="studio" else 380
     deadline = time.monotonic()+budget
     while not (control / "PASS.txt").exists():
         failures = list(control.glob("FAIL-*"))

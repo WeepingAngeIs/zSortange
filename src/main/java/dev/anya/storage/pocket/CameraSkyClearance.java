@@ -9,8 +9,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.phys.Vec3;
 
-/** Only the atmosphere beyond the foreground is depicted. Each distant sector uses one proved
- * sightline; a distant private voxel, solid or air, has the same unavailable result. */
+/** Clear sky observation without chunk tickets. The legacy ceiling sensor uses sectors;
+ * the sharp wall lens proves its own foreground and any individual celestial sightline. */
 final class CameraSkyClearance {
     private static final int SECTORS=3, LEGACY_CLAIM_LIMIT=4096, WALL_CLAIM_LIMIT=3072;
     private final ServerPlayer viewer;
@@ -21,11 +21,8 @@ final class CameraSkyClearance {
     private final int claimLimit;
     private final Map<BlockPos,Boolean> access=new HashMap<>();
     private final Boolean[] clear=new Boolean[SECTORS*SECTORS];
-    private final Sight[] horizon=new Sight[SECTORS*SECTORS];
     private Boolean overhead;
-    private enum Sight { BLOCKED, EDGE, CLEAR }
-    // Outside the observed terrain the wall feed can depict only atmosphere.
-    private static final int HORIZON_DISTANCE=64;
+    private enum Sight { CLEAR, SOLID, DENIED, UNLOADED, CLIPPED, BUDGET }
 
     CameraSkyClearance(ServerPlayer viewer,ServerLevel level,LoadedPocketBlocks blocks,BlockPos lens,Vec3 eye,boolean wall) {
         this.claimLimit=wall?WALL_CLAIM_LIMIT:LEGACY_CLAIM_LIMIT;
@@ -45,15 +42,25 @@ final class CameraSkyClearance {
         return overhead;
     }
 
-    int wall(int column,int row,int side,Vec3 direction,SourceSky sky) {
+    // Call only after this exact foreground ray reached its near clipping plane through
+    // loaded, permitted open space. The color is sampled at the lens; it cannot distinguish
+    // any material, actor, claim, lighting or celestial detail beyond that clipping plane.
+    int climate(Vec3 direction,SourceSky sky) {
+        return sky!=null && direction.y>0 && overhead()?CameraScene.ATMOSPHERE:0;
+    }
+
+    // A clear 96-block foreground can show actual celestial detail only when this particular
+    // ray also reaches world sky. A neighbouring ray never supplies that proof.
+    int wall(Vec3 direction,SourceSky sky) {
         if(sky==null || direction.y<=0 || !level.dimensionType().hasSkyLight())return 0;
-        int index=(row*SECTORS/side)*SECTORS+column*SECTORS/side;
-        if(horizon[index]==null)horizon[index]=trace(direction,HORIZON_DISTANCE);
-        if(horizon[index]==Sight.BLOCKED)return 0;
-        // A sun/moon face needs clearance along this very ray, even when other rays in its
-        // sector could see it. At a natural tracking boundary paint only the outdoor sky color.
-        if((horizon[index]==Sight.CLEAR || sky.direction(direction)!=CameraFeed.SKY || !overhead()) && open(direction))return 1;
-        return overhead()?CameraScene.ATMOSPHERE:0;
+        int local=climate(direction,sky);
+        if(local!=0 && sky.direction(direction)==CameraFeed.SKY)return local;
+        if(direction.y<=.15 || (level.getMaxBuildHeight()-.0001-eye.y)/direction.y>624)return local;
+        return switch(trace(direction,624)){
+            case CLEAR -> 1;
+            case CLIPPED, BUDGET -> local;
+            case SOLID, DENIED, UNLOADED -> 0;
+        };
     }
 
     boolean open(Vec3 direction) {
@@ -67,14 +74,15 @@ final class CameraSkyClearance {
         if(toSky<=0)return Sight.CLEAR;
         Vec3 end=eye.add(direction.scale(Math.min(toSky,limit)));
         return BlockGetter.traverseBlocks(eye,end,this,(observer,pos)->{
-            if(!level.getWorldBorder().isWithinBounds(pos))return Sight.BLOCKED;
+            if(!level.getWorldBorder().isWithinBounds(pos))return Sight.DENIED;
             // Stop before touching the first unloaded column. A missing foreground chunk was
             // already masked by the actual picture ray; this result contains no distant geometry.
-            if(blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null)return Sight.EDGE;
-            if(!observer.allowed(pos))return Sight.BLOCKED;
+            if(blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null)return Sight.UNLOADED;
+            if(access.size()>=claimLimit && !access.containsKey(pos))return Sight.BUDGET;
+            if(!observer.allowed(pos))return Sight.DENIED;
             if(pos.equals(lens) || observer.blocks.getBlockState(pos).isAir())return null;
-            return Sight.BLOCKED;
-        },observer->toSky<=limit?Sight.CLEAR:Sight.EDGE);
+            return Sight.SOLID;
+        },observer->toSky<=limit?Sight.CLEAR:Sight.CLIPPED);
     }
 
     private boolean allowed(BlockPos pos) {

@@ -20,6 +20,7 @@ final class CameraTracking {
     static final int MAX_RULES=32;
     Mode mode=Mode.FIXED;
     Group group=Group.ALL;
+    boolean wideLens;
     final Set<String> watch=new TreeSet<>(),ignore=new TreeSet<>();
     int rest=-1;
     private Map<UUID,Vec3> previous=Map.of();
@@ -47,15 +48,17 @@ final class CameraTracking {
     }
     void save(CompoundTag root){
         var tag=new CompoundTag();tag.putString("Mode",mode.name());tag.putString("Group",group.name());
+        if(wideLens)tag.putBoolean("WideLens",true);
         var rules=new CompoundTag();watch.forEach(k->rules.putByte(k,(byte)1));ignore.forEach(k->rules.putByte(k,(byte)2));
         tag.put("Types",rules);if(rest>=0)tag.putInt("RestPan",rest);
         root.put("Tracking",tag);root.putBoolean("Glances",mode==Mode.GLANCE);
     }
     void load(CompoundTag root){
-        clearMotion();watch.clear();ignore.clear();rest=-1;group=Group.ALL;
+        clearMotion();watch.clear();ignore.clear();rest=-1;group=Group.ALL;wideLens=false;
         mode=root.getBoolean("Glances")?Mode.GLANCE:Mode.FIXED;
         if(!root.contains("Tracking",Tag.TAG_COMPOUND))return;
         var t=root.getCompound("Tracking");
+        wideLens=t.getBoolean("WideLens");
         try{mode=Mode.valueOf(t.getString("Mode"));}catch(IllegalArgumentException ignored){}
         try{group=Group.valueOf(t.getString("Group"));}catch(IllegalArgumentException ignored){}
         if(t.contains("RestPan",Tag.TAG_INT))rest=Math.clamp(t.getInt("RestPan"),0,2);

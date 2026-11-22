@@ -27,6 +27,7 @@ public final class Scenario {
     private static final String FLAVOR=System.getProperty("roomroles.trial","");
     private static final boolean SHARP=FLAVOR.startsWith("sharp-"), SOLO=FLAVOR.endsWith("-solo");
     private static final boolean RANGE=FLAVOR.startsWith("sharp-range-"), RANGE_OLD=FLAVOR.equals("sharp-range-old");
+    private static final boolean HORIZON=FLAVOR.startsWith("sharp-horizon-"), HORIZON_OLD=FLAVOR.equals("sharp-horizon-old");
     private static final boolean OLD_PICTURE=FLAVOR.equals("sharp-old");
     private static final String OWNER="CamOwner", BUILDER="RoomBuilder", GUEST="RoomVisitor";
     private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial"));
@@ -46,12 +47,12 @@ public final class Scenario {
     private static int index,started,acks;
     private static boolean finished;
     private static UUID cameraId;
-    private interface Work {void run()throws Exception;}
-    private interface Ready {boolean get()throws Exception;}
+    interface Work {void run()throws Exception;}
+    interface Ready {boolean get()throws Exception;}
     private record Step(String name,Work start,Ready ready){}
-    private static ServerPlayer player(String name){return server.getPlayerList().getPlayerByName(name);}
-    private static void step(String name,Work action,Ready ready){steps.add(new Step(name,action,ready));}
-    private static void verify(String name,Work action){step(name,action,()->true);}
+    static ServerPlayer player(String name){return server.getPlayerList().getPlayerByName(name);}
+    static void step(String name,Work action,Ready ready){steps.add(new Step(name,action,ready));}
+    static void verify(String name,Work action){step(name,action,()->true);}
     private static BlockPos roomPos(int x,int y,int z){return new BlockPos(room.x()+x,y,room.z()+z);}
     private static ServerLevel inside(){return PocketService.dimension(server);}
     private static void writeLog(String value)throws Exception{
@@ -89,7 +90,7 @@ public final class Scenario {
             current=next.name();started=now;acks=0;pending.clear();receivedClicks.clear();
             Orders.write("step.txt",current);next.start().run();return;
         }
-        int timeout = current.equals("remove-outdoor-load-cause") ? 1800 : SHARP ? 1000 : 600;
+        int timeout = current.equals("remove-outdoor-load-cause")||current.equals("integrated-room-releases-bootstrap-spawn-after-link") ? 1800 : SHARP ? 1000 : 600;
         if(now-started>timeout)throw new AssertionError("Timed out at "+current+" pending="+pending.keySet()+" received="+receivedClicks);
         if(STUDIO&&current.equals("motion-on-indoor-monitor")&&(now-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
         for(var entry:pending.entrySet()){
@@ -159,7 +160,7 @@ public final class Scenario {
         p.getInventory().selected=slot;
         p.connection.send(new ClientboundSetCarriedItemPacket(slot));p.inventoryMenu.broadcastChanges();
     }
-    private static void order(String role,String action,BlockPos target,Vec3 feet,Vec3 aim,Item item,boolean sneak,Direction face,int color)throws Exception{
+    static void order(String role,String action,BlockPos target,Vec3 feet,Vec3 aim,Item item,boolean sneak,Direction face,int color)throws Exception{
         var p=player(role);equip(p,item);
         double height=p.getEyeHeight(sneak?net.minecraft.world.entity.Pose.CROUCHING:net.minecraft.world.entity.Pose.STANDING);
         var delta=aim.subtract(feet.add(0,height,0));
@@ -191,7 +192,7 @@ public final class Scenario {
             return true;
         });
     }
-    private static final BlockPos SOURCE=new BlockPos(168,82,8);
+    static final BlockPos SOURCE=new BlockPos(168,82,8);
     private static net.minecraft.world.entity.animal.Cow sharpCow;
     private static void fixtureRoof(boolean present){
         for(var cell:BlockPos.betweenClosed(SOURCE.offset(-5,3,-8),SOURCE.offset(5,3,1))){
@@ -215,7 +216,7 @@ public final class Scenario {
         player(BUILDER).connection.teleport(SOURCE.getX()+.5,-59,SOURCE.getZ()+.5+frontierDistance*16,180,0);
     }
 
-    private static void wallScene(Block center) {
+    static void wallScene(Block center) {
         for(int x=-6;x<=6;x++)for(int y=-1;y<=2;y++) {
             Block block=Math.abs(x)<=2 ? center : x<0 ? Blocks.BOOKSHELF : Blocks.OAK_LOG;
             home.setBlockAndUpdate(SOURCE.north(5).offset(x,y,0),block.defaultBlockState());
@@ -224,8 +225,13 @@ public final class Scenario {
     private static void sharpStage(){
         // Vanilla spawn spans the hub and lens until the outdoor player reaches the camera.
         // A single-player visit continues to require a loaded home hub independent of the feed.
-        home.setDefaultSpawnPos(new BlockPos(88,81,0),0);
-        home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(7,server);
+        if(HORIZON&&!SOLO){
+            home.setDefaultSpawnPos(HUB,0);
+            player(BUILDER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0);
+        }else{
+            home.setDefaultSpawnPos(new BlockPos(88,81,0),0);
+            home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(7,server);
+        }
         home.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);
         home.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false,server);
         for(var cell:BlockPos.betweenClosed(SOURCE.offset(-9,-2,-9),SOURCE.offset(9,-2,7)))
@@ -240,7 +246,8 @@ public final class Scenario {
         if(SOLO || OLD_PICTURE)return;
         step(name,()->{
             var p=player(BUILDER);var feet=p.position();
-            order(BUILDER,"sharp.reference",SOURCE,feet,feet.add(2,1.6,2),Items.AIR,false,null,0);
+            order(BUILDER,name.startsWith("stock-wide-")?"sharp.reference-wide":"sharp.reference",SOURCE,feet,
+                    HORIZON?feet.add(0,1.6,-100):feet.add(2,1.6,2),Items.AIR,false,null,0);
         },()->true);
     }
     private static void sharpSteps(){
@@ -250,6 +257,7 @@ public final class Scenario {
         });
         step("select-outdoor-camera-with-tablet",()->northUse(SOURCE,Content.CUPID_TABLET.get(),true),()->true);
         for(String role:ROLES){
+            if(HORIZON&&role.equals(BUILDER))continue; // This real player stays at the source throughout the measurements.
             step("enter-room-"+role,()->front(role,DOOR,Items.AIR,false),()->{
                 var p=player(role);if(!PocketService.inPocket(p.level()))return false;
                 room=PocketService.ledger(server).get(((PocketContent.EntranceEntity)home.getBlockEntity(DOOR)).pocket);
@@ -267,6 +275,7 @@ public final class Scenario {
         sharpView("small-day","clear");
         studioHit("open-screen-size-controls",OWNER,0,0,Items.AIR,false);
         uiStep("widen-to-two","width");uiStep("widen-to-three","width");uiStep("raise-to-two","height");uiStep("raise-to-three","height");uiStep("close-settings","close");
+        if(HORIZON){horizonSteps();return;}
         if(!SOLO){
             verify("grant-ordinary-storage-view-without-camera-ownership",()->hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD|BasePermissions.VIEW));
             viewStudio("private-while-source-loaded",BUILDER,"sharp.private",-1);
@@ -398,6 +407,203 @@ public final class Scenario {
             inside().setBlockAndUpdate(pos,(enabled?Blocks.STONE:Blocks.AIR).defaultBlockState());
         }
     }
+    private static void horizonView(String label,String condition){
+        viewStudio(label,OWNER,"sharp.horizon."+condition,-1);
+    }
+    private static void horizonPair(String label,String condition,boolean wide){
+        horizonView(label,condition);
+        sharpReference("stock-"+(wide?"wide-":"standard-")+label);
+    }
+    private static void changeLens(boolean wide){
+        String name=wide?"wide":"standard";
+        studioHit("open-controls-for-"+name,OWNER,0,0,Items.AIR,false);
+        uiStep("choose-"+name+"-source-lens","lens-"+name);
+        uiStep("close-after-"+name+"-lens","close");
+        verify("persisted-"+name+"-source-lens",()->{
+            var saved=StudioEvidence.tag(home,SOURCE);
+            var d=StudioEvidence.device(home,SOURCE);
+            var tracking=d.getClass().getDeclaredField("tracking");tracking.setAccessible(true);
+            var flags=tracking.get(d);var setting=flags.getClass().getDeclaredField("wideLens");setting.setAccessible(true);
+            check(setting.getBoolean(flags)==wide,"Server did not apply owner's lens change");
+            if(wide)check(saved.toString().contains("WideLens:1b"),"Missing saved wide lens");
+        });
+    }
+    private static final int[] LANDMARKS={24,48,64,80,96,112};
+    private static final double[] SLOPES={-.83,.79,-.46,.46,.03,-.18};
+    private static final Block[] MATERIALS={Blocks.RED_CONCRETE,Blocks.GOLD_BLOCK,Blocks.EMERALD_BLOCK,
+            Blocks.LAPIS_BLOCK,Blocks.PURPLE_CONCRETE,Blocks.ORANGE_CONCRETE};
+    private static void vista(boolean present){
+        for(int i=0;i<LANDMARKS.length;i++){
+            int distance=LANDMARKS[i];double slope=SLOPES[i];
+            int z=(int)Math.round(distance/Math.sqrt(1+slope*slope)),x=(int)Math.round(z*slope);
+            int radius=2+i;
+            for(int dx=-radius;dx<=radius;dx++)for(int y=-3;y<=radius+6;y++){
+                boolean shape=switch(i){
+                    case 0->Math.abs(dx)>=radius-1||y>=radius+3;           // Gate
+                    case 1->Math.abs(dx)<=radius-Math.max(0,(y-2)/2);    // Stepped pyramid
+                    case 2->Math.abs(dx)>=radius/2||y<3;                 // Twin towers
+                    case 3->y<=6+dx;                                     // Sloping roof
+                    case 4->Math.abs(dx)<=radius/2||y>=radius+2||y<=0;  // Tower with crown and base
+                    default->Math.abs(dx)<=1||Math.abs(y-4)<=2;          // Distant cross
+                };
+                if(shape)setHorizon(SOURCE.offset(x+dx,y,-z),present?MATERIALS[i]:Blocks.AIR);
+            }
+        }
+    }
+    private static void setHorizon(BlockPos at,Block block){
+        check(home.getChunkSource().getChunkNow(at.getX()>>4,at.getZ()>>4)!=null,"Synthetic scenery outside naturally loaded region: "+at);
+        home.setBlockAndUpdate(at,block.defaultBlockState());
+    }
+    private static void horizonPlate(int distance,boolean present){
+        var center=SOURCE.north(distance);
+        for(int x=-16;x<=16;x++)for(int y=-10;y<=10;y++){
+            boolean gold=Math.abs(x)<=6&&Math.abs(y)<=4||((Math.floorDiv(x,4)+Math.floorDiv(y,4))&1)==0;
+            setHorizon(center.offset(x,y,0),present?(gold?Blocks.GOLD_BLOCK:Blocks.LAPIS_BLOCK):Blocks.AIR);
+        }
+    }
+    private static void horizonSteps(){
+        if(SOLO){
+            step("integrated-room-releases-bootstrap-spawn-after-link",()->{
+                home.setDefaultSpawnPos(HUB,0);
+                home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(2,server);
+            },()->!tracked(0));
+            horizonView("solo-unloaded-source","unavailable");
+            viewStudio("solo-stock-source-unavailable",OWNER,"sharp.native.unavailable",-1);
+            step("both-solo-views-leave-source-unloaded",()->{},()->{
+                check(!tracked(0),"An integrated display loaded the source");
+                return server.getTickCount()-started>=60;
+            });
+            return;
+        }
+        step("outside-player-naturally-loads-entire-comparison-course",()->{},()->{
+            for(int x=-96;x<=96;x+=8)for(int z=-120;z<=0;z+=8){
+                var p=SOURCE.offset(x,0,z);if(home.getChunkSource().getChunkNow(p.getX()>>4,p.getZ()>>4)==null)return false;
+            }
+            return server.getTickCount()-started>=60;
+        });
+        verify("establish-brick-control",()->wallScene(Blocks.STONE_BRICKS));
+        if(!HORIZON_OLD){
+            perspective("candidate-perspective-first",OWNER,"first","visible",false);
+            perspective("candidate-perspective-back",OWNER,"back","visible",false);
+            perspective("candidate-perspective-front",OWNER,"front","visible",false);
+            verify("naturally-listed-observer-enters-the-lens",()->{
+                var observer=player(BUILDER);observer.connection.teleport(SOURCE.getX()+1.55,81,SOURCE.getZ()-3,-45,0);
+                observer.setYHeadRot(-45);observer.yBodyRot=-45;
+            });
+            perspective("candidate-visible-profile",OWNER,"first","actor",false);
+            verify("deny-actor-location-on-this-candidate",()->StudioEvidence.denied=player(BUILDER).blockPosition());
+            perspective("candidate-hidden-profile",OWNER,"first","noactor",false);
+            verify("restore-source-and-remove-observer-from-image",()->{
+                StudioEvidence.denied=null;player(BUILDER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0);
+            });
+        }
+        horizonPair("standard-brick-before","normal",false);
+        verify("same-pose-world-changes-to-gold",()->wallScene(Blocks.GOLD_BLOCK));
+        horizonPair("standard-gold-after","near-gold",false);
+        verify("clear-near-wall-for-open-horizon",()->{
+            for(var p:BlockPos.betweenClosed(SOURCE.north(5).offset(-6,-1,0),SOURCE.north(5).offset(6,2,0)))setHorizon(p,Blocks.AIR);
+        });
+        horizonPair("open-sky","open",false);
+        verify("cover-open-plate-with-real-roof",()->fixtureRoof(true));
+        horizonPair("covered-sky","roof",false);
+        verify("restore-open-plate",()->fixtureRoof(false));
+        verify("visible-claim-crosses-upper-lens-ray",()->StudioEvidence.denied=SOURCE.above().north());
+        horizonView("intervening-claim-sky","masked-sky");
+        verify("restore-vista-rights",()->StudioEvidence.denied=null);
+        verify("place-six-different-distance-landmarks",()->{
+            vista(true);
+            for(int y=-2;y<=4;y++)setHorizon(SOURCE.north(7).east(8).above(y),Blocks.MAGENTA_CONCRETE);
+        });
+        horizonPair("vista-standard","vista",false);
+        final List<Double> times=new ArrayList<>();
+        final List<Map<String,Long>> workCounts=new ArrayList<>();
+        step("measure-loaded-authorized-vista-capture-cost",()->{},()->{
+            var captureType=Class.forName("dev.anya.storage.pocket.CameraSceneCapture");
+            var method=captureType.getDeclaredMethod("capture",
+                    ServerPlayer.class,CameraDevices.Device.class,ServerLevel.class,CameraDevices.Device.class,SourceSky.class,net.minecraft.world.entity.Mob.class);
+            var atmos=SourceSky.class.getDeclaredMethod("observe",ServerLevel.class,BlockPos.class);
+            method.setAccessible(true);atmos.setAccessible(true);
+            var cam=StudioEvidence.device(home,SOURCE);var wall=StudioEvidence.device(inside(),studioWall());
+            var observer=player(OWNER);
+            var diagnostics=HORIZON_OLD?null:captureType.getDeclaredField("diagnostics");
+            if(diagnostics!=null){
+                diagnostics.setAccessible(true);
+                diagnostics.set(null,(java.util.function.Consumer<Object>)work->{
+                    var counts=new TreeMap<String,Long>();
+                    try{
+                        for(var component:work.getClass().getRecordComponents()){
+                            var getter=component.getAccessor();getter.setAccessible(true);
+                            counts.put(component.getName(),((Number)getter.invoke(work)).longValue());
+                        }
+                    }catch(ReflectiveOperationException e){throw new IllegalStateException(e);}
+                    workCounts.add(counts);
+                });
+            }
+            CameraScene packet;double millis;
+            try{
+                long start=System.nanoTime();
+                var sky=atmos.invoke(null,home,SOURCE);
+                packet=(CameraScene)method.invoke(null,observer,wall,home,cam,sky,null);
+                millis=(System.nanoTime()-start)/1_000_000.0;
+            }finally{if(diagnostics!=null)diagnostics.set(null,null);}
+            check(packet.cells().length==1024,"Authorized camera capture unexpectedly empty");
+            times.add(millis);
+            if(times.size()<14)return false;
+            Orders.write("server-capture-times.json",Orders.JSON.toJson(times.subList(2,times.size())));
+            if(diagnostics!=null){
+                check(workCounts.size()==times.size(),"Expected one set of work counters per actual server capture");
+                Orders.write("server-capture-counters.json",Orders.JSON.toJson(workCounts.subList(2,workCounts.size())));
+            }
+            return true;
+        });
+        if(!HORIZON_OLD){
+            HostedNativeStage.steps();
+            changeLens(true);
+            horizonPair("vista-wide","wide",true);
+            changeLens(false);
+        }
+        verify("clear-landmarks-for-texture-trial",()->{
+            vista(false);for(int y=-2;y<=4;y++)setHorizon(SOURCE.north(7).east(8).above(y),Blocks.AIR);
+        });
+        int previous=0;
+        for(int distance:new int[]{24,48,64,80,96,112}){
+            int oldDistance=previous;
+            verify("place-checkerboard-"+distance,()->{
+                if(oldDistance!=0)horizonPlate(oldDistance,false);
+                horizonPlate(distance,true);
+            });
+            horizonPair("checker-"+distance,"plate-"+distance,false);
+            if(distance==48){
+                verify("blocking-claim-in-middle-of-path",()->StudioEvidence.curtain=SOURCE.north(28));
+                horizonView("checker-hidden-behind-claim","masked-plate");
+                verify("grant-region-again",()->StudioEvidence.curtain=null);
+            }
+            previous=distance;
+        }
+        verify("remove-distant-checker",()->{horizonPlate(112,false);wallScene(Blocks.STONE_BRICKS);});
+        step("find-naturally-unloaded-foreground",Scenario::moveToFrontier,()->{
+            int elapsed=server.getTickCount()-started;if(elapsed<180)return false;
+            if(tracked(0)&&!tracked(-1))return true;
+            if(elapsed%160==0){frontierDistance+=tracked(0)?1:-1;check(frontierDistance>=2&&frontierDistance<=16,"No genuine loading frontier");moveObserverSouth();}
+            return false;
+        });
+        horizonView("genuine-unloaded-foreground","edge");
+        verify("monitor-left-foreground-unloaded",()->check(tracked(0)&&!tracked(-1),"Camera pulled in foreground"));
+        step("remove-outdoor-load-cause",()->player(BUILDER).connection.teleport(-400,-59,-400,0,0),()->!tracked(0));
+        horizonView("after-last-observer-left","unavailable");
+        step("return-the-only-outdoor-observer",()->player(BUILDER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0),()->tracked(0));
+        horizonView("same-source-restored","normal");
+        if(!HORIZON_OLD){
+            step("owner-returns-to-hold-source-region-naturally",()->PocketService.recover(player(OWNER)),()->player(OWNER).level()==home);
+            verify("owner-stays-outside-and-guest-can-view-storage",()->{
+                player(OWNER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0);
+                hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD|BasePermissions.VIEW);
+            });
+            step("guest-enters-for-live-feed-refusal",()->front(BUILDER,DOOR,Items.AIR,false),()->PocketService.inPocket(player(BUILDER).level()));
+            perspective("candidate-guest-private-in-front-view",BUILDER,"front","private",false);
+            verify("source-was-still-loaded-for-denied-guest",()->check(tracked(0),"Source unavailable during guest rejection"));
+        }
+    }
     private static void rangeSteps(){
         perspective("perspective-first",OWNER,"first","visible",false);
         perspective("perspective-back",OWNER,"back",RANGE_OLD?"inactive":"visible",false);
@@ -526,7 +732,7 @@ public final class Scenario {
         step("skinny-wall-rails",()->order(OWNER,"photo",CAMERA,new Vec3(-.65,81,-1.1),Vec3.atCenterOf(CAMERA),Items.AIR,false,null,0),()->true);
         step("select-camera-on-tablet",()->northUse(CAMERA,Content.CUPID_TABLET.get(),true),()->true);
     }
-    private static BlockPos studioWall(){return roomPos(10,67,15);}
+    static BlockPos studioWall(){return roomPos(10,67,15);}
     private static void uiStep(String name,String action){
         step(name,()->{
             var p=player(OWNER);

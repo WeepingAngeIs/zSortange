@@ -51,8 +51,9 @@ final class CameraPicture {
         }
         NativeImage pixels = texture.getPixels();
         if (pixels == null || scene.cells().length != CameraScene.SIDE * CameraScene.SIDE) return null;
-        hardware = !forceSoftware && CameraTerrain.draw(scene, pixels, depth);
-        if (!hardware) drawScene(scene, pixels);
+        var view = new SurfaceView(scene);
+        hardware = !forceSoftware && CameraTerrain.draw(scene, view, pixels, depth);
+        if (!hardware) drawScene(scene, view, pixels);
         CameraActors.draw(scene, pixels, depth);
         drawRain(scene, pixels);
         texture.upload();
@@ -126,28 +127,81 @@ final class CameraPicture {
         }
     }
 
-    private static void drawScene(CameraScene scene, NativeImage out) {
-        var models = new HashMap<ModelFace, List<Facet>>();
-        var surfaces = new ProjectedSurface[scene.surfaces().size()];
-        for (int i = 0; i < surfaces.length; i++) {
-            var s = scene.surfaces().get(i);
-            var key = new ModelFace(s.stateId(), s.face());
-            var facets = models.computeIfAbsent(key, CameraPicture::model);
-            surfaces[i] = new ProjectedSurface(s, facets, scene);
+    /** Both renderers use the same angular permissions. A null entry masks the entire region.
+     * A positive fine ray can use only its own observed face and its observed, touching peers;
+     * a material/color on the opposite side of an unknown or denied ray proves nothing. */
+    static final class SurfaceView {
+        final ProjectedSurface[] surfaces;
+        private final int[][] coarse, fine;
+        private static final int TILE = SIZE / CameraScene.SIDE, MICRO = TILE / CameraScene.DETAIL_SIDE;
+
+        SurfaceView(CameraScene scene) {
+            var models = new HashMap<ModelFace, List<Facet>>();
+            surfaces = new ProjectedSurface[scene.surfaces().size()];
+            for (int i = 0; i < surfaces.length; i++) {
+                var s = scene.surfaces().get(i);
+                var key = new ModelFace(s.stateId(), s.face());
+                surfaces[i] = new ProjectedSurface(s, models.computeIfAbsent(key, CameraPicture::model), scene);
+            }
+            var refs = new int[MAX_NEIGHBOURS];
+            var edge = new int[4];
+            coarse = new int[scene.cells().length*4][];
+            for (int i = 0; i < scene.cells().length; i++) {
+                if (scene.cells()[i] == 0) continue;
+                int count = nearbyFaces(scene, i/CameraScene.SIDE, i%CameraScene.SIDE, refs);
+                edgeFaces(scene, i, refs, count, edge);
+                var base = java.util.Arrays.copyOf(refs,count);
+                for (int q = 0; q < 4; q++) {
+                    if (edge[q] < 0) continue;
+                    if (edge[q] == 0) coarse[4*i+q] = base;
+                    else {
+                        var withEdge = java.util.Arrays.copyOf(base,count+1);
+                        withEdge[count] = edge[q]-2;
+                        coarse[4*i+q] = withEdge;
+                    }
+                }
+            }
+            fine = new int[scene.detail().length][];
+            int side = CameraScene.DETAIL_SIDE, area = CameraScene.DETAIL_AREA;
+            for (int k = 0; k < fine.length; k++) {
+                int code = scene.detail()[k];
+                if (code < 2) continue;
+                int cell = k/area, sub = k%area, x = cell%CameraScene.SIDE*side + sub%side,
+                        y = cell/CameraScene.SIDE*side + sub/side;
+                var anchor = scene.surfaces().get(code-2);
+                refs[0] = code-2;
+                int count = 1;
+                for (int r = Math.max(0,y-1); r <= Math.min(CameraScene.SIDE*side-1,y+1); r++) {
+                    for (int c = Math.max(0,x-1); c <= Math.min(CameraScene.SIDE*side-1,x+1); c++) {
+                        int other = scene.detail()[((r/side)*CameraScene.SIDE+c/side)*area+(r%side)*side+c%side];
+                        if (other >= 2 && CameraScene.adjacentOnPlane(anchor,scene.surfaces().get(other-2)))
+                            count = include(refs,count,other-2);
+                    }
+                }
+                fine[k] = java.util.Arrays.copyOf(refs,count);
+            }
         }
+
+        int[] at(CameraScene scene, int cell, int localX, int localY) {
+            var ordinary = coarse[4*cell + quadrant(localX,localY,TILE)];
+            if (ordinary == null || fine.length == 0) return ordinary;
+            int i = cell*CameraScene.DETAIL_AREA + localY/MICRO*CameraScene.DETAIL_SIDE + localX/MICRO;
+            return scene.detail()[i] == 0 ? ordinary : fine[i];
+        }
+    }
+
+    private static void drawScene(CameraScene scene, SurfaceView view, NativeImage out) {
         int grid = CameraScene.SIDE, tile = SIZE / grid;
-        int[] cells = scene.cells(), neighbours = new int[MAX_NEIGHBOURS], edges = new int[4];
+        int[] cells = scene.cells();
         Vec3 eye = scene.eye(), forward = scene.forward(), up = scene.up(), right = scene.right();
         double stepX = right.x * 2 / SIZE, stepY = right.y * 2 / SIZE, stepZ = right.z * 2 / SIZE;
         for (int row = 0; row < grid; row++) for (int col = 0; col < grid; col++) {
-            int cell = cells[row * grid + col], startX = col * tile, startY = row * tile;
+            int index = row*grid+col, cell = cells[index], startX = col * tile, startY = row * tile;
             if (cell == 0) {
                 out.fillRect(startX, startY, tile, tile, MASK);
                 continue;
             }
-            int count = nearbyFaces(scene, row, col, neighbours);
-            int backing = cell < 0 ? scene.backdrop()[row * grid + col] : cell;
-            edgeFaces(scene, row * grid + col, neighbours, count, edges);
+            int backing = cell < 0 ? scene.backdrop()[index] : cell;
             double u = (startX + .5) * 2 / SIZE - 1;
             for (int y = startY; y < startY + tile; y++) {
                 double v = 1 - (y + .5) * 2 / SIZE;
@@ -155,16 +209,16 @@ final class CameraPicture {
                 double dy = forward.y + u * right.y + v * up.y;
                 double dz = forward.z + u * right.z + v * up.z;
                 for (int x = startX; x < startX + tile; x++, dx += stepX, dy += stepY, dz += stepZ) {
-                    int edge = edges[quadrant(x - startX, y - startY, tile)];
-                    if (edge < 0) {
+                    var permitted = view.at(scene,index,x-startX,y-startY);
+                    if (permitted == null) {
                         depth[y * SIZE + x] = 0;
                         out.setPixelRGBA(x, y, MASK);
                         continue;
                     }
                     double nearest = Double.POSITIVE_INFINITY;
                     int color = 0;
-                    for (int i = 0; i < count + (edge >= 2 ? 1 : 0); i++) {
-                        var face = surfaces[i == count ? edge - 2 : neighbours[i]];
+                    for (int ref : permitted) {
+                        var face = view.surfaces[ref];
                         double scale = face.intersection(dx, dy, dz);
                         if (!(scale > 0 && scale < nearest)) continue;
                         int sample = face.sample(eye.x + dx * scale, eye.y + dy * scale, eye.z + dz * scale);
@@ -273,7 +327,7 @@ final class CameraPicture {
         }
     }
 
-    private static final class ProjectedSurface {
+    static final class ProjectedSurface {
         final CameraScene.Surface s;
         final List<Facet> facets;
         final int axis;

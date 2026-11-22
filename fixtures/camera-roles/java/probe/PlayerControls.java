@@ -76,7 +76,8 @@ public final class PlayerControls {
         var next=Orders.JSON.fromJson(Files.readString(file),Orders.Order.class);
         if(order==null || !order.step().equals(next.step())){
             order=next;SharpChecks.next();done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;initialCeiling=ceilingPackets;initialBlank=blankCeiling;clicked=false;diagnostic="";
-            if(System.getProperty("roomroles.trial","").startsWith("sharp-range-"))RangeChecks.perspective(mc,order);
+            String trial=System.getProperty("roomroles.trial","");
+            if(trial.startsWith("sharp-range-")||trial.startsWith("sharp-horizon-"))RangeChecks.perspective(mc,order);
             if(!order.action().equals("use"))mc.gui.getChat().clearMessages(false);
         }
         if(done)return;
@@ -222,7 +223,7 @@ public final class PlayerControls {
         }
         String prefix=switch(action){
             case "width","blocked"->"Width:";case "height"->"Height:";case "group"->"Targets:";case "watch"->"Watch";
-            case "ignore"->"Ignore";case "fit"->"Fit wall";default->throw new AssertionError(action);
+            case "ignore"->"Ignore";case "fit"->"Fit wall";case "lens-wide"->"Standard lens";case "lens-standard"->"Wide lens";default->throw new AssertionError(action);
         };
         if(action.equals("watch")||action.equals("ignore")){
             var search=(net.minecraft.client.gui.components.EditBox)field(screen.getClass(),"search").get(screen);

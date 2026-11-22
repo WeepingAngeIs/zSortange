@@ -97,14 +97,21 @@ public final class CameraFeed {
         var hit=c.add(across.scale(x)).add(0,y,0);var ray=hit.subtract(eye);
         return ray.lengthSqr()<=48*48&&ray.normalize().dot(look)>.89?hit:null;
     }
-    private record Session(CameraDevices.Device device,long renewed){}
+    private record Session(CameraDevices.Device device,long renewed,int slot){}
     private static final Map<ServerPlayer,Session> sessions=new WeakHashMap<>();
     private static void watch(ServerPlayer p,BlockPos pos){
         if(!p.isAlive() || p.isSpectator() || p.distanceToSqr(Vec3.atCenterOf(pos))>10000 || !p.connection.hasChannel(Frame.TYPE))return;
         var blocks=new LoadedPocketBlocks(p.serverLevel());
         if(!(blocks.getBlockEntity(pos) instanceof CameraDevices.Device d) || CameraDevices.isCamera(d.getBlockState()))return;
-        if(!sessions.containsKey(p) && sessions.size()>=4)return;
-        sessions.put(p,new Session(d,p.serverLevel().getGameTime()));
+        var existing=sessions.get(p);
+        int slot;
+        if(existing==null){
+            int available=0b1111;
+            for(var active:sessions.values())available&=~(1<<active.slot);
+            if(available==0)return;
+            slot=Integer.numberOfTrailingZeros(available);
+        }else slot=existing.slot;
+        sessions.put(p,new Session(d,p.serverLevel().getGameTime(),slot));
     }
     static CameraDevices.Device source(ServerPlayer p,CameraDevices.Device d){
         return source(p,d,p.getLookAngle());
@@ -131,7 +138,8 @@ public final class CameraFeed {
                 var look=viewDirection(p);
                 var cam=source(p,d,look);
                 if(cam==null || p.serverLevel().getGameTime()-session.renewed>18){sessions.remove(p);send(p,d,-1,null,new int[0]);continue;}
-                if(Math.floorMod(e.getServer().getTickCount()+p.getId(),12)!=0)continue;
+                // Give up to four active monitors separate server ticks. Permissions still expire immediately.
+                if(Math.floorMod(e.getServer().getTickCount(),12)!=3*session.slot)continue;
                 var level=(ServerLevel)cam.getLevel();
                 boolean sky=d.getBlockState().is(CameraDevices.SKY.get());
                 if(sky && direction(cam)!=Direction.UP){send(p,d,-1,null,new int[0]);continue;}
@@ -183,7 +191,7 @@ public final class CameraFeed {
         var skyClearance=new CameraSkyClearance(p,level,loaded,cam.getBlockPos(),eye,false);
         var flyers=new ArrayList<CameraFigure>();
         boolean upwardLens=cam.getBlockState().is(CameraDevices.SKY_CAMERA.get());
-        double aperture=upwardLens?CameraOptics.skyAperture(level,eye):1;
+        double aperture=upwardLens?CameraOptics.skyAperture(level,eye):CameraOptics.wallAperture(cam);
         int accessBudget=upwardLens?3072:1024;
         if(upwardLens){
             var bounds=new AABB(eye.x-24,eye.y,eye.z-24,eye.x+24,eye.y+24,eye.z+24);
@@ -200,7 +208,7 @@ public final class CameraFeed {
             Vec3 ray=CameraOptics.ray(face,x,y,side,aperture);
             if(forward!=null){
                 var right=forward.cross(new Vec3(0,1,0)).normalize();var up=right.cross(forward);
-                ray=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
+                ray=forward.add(right.scale(((2.0*x+1)/side-1)*aperture)).add(up.scale((1-(2.0*y+1)/side)*aperture)).normalize();
             }
             int pixel=sample(p,level,loaded,eye,ray,access,target,cam.getBlockPos(),flyers,accessBudget,skyClearance,x,y,side);
             pixels[y*side+x]=pixel==SKY && atmosphere!=null?atmosphere.direction(ray):pixel;

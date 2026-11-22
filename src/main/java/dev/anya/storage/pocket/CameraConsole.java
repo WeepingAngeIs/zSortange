@@ -20,9 +20,14 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 final class CameraConsole {
     static final UUID NONE=new UUID(0,0);
     record View(UUID token, UUID source, boolean opening, int width,int height,int maxW,int maxH,int mode,int group,
-                String watch,String ignore,String message) implements CustomPacketPayload {
+                String watch,String ignore,String message,int lens) implements CustomPacketPayload {
         static final Type<View> TYPE=new Type<>(ExpansionPackets.id("camera_settings_view"));
         public Type<View> type(){return TYPE;}
+        View withLens(int lens){return new View(token,source,opening,width,height,maxW,maxH,mode,group,watch,ignore,message,lens);}
+    }
+    record LensView(View state) implements CustomPacketPayload{
+        static final Type<LensView> TYPE=new Type<>(ExpansionPackets.id("camera_lens_settings"));
+        public Type<LensView> type(){return TYPE;}
     }
     record Edit(UUID token,UUID source,String control,int value,String kind) implements CustomPacketPayload {
         static final Type<Edit> TYPE=new Type<>(ExpansionPackets.id("camera_settings_edit"));
@@ -42,7 +47,11 @@ final class CameraConsole {
             b.writeUUID(v.token);b.writeUUID(v.source);b.writeBoolean(v.opening);b.writeByte(v.width);b.writeByte(v.height);b.writeByte(v.maxW);b.writeByte(v.maxH);
             b.writeByte(v.mode);b.writeByte(v.group);b.writeUtf(v.watch,4200);b.writeUtf(v.ignore,4200);b.writeUtf(v.message,160);
         },b->new View(b.readUUID(),b.readUUID(),b.readBoolean(),b.readByte(),b.readByte(),b.readByte(),b.readByte(),b.readByte(),b.readByte(),
-                b.readUtf(4200),b.readUtf(4200),b.readUtf(160)));
+                b.readUtf(4200),b.readUtf(4200),b.readUtf(160),-1));
+        StreamCodec<RegistryFriendlyByteBuf,LensView> optics=StreamCodec.ofMember((v,b)->{
+            view.encode(b,v.state);b.writeBoolean(v.state.lens()==1);
+        },b->new LensView(view.decode(b).withLens(b.readBoolean()?1:0)));
+        e.registrar("cameraoptics1").optional().playToClient(LensView.TYPE,optics,(v,c)->receiver.accept(c.connection(),v.state));
         StreamCodec<RegistryFriendlyByteBuf,Edit> edit=StreamCodec.ofMember((v,b)->{
             b.writeUUID(v.token);b.writeUUID(v.source);b.writeUtf(v.control,12);b.writeByte(v.value);b.writeUtf(v.kind,128);
         },b->new Edit(b.readUUID(),b.readUUID(),b.readUtf(12),b.readByte(),b.readUtf(128)));
@@ -81,16 +90,18 @@ final class CameraConsole {
         var d=session.device;var state=d.getBlockState();var tier=state.getBlock() instanceof WallMonitorBlock w?w:null;boolean wall=tier!=null;
         var cam=camera(p,d);
         var t=cam==null||cam.getBlockState().is(CameraDevices.SKY_CAMERA.get())?null:cam.tracking;
-        PacketDistributor.sendToPlayer(p,new View(session.token,cam==null||cam.identity==null?NONE:cam.identity,opening,
+        var displayed=new View(session.token,cam==null||cam.identity==null?NONE:cam.identity,opening,
                 wall?d.panel.width():0,wall?d.panel.height():0,wall?tier.maxW:0,wall?tier.maxH:0,
                 t==null?-1:t.mode.ordinal(),t==null?-1:t.group.ordinal(),
-                t==null?"":String.join(",",t.watch),t==null?"":String.join(",",t.ignore),message));
+                t==null?"":String.join(",",t.watch),t==null?"":String.join(",",t.ignore),message,t!=null&&t.wideLens?1:0);
+        if(p.connection.hasChannel(LensView.TYPE))PacketDistributor.sendToPlayer(p,new LensView(displayed));
+        else PacketDistributor.sendToPlayer(p,displayed);
     }
     private static void edit(ServerPlayer p,Edit e){
         var session=sessions.get(p);
         if(session==null||!session.token.equals(e.token))return;
         if(p.serverLevel().getGameTime()>session.until||!nearbyOwner(p,session.device)){
-            sessions.remove(p);PacketDistributor.sendToPlayer(p,new View(e.token,NONE,false,0,0,0,0,-1,-1,"","","Access ended. Open the device again."));return;
+            sessions.remove(p);PacketDistributor.sendToPlayer(p,new View(e.token,NONE,false,0,0,0,0,-1,-1,"","","Access ended. Open the device again.",-1));return;
         }
         sessions.put(p,new Session(session.device,session.token,p.serverLevel().getGameTime()+2400));
         var d=session.device;var state=d.getBlockState();String message;
@@ -111,6 +122,10 @@ final class CameraConsole {
     private static String configure(ServerPlayer p,CameraDevices.Device cam,Edit e){
         var t=cam.tracking;
         switch(e.control){
+            case "lens" -> {
+                if(e.value!=0 && e.value!=1)return "Unknown lens.";
+                t.wideLens=e.value==1;cam.setChanged();return "";
+            }
             case "mode" -> {
                 if(e.value<0||e.value>=CameraTracking.Mode.values().length)return "Unknown tracking mode.";
                 var mode=CameraTracking.Mode.values()[e.value];

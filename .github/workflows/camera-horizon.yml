@@ -1,0 +1,135 @@
+name: Camera horizon and live world-renderer comparison
+on:
+  push:
+    branches: [experiment/camera-horizon]
+permissions:
+  contents: read
+  actions: read
+env:
+  JAR: anya-storage-plus-0.3.0-beta.7-horizon.1.jar
+jobs:
+  build:
+    if: github.event.repository.private == false && !startsWith(github.event.head_commit.message, 'Recheck captured horizon frames ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Build the preview descendant for the disposable clients
+        run: |
+          set -eu
+          git merge-base --is-ancestor 5c54c86c208d4658ffdb073a75349f50475f290e HEAD
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir playable
+          cp "build/libs/$JAR" playable/
+          git rev-parse HEAD > playable/SOURCE_COMMIT.txt
+          (cd playable && sha256sum "$JAR" > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with: {name: horizon-test-package, path: playable/, retention-days: 7}
+  observe:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    strategy:
+      fail-fast: false
+      matrix: {trial: [old, new, solo]}
+    env:
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+      TRIAL: sharp-horizon-${{ matrix.trial }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        if: matrix.trial == 'old'
+        with:
+          name: camera-view-check-tools
+          run-id: 45050792343
+          github-token: ${{ github.token }}
+          path: playable
+      - uses: actions/download-artifact@v4
+        if: matrix.trial != 'old'
+        with: {name: horizon-test-package, path: playable}
+      - name: Run one or two real clients with naturally loaded source chunks
+        run: |
+          set -eu
+          jar="$JAR"
+          if [[ "$TRIAL" == sharp-horizon-old ]]; then
+            jar=anya-storage-plus-0.3.0-beta.7-cameraview.1.jar
+            test "$(cat playable/SOURCE_COMMIT.txt)" = 5c54c86c208d4658ffdb073a75349f50475f290e
+            echo "2d03313139b3bcca2ec60f29f332eb225040220d729a0961f076d67bab1ee62a  playable/$jar" | sha256sum -c -
+          else
+            test "$(cat playable/SOURCE_COMMIT.txt)" = "$(git rev-parse HEAD)"
+          fi
+          (cd playable && sha256sum -c SHA256SUMS.txt)
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$PWD/playable/$jar" prepareRoleTrial
+          python3 -u -B fixtures/camera-roles/run.py "$TRIAL"
+      - name: Save authentic captures and the last observed step
+        if: always()
+        run: |
+          folder="build/role-check/$TRIAL"
+          shopt -s nullglob
+          for f in "$folder"/control/{step.txt,*status,FAIL-*}; do test ! -f "$f" || tail -8 "$f"; done
+          if test -d "$folder/control"; then
+            for f in "$folder"/*/console.log; do tail -45 "$f" > "$folder/control/$(basename "$(dirname "$f")")-log-tail.txt"; done
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observed-${{ matrix.trial }}
+          path: |
+            build/role-check/${{ env.TRIAL }}/control/
+            !build/role-check/${{ env.TRIAL }}/control/native-frame.bin
+          retention-days: 7
+          if-no-files-found: ignore
+  compare:
+    needs: observe
+    if: always() && github.event.repository.private == false && (needs.observe.result == 'success' || (needs.observe.result == 'skipped' && startsWith(github.event.head_commit.message, 'Recheck captured horizon frames ')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE: ${{ needs.observe.result == 'skipped' }}
+        run: |
+          set -eu
+          run="$GITHUB_RUN_ID"
+          if [[ "$REUSE" == true ]]; then
+            subject=$(git log -1 --format=%s)
+            [[ "$subject" =~ ^Recheck\ captured\ horizon\ frames\ ([0-9]+)$ ]]
+            run="${BASH_REMATCH[1]}"
+            source=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq .head_sha)
+            git merge-base --is-ancestor "$source" HEAD
+            git diff --exit-code "$source" HEAD -- src build.gradle gradle.properties fixtures/camera-roles/java fixtures/camera-roles/resources fixtures/camera-roles/fixture.gradle fixtures/camera-roles/run.py
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: observed-*
+          path: observations
+          run-id: ${{ steps.source.outputs.run }}
+          github-token: ${{ github.token }}
+      - name: Compare stock, standard, wide and native monitor screenshots
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          mkdir -p comparison
+          /usr/bin/python3 -B fixtures/camera-roles/horizon_captures.py | tee comparison/HORIZON.txt
+          /usr/bin/python3 -B fixtures/camera-roles/native_captures.py | tee comparison/NATIVE.txt
+          git rev-parse HEAD > comparison/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: horizon-comparisons, path: comparison/, retention-days: 14}
