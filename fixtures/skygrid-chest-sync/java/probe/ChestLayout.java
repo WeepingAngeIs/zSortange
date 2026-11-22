@@ -53,8 +53,15 @@ final class ChestLayout {
             Actors.place(owner,anchor(),new ItemStack(Content.CRATE.get()),true);
             mark(inside,anchor());
             heldCrates(visitor);visitor.setShiftKeyDown(true);click(visitor,anchor(),Direction.NORTH,0);visitor.setShiftKeyDown(false);
-            require(inside.isEmptyBlock(anchor().north()) && visitor.getMainHandItem().getCount()==2 && visitor.containerMenu==visitor.inventoryMenu,
-                "Visit-only player opened the marked labelled chest or placed a new chest on its face");
+            require(inside.isEmptyBlock(anchor().north()) && visitor.getMainHandItem().getCount()==2,
+                "Visit-only labelled attachment changed the world or held stack");
+            if(baseline && visitor.containerMenu!=visitor.inventoryMenu) {
+                var restricted=menu(visitor);
+                require(restricted!=null && restricted.privateView() && restricted.capacity()==0 &&
+                    restricted.occupiedSlots()==0 && restricted.resultCount()==0 && shown(restricted).isEmpty(),
+                    "Visit-only intercepted opening disclosed storage");
+                visitor.closeContainer();
+            } else require(visitor.containerMenu==visitor.inventoryMenu,"Visit-only attachment opened an inventory");
             checkPhysical(inside);
             passed("A Visit-only guest could neither place a vanilla chest nor attach a labelled one to an occupied chest. Both held items and the original contents were conserved. The reserved landing rejected placement.");
             stepTick=now;
@@ -69,7 +76,8 @@ final class ChestLayout {
             require(menu(owner)!=null && menu(owner).capacity()==54 && owner.getMainHandItem().getCount()==2,"Standing right-click should open the original labelled inventory");
             owner.closeContainer();
             var first=pos(31,20);Actors.place(owner,first,new ItemStack(Content.CRATE.get()),true);mark(inside,first);
-            stepTick=now;next(7,"Apply the normal four-tick held-use cadence");
+            Actors.place(owner,pos(31,22),new ItemStack(Content.CRATE.get()),false);
+            stepTick=now;next(7,"Apply the normal four-tick held-use cadence after blocking a duplicate in the same tick");
         } else if(stage==7 && now-stepTick==4) {
             var second=pos(31,22);Actors.place(owner,second,new ItemStack(Content.CRATE.get()),!baseline);
             if(!baseline)mark(inside,second);
