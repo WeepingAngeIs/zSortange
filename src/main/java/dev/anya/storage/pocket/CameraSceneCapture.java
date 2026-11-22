@@ -35,6 +35,7 @@ import net.minecraft.world.phys.Vec3;
 /** Trace the first permitted surface from a physical lens. Nothing in this class acquires a chunk ticket. */
 final class CameraSceneCapture {
     private static final int REACH=24, CLAIM_BUDGET=3072;
+    private static final Direction[] FACE_DIRECTIONS=Direction.values();
     private static final Set<EntityType<?>> MODELS=Set.of(EntityType.PLAYER,EntityType.COW,EntityType.CREEPER,
             EntityType.ZOMBIE,EntityType.SKELETON,EntityType.PIG);
     // Send only properties used to select visible geometry. Other state and all block entity data stay on the server.
@@ -214,7 +215,11 @@ final class CameraSceneCapture {
             // Stay opaque even for a sign with no text or an empty container.
             if(state.hasBlockEntity() || !state.getFluidState().isEmpty())return 0;
             BlockHitResult hit=null;
-            if(!state.isAir()) hit=state.getShape(geometry,pos).clip(eye,end,pos);
+            if(!state.isAir()) {
+                var shape=state.getShape(geometry,pos);
+                hit=shape.clip(eye,end,pos);
+                if(hit!=null)hit=exposedEdgeFace(pos,shape,hit,ray);
+            }
             if(entity!=null && pos.equals(entity.cell) && (hit==null
                     || eye.distanceToSqr(entity.point)<eye.distanceToSqr(hit.getLocation()))) {
                 return -1-visibleActors.computeIfAbsent(entity.entity,ignored->visibleActors.size());
@@ -223,6 +228,31 @@ final class CameraSceneCapture {
             if(state.getRenderShape()!=RenderShape.MODEL)return 0;
             return surface(pos,state,hit,background);
         },direction->skyClearance.wall(x,y,CameraScene.SIDE,direction,sky));
+    }
+
+    // At the exact edge shared by two cubes AABB.clip can pick the internal X face
+    // before the exposed top face. Both are at the identical ray depth. Retain the hit
+    // point, and select an exposed entering face only when both neighbors can be checked.
+    private BlockHitResult exposedEdgeFace(BlockPos pos,net.minecraft.world.phys.shapes.VoxelShape shape,
+                                           BlockHitResult hit,Vec3 ray) {
+        Direction original=hit.getDirection();
+        Vec3 local=hit.getLocation().subtract(pos.getX(),pos.getY(),pos.getZ());
+        for(Direction other:FACE_DIRECTIONS) {
+            if(other.getAxis()==original.getAxis())continue;
+            var axis=other.getAxis();
+            int sign=other.getAxisDirection().getStep();
+            if(axis.choose(ray.x,ray.y,ray.z)*sign>=0)continue;
+            double plane=sign>0?1:0;
+            if(Math.abs(axis.choose(local.x,local.y,local.z)-plane)>1e-7)continue;
+            if(!Block.isShapeFullBlock(shape))return hit;
+            BlockPos seam=pos.relative(original);
+            if(!allowed(seam))return hit;
+            var neighbor=blocks.getBlockState(seam);
+            if(neighbor.hasBlockEntity() || !neighbor.isSolidRender(geometry,seam))return hit;
+            BlockPos open=pos.relative(other);
+            if(allowed(open) && blocks.getBlockState(open).isAir())return hit.withDirection(other);
+        }
+        return hit;
     }
 
     private int surface(BlockPos pos,BlockState state,BlockHitResult hit,boolean background) {

@@ -235,6 +235,10 @@ final class SharpChecks {
                 witness[i]=moss.contains(surface)?2:surface>0?1:0;
             }
             Files.writeString(path.resolveSibling(path.getFileName()+".floor.json"),Orders.JSON.toJson(witness));
+            var picture=Class.forName("dev.anya.storage.pocket.CameraPicture");
+            var texture=(DynamicTexture)field(picture,"texture").get(null);
+            check(texture!=null && texture.getPixels()!=null,"The displayed wall texture is missing");
+            texture.getPixels().writeToFile(path.resolveSibling(path.getFileName()+".source.png"));
         }
         if(action.equals("player")){
             for(var actor:actors)if(((Number)prop(actor,"typeId")).intValue()==person){

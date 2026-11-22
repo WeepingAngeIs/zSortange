@@ -182,9 +182,23 @@ floor_patches={
 }
 def floor_proof(shot):
     return json.loads((base/new/"control"/f"{shot}-CamOwner.png.floor.json").read_text())
-bare,known=panel(new,"large-brick"),floor_proof("large-brick")
+def floor_panel(shot):
+    # Use the inverse mapping of a flat perspective display. A bilinear corner interpolation
+    # can move a 32x32 witness into the neighboring cell near the bottom of this tilted screen.
+    data_path=base/new/"control"/f"{shot}-CamOwner.png.json"
+    x0,y0,x1,y1,x2,y2,x3,y3=json.loads(data_path.read_text())
+    dx1,dx2,dx3=x3-x2,x1-x2,x0-x3+x2-x1
+    dy1,dy2,dy3=y3-y2,y1-y2,y0-y3+y2-y1
+    det=dx1*dy2-dx2*dy1
+    g=(dx3*dy2-dx2*dy3)/det
+    h=(dx1*dy3-dx3*dy1)/det
+    side=192
+    inverse=((x3-x0+g*x3)/side,(x1-x0+h*x1)/side,x0,
+             (y3-y0+g*y3)/side,(y1-y0+h*y1)/side,y0,g/side,h/side)
+    return original(new,shot).transform((side,side),Image.Transform.PERSPECTIVE,inverse,Image.Resampling.NEAREST)
+bare,known=floor_panel("large-brick"),floor_proof("large-brick")
 for shot,patches in floor_patches.items():
-    drawn,observed=panel(new,shot),floor_proof(shot)
+    drawn,observed=floor_panel(shot),floor_proof(shot)
     checked=dark=0
     for x0,y0,x1,y1 in patches:
         for y in range(y0,y1):
