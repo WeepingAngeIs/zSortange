@@ -1,0 +1,50 @@
+name: Storage pack settings contract
+on:
+  push:
+    branches: [experiment/unyielding-settings]
+permissions:
+  contents: read
+jobs:
+  pack-settings:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-packsettings.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build the Storage candidate and isolated settings probe
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor f891228926d0ca30ce8e3f1d2a124db9cd50e84b HEAD
+          gradle --no-daemon --console=plain --max-workers=2 jar
+          gradle --no-daemon --console=plain --max-workers=2 -I fixtures/pack-settings/fixture.gradle -PsettingsJar="$PWD/build/libs/$PLAYABLE" preparePackSettingsServer
+      - name: Verify pack controls, ordinary operators, validation and restart
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          python3 -B fixtures/pack-settings/run.py | tee upload/CHECKS.txt
+          cp "build/libs/$PLAYABLE" build/pack-settings/Server/SCHEMA.json upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" SCHEMA.json > SHA256SUMS.txt)
+      - name: Report probe errors
+        if: failure()
+        run: |
+          for f in build/pack-settings/Server/{first.log,restart.log,FAILED}; do
+            if test -f "$f"; then tail -65 "$f" | cut -c1-1000; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-packsettings.1
+          path: upload/
+          retention-days: 14

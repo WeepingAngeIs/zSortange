@@ -15,9 +15,8 @@ final class OperatorOptions {
         ServerSettings.values(d).forEach((key,value)->{
             var def=ServerSettings.definition(key);
             String bounds=def.minimum()==null?"":" Range "+def.minimum()+" to "+def.maximum()+".";
-            boolean confirm=key.equals("expansion.pocketStorage") && Boolean.TRUE.equals(value)
-                    || key.equals("expansion.imageSharing") && Boolean.FALSE.equals(value)
-                    || key.equals("expansion.imageModeration") && Boolean.TRUE.equals(value);
+            Boolean confirmValue=def.confirmValue();
+            boolean confirm=confirmValue!=null && value instanceof Boolean current && !confirmValue.equals(current);
             options.add(key,def.label(),def.description()+bounds,value,confirm,v->ServerSettings.update(d,key,v));
         });
         options.add("pocketActivityLog","Pocket activity logging","Record pocket activity.",d.expansion.pocketActivityLog,false,v->d.expansion.pocketActivityLog=flag(v));

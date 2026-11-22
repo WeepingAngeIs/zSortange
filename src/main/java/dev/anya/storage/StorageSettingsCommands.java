@@ -14,6 +14,10 @@ public final class StorageSettingsCommands {
 
     static LiteralArgumentBuilder<CommandSourceStack> settings() {
         return Commands.literal("settings").requires(source -> source.hasPermission(2))
+                .executes(context -> {
+                    StoreMenu.settings(context.getSource().getPlayerOrException());
+                    return 1;
+                })
                 .then(Commands.literal("list").executes(context -> {
                     var actor = context.getSource().getPlayerOrException();
                     AnyaStorage.tell(actor, String.join(", ", ServerSettings.keys()));

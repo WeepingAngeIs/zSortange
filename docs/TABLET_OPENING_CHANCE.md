@@ -23,7 +23,9 @@ Use matching builds on server and clients. The Cupid Tablet has its own item mod
 
 ## Unyielding / Configtopia integration
 
-Anya owns the saved value. A Configtopia percentage control can use these public methods in `dev.anya.storage.Config` on the server.
+New pack controls can read and edit the tablet chance through the shared catalogue. [Configtopia settings contract](CONFIGTOPIA_SETTINGS.md)
+
+Earlier tablet-only integrations can continue using these public methods in `dev.anya.storage.Config` on the server.
 
 1. When displaying the control, read `Config.tabletOpeningChance()`. Show its `percent()` and retain its `revision()` with that operator's draft.
 2. On the server thread, call `Config.setTabletOpeningChancePercent(actor, displayedRevision, requestedPercent)` for the acting operator. Anya checks the operator, allowed range and revision and handles the save.

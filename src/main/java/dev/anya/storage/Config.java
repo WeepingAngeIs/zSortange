@@ -20,6 +20,8 @@ public final class Config {
     private static volatile Data live;
     private static Path path;
     private static boolean reloading;
+    private static boolean recoveryRequired;
+    private static final SettingsConfirmation packConfirmations = new SettingsConfirmation();
     private static volatile boolean pocketActivationPending;
     public static String lastStatus = "Not initialized";
     public static final List<String> GROUPS = List.of("backpacks", "hubs", "terminals", "containers", "upgrades", "endgame");
@@ -104,24 +106,86 @@ public final class Config {
     public record SettingsSnapshot(long revision, Map<String, Object> values) {}
 
     public static SettingsSnapshot serverSettings(ServerPlayer actor) {
-        if (!onServerThread(actor) || !actor.hasPermissions(2)) return null;
+        if (!currentOperator(actor)) return null;
         Data current = get();
         return new SettingsSnapshot(current.revision, ServerSettings.values(current));
     }
 
-    /** Apply a single named setting with the same transaction used by the operator menu. */
+    /** Optional pack adapter v1. Keys and values use the same catalogue as the native settings page. */
+    public static final int PACK_SETTINGS_API = 1;
+    public record SettingResult(String status, String message, long revision) {}
+
+    static boolean runtimeSetting(String key) {
+        return key.startsWith("expansion.") && RUNTIME_EXPANSION_SETTINGS.contains(key.substring("expansion.".length()));
+    }
+
+    private static boolean currentOperator(ServerPlayer actor) {
+        return onServerThread(actor) && actor.hasPermissions(2)
+                && actor.getServer().getPlayerList().getPlayer(actor.getUUID()) == actor;
+    }
+
+    private static SettingResult denied() {
+        return new SettingResult("rejected", "A connected server operator is required.", -1);
+    }
+
+    /** Poll after a resource reload. A rollback has a newer revision; read the values again. */
+    public static SettingResult serverSettingsStatus(ServerPlayer actor) {
+        if (!currentOperator(actor)) return denied();
+        String state = recoveryRequired ? "recovery_required" : reloading ? "pending_reload" : "ready";
+        return new SettingResult(state, lastStatus, get().revision);
+    }
+
+    /** One pack-screen submission, with authority and any outstanding confirmation pinned to this player. */
+    public static synchronized SettingResult applyServerSetting(ServerPlayer actor, long expectedRevision,
+                                                               String key, String value, boolean confirmed) {
+        if (!currentOperator(actor)) {
+            if (onServerThread(actor)) packConfirmations.clear(actor);
+            return denied();
+        }
+        String problem = saveProblem(actor, expectedRevision);
+        if (!problem.isEmpty()) {
+            packConfirmations.clear(actor);
+            return new SettingResult("rejected", problem, get().revision);
+        }
+        var definition = ServerSettings.definition(key);
+        if (definition == null || value == null || value.length() > 256) {
+            packConfirmations.clear(actor);
+            return new SettingResult("rejected", "Unknown setting or invalid value.", get().revision);
+        }
+        Boolean sensitive = definition.confirmValue();
+        if (sensitive != null && sensitive.toString().equals(value)
+                && !sensitive.equals(ServerSettings.values(get()).get(key))) {
+            if (!packConfirmations.accept(actor, expectedRevision, key, value, confirmed))
+                return new SettingResult("confirmation_required", "Confirm " + definition.label() + ".", get().revision);
+        } else packConfirmations.clear(actor);
+
+        String[] feedback = {""};
+        long before = get().revision;
+        boolean saved = saveSetting(actor, key, value, text -> feedback[0] = text);
+        long revision = get().revision;
+        if (!saved) return new SettingResult("rejected", feedback[0], revision);
+        if (revision == before) return new SettingResult("unchanged", "Already set.", revision);
+        if (reloading) return serverSettingsStatus(actor);
+        return new SettingResult("applied", feedback[0], revision);
+    }
+
+    /** Existing intentional command and single-setting API edits retain their calling convention. */
     public static synchronized boolean setServerSetting(ServerPlayer actor, long expectedRevision, String key, String value) {
         if (!onServerThread(actor) || !canSave(actor, expectedRevision)) return false;
+        return saveSetting(actor, key, value, message -> AnyaStorage.tell(actor, message));
+    }
+
+    private static boolean saveSetting(ServerPlayer actor, String key, String value, java.util.function.Consumer<String> feedback) {
         Data current = get();
         Data draft = copy(current);
         try {
             ServerSettings.update(draft, key, value);
         } catch (IllegalArgumentException e) {
-            AnyaStorage.tell(actor, e.getMessage());
+            feedback.accept(e.getMessage());
             return false;
         }
         if (JSON.toJsonTree(current).equals(JSON.toJsonTree(draft))) return true;
-        return applyDraft(actor, draft);
+        return applyDraft(actor, draft, feedback);
     }
 
     private static boolean onServerThread(ServerPlayer actor) {
@@ -270,6 +334,7 @@ public final class Config {
     static boolean reloadPending(){return reloading;}
     static String saveProblem(ServerPlayer actor,long expectedRevision){
         if(!actor.hasPermissions(2))return "Operator permission required.";
+        if(recoveryRequired)return lastStatus;
         if(reloading)return "A settings reload is in progress.";
         if(expectedRevision!=live.revision)return "Another operator saved first. Review the refreshed value.";
         return "";
@@ -329,6 +394,7 @@ public final class Config {
             return true;
         }
         reloading=true;
+        lastStatus="Reloading revision "+next.revision;
         try {
             server.reloadResources(List.copyOf(server.getPackRepository().getSelectedIds())).whenComplete((v,error)->server.execute(()->{
                 if(error==null) {
@@ -342,14 +408,16 @@ public final class Config {
                         before.revision=next.revision+1; persist(before); live=before;
                         pocketActivationPending=false;
                         server.reloadResources(List.copyOf(server.getPackRepository().getSelectedIds())).whenComplete((unused,recovery)->server.execute(()->{
-                            reloading=recovery!=null;
+                            recoveryRequired=recovery!=null;
+                            reloading=recoveryRequired;
                             lastStatus=recovery==null?"Reload failed; previous settings restored":"Recovery failed. Inspect logs and restart before edits";
                             feedback.accept(lastStatus);
                         }));
-                    } catch(Exception failure) { lastStatus="Recovery failed; restart required"; AnyaStorage.LOG.error(lastStatus,failure); }
+                    } catch(Exception failure) { recoveryRequired=true; lastStatus="Recovery failed; restart required"; AnyaStorage.LOG.error(lastStatus,failure); }
                 }
             }));
         } catch(Exception e) {
+            recoveryRequired=true;
             lastStatus="Reload could not start; restart required";
             AnyaStorage.LOG.error(lastStatus,e);
             feedback.accept(lastStatus);

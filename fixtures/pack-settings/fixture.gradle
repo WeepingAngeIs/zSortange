@@ -1,0 +1,30 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def probe=p.sourceSets.create('packSettingsProbe')
+    probe.java.srcDir 'fixtures/pack-settings/java'
+    probe.resources.srcDir 'fixtures/pack-settings/resources'
+    p.neoForge.addModdingDependenciesTo(probe)
+    def playable=p.file(p.property('settingsJar'))
+    p.dependencies.add(probe.compileOnlyConfigurationName,p.files(playable))
+    def fixture=p.tasks.register('packSettingsProbeJar',Jar){
+        dependsOn probe.classesTaskName
+        from probe.output
+        archiveBaseName='hosted-pack-settings-check'
+        destinationDirectory=p.layout.buildDirectory.dir('pack-settings/probe')
+    }
+    def runtime=p.sourceSets.create('packSettingsRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(playable,fixture))
+    def dir=p.file('build/pack-settings/Server')
+    p.neoForge.runs.create('packSettingsServer') {
+        server();programArgument '--nogui'
+        sourceSet=runtime;loadedMods=[];gameDirectory=dir
+        jvmArguments.addAll '-XX:ActiveProcessorCount=2','-Xms160m','-Xmx1250m'
+    }
+    p.tasks.register('preparePackSettingsServer'){
+        dependsOn fixture,'createPackSettingsServerLaunchScript'
+        doLast {
+            dir.mkdirs()
+            new File(dir,'launch.txt').text=p.tasks.named('createPackSettingsServerLaunchScript').get().launchScript.get().asFile.absolutePath
+        }
+    }
+}}

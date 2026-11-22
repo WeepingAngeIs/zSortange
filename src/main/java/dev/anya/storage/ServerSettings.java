@@ -15,7 +15,43 @@ public final class ServerSettings {
 
     /** Values and numeric bounds use the Java type represented by the kind. */
     public record Definition(String key, Kind kind, String label, String description,
-                             Object defaultValue, Number minimum, Number maximum) {}
+                             Object defaultValue, Number minimum, Number maximum) {
+        /** Unit of the stored value. Toggles and registry identifiers have no numeric unit. */
+        public String unit() {
+            return switch (key) {
+                case "initialRadius", "maxRadius", "radiusStep", "quickRadius" -> "blocks";
+                case "scanChunksPerTick" -> "chunks/tick";
+                case "maxContainers", "expansion.pocketContainers" -> "containers";
+                case "maxScanEntries", "expansion.activityLogEntries" -> "entries";
+                case "maxOperationSlots" -> "slots";
+                case "upgradeBaseCost" -> "ore points";
+                case "cubeRecipe" -> "mode";
+                case "expansion.stoneArmor", "expansion.diamondArmor" -> "armor points";
+                case "expansion.magmaReduction", "expansion.waterSwimBonus", "expansion.netheriteKnockback",
+                        "expansion.monsterChance", "expansion.monsterDropChance" -> "fraction";
+                case "expansion.imagesPerPlayer", "expansion.imagesTotal" -> "images";
+                case "expansion.imageWorldMiB" -> "MiB";
+                case "expansion.pocketSessionTicks" -> "ticks";
+                case "expansion.pocketLimit", "expansion.activePocketLimit" -> "pockets";
+                case "expansion.tabletOpeningChancePercent", "expansion.chestCameoChancePercent" -> "percent";
+                default -> "";
+            };
+        }
+
+        /** How the server applies a change to this setting alone. */
+        public String applyMode() {
+            return Config.runtimeSetting(key) ? "live" : "resource_reload";
+        }
+
+        /** The target value that asks for confirmation, or null when neither direction does. */
+        public Boolean confirmValue() {
+            return switch (key) {
+                case "expansion.pocketStorage", "expansion.imageModeration" -> Boolean.FALSE;
+                case "expansion.imageSharing" -> Boolean.TRUE;
+                default -> null;
+            };
+        }
+    }
 
     private record Entry<T>(Definition definition, Function<Config.Data, T> read,
                             BiConsumer<Config.Data, T> write, Function<String, T> parse) {
@@ -102,11 +138,11 @@ public final class ServerSettings {
                 0, 2, d -> d.cubeRecipe, (d, v) -> d.cubeRecipe = v);
 
         for (String group : Config.GROUPS) {
-            flag(entries, "recipes." + group, "Recipe group " + group, "Enable recipes in this group.",
+            flag(entries, "recipes." + group, "Recipe group " + group.replace('_',' '), "Enable recipes in this group.",
                     d -> d.recipes.get(group), (d, v) -> d.recipes.put(group, v));
         }
         for (String id : Config.UPGRADE_FAMILIES) {
-            flag(entries, "upgrades." + id, "Backpack upgrade " + id, "Enable behavior and crafting for this upgrade.",
+            flag(entries, "upgrades." + id, "Backpack upgrade " + id.replace('_',' '), "Enable behavior and crafting for this upgrade family.",
                     d -> d.upgrades.get(id), (d, v) -> d.upgrades.put(id, v));
         }
 
@@ -138,7 +174,7 @@ public final class ServerSettings {
         decimal(entries, "expansion.waterSwimBonus", "Water backpack swim bonus", "Fractional swimming speed bonus.", 0, .25,
                 d -> d.expansion.waterSwimBonus, (d, v) -> d.expansion.waterSwimBonus = v);
         decimal(entries, "expansion.netheriteKnockback", "Netherite backpack knockback resistance",
-                "Knockback resistance added by a qualifying high-tier backpack.", 0, .1,
+                "Amount added to the wearer's knockback resistance on its 0 to 1 scale.", 0, .1,
                 d -> d.expansion.netheriteKnockback, (d, v) -> d.expansion.netheriteKnockback = v);
         flag(entries, "expansion.monsterBackpacks", "Monster backpacks", "Allow eligible monsters to carry backpacks.",
                 d -> d.expansion.monsterBackpacks, (d, v) -> d.expansion.monsterBackpacks = v);
@@ -149,7 +185,7 @@ public final class ServerSettings {
 
         flag(entries, "expansion.imagesEnabled", "Custom interior images", "Enable custom interior uploads and attachments.",
                 d -> d.expansion.imagesEnabled, (d, v) -> d.expansion.imagesEnabled = v);
-        flag(entries, "expansion.imageUploadsForAll", "Public upload permission", "Allow players to upload when images are enabled.",
+        flag(entries, "expansion.imageUploadsForAll", "Allow all players to upload images", "Allow private uploads when custom images are enabled. Sharing is controlled separately.",
                 d -> d.expansion.imageUploadsForAll, (d, v) -> d.expansion.imageUploadsForAll = v);
         flag(entries, "expansion.imageSharing", "Custom image sharing", "Allow sharing approved images with explicitly granted viewers.",
                 d -> d.expansion.imageSharing, (d, v) -> d.expansion.imageSharing = v);

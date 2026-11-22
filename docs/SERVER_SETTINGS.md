@@ -30,7 +30,11 @@ The initial hub radius must fit within the maximum hub radius. The UwU Storage C
 
 Use `/anya storage` to edit backpack tiers, ore-point values, category rules, monster species and image-uploader lists, or to open the image moderation library. Personal slots and per-base or per-pocket permissions are managed where those settings apply.
 
-## Server API for a pack settings screen
+## Configtopia and other pack settings screens
+
+New integrations should use the versioned interface for confirmation, reload results and units. [Configtopia settings contract](CONFIGTOPIA_SETTINGS.md)
+
+### Compatibility with earlier callers
 
 Use these types from `dev.anya.storage`. The adapter supplies an actual operator and calls the methods on the logical server thread.
 

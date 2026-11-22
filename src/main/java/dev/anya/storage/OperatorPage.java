@@ -19,8 +19,7 @@ public final class OperatorPage {
         static final Type<View> TYPE=new Type<>(ExpansionPackets.id("operator_rows"));
         public Type<View> type(){return TYPE;}
     }
-    private record Pending(long revision,String key,String value,long until){}
-    private static final Map<ServerPlayer,Pending> confirmations=new WeakHashMap<>();
+    private static final SettingsConfirmation confirmations=new SettingsConfirmation();
     public static Consumer<View> receiver=view->{};
     private static final StreamCodec<RegistryFriendlyByteBuf,Request> REQUEST=new StreamCodec<>(){
         public Request decode(RegistryFriendlyByteBuf b){return new Request(b.readInt(),b.readLong(),b.readUtf(80),b.readVarInt(),b.readVarInt(),b.readUtf(512),b.readUtf(256),b.readBoolean());}
@@ -45,18 +44,18 @@ public final class OperatorPage {
     }
     public static void handle(ServerPlayer p,Request r,Consumer<View> send){
         if(!p.getServer().isSameThread())return;
-        if(!p.hasPermissions(2)){confirmations.remove(p);send.accept(new View(r.ticket,-1,0,0,List.of(),"Operator permission required.",""));return;}
+        if(!p.hasPermissions(2)){confirmations.clear(p);send.accept(new View(r.ticket,-1,0,0,List.of(),"Operator permission required.",""));return;}
         String note="",confirm="";
-        var pending=confirmations.remove(p);
+        if(r.key.isEmpty()) confirmations.clear(p);
         if(!r.key.isEmpty()){
             note=Config.saveProblem(p,r.revision);
-            if(note.isEmpty()){
+            if(!note.isEmpty()) confirmations.clear(p);
+            else{
                 var draft=Config.copy(Config.get());
                 try{
                     var row=OperatorOptions.rows(draft).stream().filter(x->x.key().equals(r.key)).findFirst().orElseThrow(()->new IllegalArgumentException("This setting is no longer available."));
-                    if(row.confirm() && !(r.confirm && pending!=null && pending.revision==r.revision && pending.key.equals(r.key)
-                            && pending.value.equals(r.value) && pending.until>=p.serverLevel().getGameTime())){
-                        confirmations.put(p,new Pending(r.revision,r.key,r.value,p.serverLevel().getGameTime()+600));
+                    if(!row.confirm()) confirmations.clear(p);
+                    if(row.confirm() && !confirmations.accept(p,r.revision,r.key,r.value,r.confirm)){
                         note="Confirm "+row.label()+". "+row.help();confirm=r.key;
                     }else{
                         row.edit().accept(r.value.strip());
@@ -70,7 +69,7 @@ public final class OperatorPage {
                         note=accepted?(Config.reloadPending()?"Saved "+row.label()+". Reloading settings…":"Saved "+row.label()+"."):result[0];
                         if(accepted && result[0].contains("restart"))note=result[0];
                     }
-                }catch(IllegalArgumentException ex){note=ex instanceof NumberFormatException?"Enter a valid whole number.":ex.getMessage();}
+                }catch(IllegalArgumentException ex){confirmations.clear(p);note=ex instanceof NumberFormatException?"Enter a valid whole number.":ex.getMessage();}
             }
         }
         reply(p,r,note,confirm,send);
