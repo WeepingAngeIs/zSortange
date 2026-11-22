@@ -36,7 +36,7 @@ public final class CameraFeed {
     }
     static BiConsumer<Connection,Frame> receiver=(c,f)->{};
     public static void register(RegisterPayloadHandlersEvent e){
-        CameraConsole.register(e);SkyCeiling.register(e);
+        CameraConsole.register(e);SkyCeiling.register(e);CameraScene.register(e);
         var channel=e.registrar("skyglass2").optional();
         StreamCodec<RegistryFriendlyByteBuf,Watch> watch=StreamCodec.ofMember((w,b)->b.writeBlockPos(w.pos),b->new Watch(b.readBlockPos()));
         StreamCodec<RegistryFriendlyByteBuf,Frame> frame=StreamCodec.ofMember((f,b)->{b.writeBlockPos(f.pos);b.writeLong(f.time);b.writeInt(f.background);b.writeFloat(f.clarity);b.writeVarIntArray(f.pixels);},
@@ -117,6 +117,13 @@ public final class CameraFeed {
                 if(sky && direction(cam)!=Direction.UP){send(p,d,-1,null,new int[0]);continue;}
                 var atmosphere=SourceSky.observe(level,cam.getBlockPos());
                 var target=subject(p,level,cam,sky);
+                if(sharpWall(p,d)) {
+                    var scene=CameraSceneCapture.capture(p,d,level,cam,atmosphere,target);
+                    if(scene.time()<0 || source(p,d)!=cam){send(p,d,-1,null,new int[0]);continue;}
+                    PacketDistributor.sendToPlayer(p,scene);
+                    if(p.connection.hasChannel(CameraConsole.Motion.TYPE))CameraConsole.signal(p,d,cam.tracking.mode==CameraTracking.Mode.MOTION?target:null);
+                    continue;
+                }
                 int side=d.getBlockState().getBlock() instanceof WallMonitorBlock&&Math.max(d.panel.width(),d.panel.height())>3&&p.connection.hasChannel(WideFrame.TYPE)?32:16;
                 int[] pixels=capture(p,level,cam,atmosphere,target,side);
                 if(source(p,d)!=cam || Arrays.stream(pixels).allMatch(pixel->pixel==UNKNOWN)){send(p,d,-1,null,new int[0]);continue;}
@@ -125,7 +132,13 @@ public final class CameraFeed {
             }catch(RuntimeException unavailable){sessions.remove(p);send(p,d,-1,null,new int[0]);}
         }
     }
+    private static boolean sharpWall(ServerPlayer p,CameraDevices.Device d) {
+        return d.getBlockState().getBlock() instanceof WallMonitorBlock && p.connection.hasChannel(CameraScene.TYPE);
+    }
     private static void send(ServerPlayer p,CameraDevices.Device d,long time,SourceSky sky,int[] pixels){
+        if(time<0 && sharpWall(p,d)){
+            PacketDistributor.sendToPlayer(p,CameraScene.empty(d.getBlockPos()));return;
+        }
         var frame=new Frame(d.getBlockPos(),time,sky==null?-1:sky.background(),sky==null?0:sky.clarity(),pixels);
         if(pixels.length==1024)PacketDistributor.sendToPlayer(p,new WideFrame(frame));else PacketDistributor.sendToPlayer(p,frame);
     }
@@ -147,6 +160,7 @@ public final class CameraFeed {
         var face=direction(cam);
         var eye=eye(cam);
         var access=new HashMap<BlockPos,Boolean>();var pixels=new int[side*side];
+        var skyClearance=new CameraSkyClearance(p,level,loaded,cam.getBlockPos(),eye);
         var flyers=new ArrayList<CameraFigure>();
         boolean upwardLens=cam.getBlockState().is(CameraDevices.SKY_CAMERA.get());
         double aperture=upwardLens?CameraOptics.skyAperture(level,eye):1;
@@ -168,7 +182,7 @@ public final class CameraFeed {
                 var right=forward.cross(new Vec3(0,1,0)).normalize();var up=right.cross(forward);
                 ray=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
             }
-            int pixel=sample(p,level,loaded,eye,ray,access,target,cam.getBlockPos(),flyers,accessBudget);
+            int pixel=sample(p,level,loaded,eye,ray,access,target,cam.getBlockPos(),flyers,accessBudget,skyClearance,x,y,side);
             pixels[y*side+x]=pixel==SKY && atmosphere!=null?atmosphere.direction(ray):pixel;
         }
         return pixels;
@@ -181,7 +195,7 @@ public final class CameraFeed {
         if(cache.size()>=limit || !level.hasChunkAt(pos))return false;
         boolean ok=Safety.locationReason(p,level,pos).isEmpty();cache.put(pos.immutable(),ok);return ok;
     }
-    private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob,BlockPos camera,List<CameraFigure> flyers,int budget){
+    private static int sample(ServerPlayer p,ServerLevel level,LoadedPocketBlocks blocks,Vec3 eye,Vec3 ray,Map<BlockPos,Boolean> access,Mob mob,BlockPos camera,List<CameraFigure> flyers,int budget,CameraSkyClearance skyClearance,int x,int y,int side){
         var end=eye.add(ray.scale(24));
         Vec3 first=mob==null?null:mob.getBoundingBox().clip(eye,end).orElse(null);
         int tint=0xd4b9db;
@@ -209,29 +223,8 @@ public final class CameraFeed {
         },dir->{
             var pos=BlockPos.containing(end);
             if(dir.y<=.15 || !level.dimensionType().hasSkyLight() || !allowed(p,level,pos,access,budget))return UNKNOWN;
-            // Prove there is no roof farther along this slanted ray, without loading more chunks.
-            double distance=(level.getMaxBuildHeight()-end.y)/dir.y;
-            if(distance<=0)return SKY;
-            if(distance>600)return UNKNOWN;
-            return skyBeyond(blocks,end,dir,distance);
+            return skyClearance.sector(x,y,side,dir)?SKY:UNKNOWN;
         });
-    }
-    // An upward ray reaches its lowest height when it enters each horizontal column.
-    // One heightmap read per crossed column proves the same clearance as visiting every air block.
-    private static int skyBeyond(LoadedPocketBlocks blocks,Vec3 end,Vec3 dir,double distance){
-        var start=new Vec3(end.x,.5,end.z);
-        var finish=start.add(dir.x*distance,0,dir.z*distance);
-        if(!clearColumn(blocks,end,dir,BlockPos.containing(start)))return UNKNOWN;
-        return net.minecraft.world.level.BlockGetter.traverseBlocks(start,finish,blocks,
-                (world,cell)->clearColumn(world,end,dir,cell)?null:UNKNOWN,world->SKY);
-    }
-    private static boolean clearColumn(LoadedPocketBlocks blocks,Vec3 end,Vec3 dir,BlockPos cell){
-        int x=cell.getX(),z=cell.getZ();
-        var chunk=blocks.chunk(x>>4,z>>4);if(chunk==null)return false;
-        double tx=dir.x==0?0:((dir.x>0?x:x+1)-end.x)/dir.x;
-        double tz=dir.z==0?0:((dir.z>0?z:z+1)-end.z)/dir.z;
-        int lowest=net.minecraft.util.Mth.floor(end.y+Math.max(0,Math.max(tx,tz))*dir.y-1e-7);
-        return chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE,x&15,z&15)<lowest;
     }
     static List<Mob> nearby(ServerLevel level,Vec3 eye,java.util.function.Predicate<Mob> filter){
         var mobs=new ArrayList<Mob>();

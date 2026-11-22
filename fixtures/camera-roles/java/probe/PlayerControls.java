@@ -59,6 +59,7 @@ public final class PlayerControls {
                 show.accept(connection,frame);
             }catch(Exception failure){throw new IllegalStateException(failure);}
         });
+        if(SharpChecks.sharp())SharpChecks.tap(OWNER);
         tapped=true;
     }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event)throws Exception{
@@ -67,13 +68,14 @@ public final class PlayerControls {
     private static void update()throws Exception{
         var mc=Minecraft.getInstance();
         if(Files.exists(Orders.ROOT.resolve("quit"))){mc.stop();return;}
+        if(SharpChecks.single())SharpChecks.startSolo(mc);
         if(mc.player==null || mc.level==null || mc.gameMode==null)return;
         if(!tapped)observeWire();
         var file=Orders.ROOT.resolve(ROLE+".json");
         if(!Files.exists(file))return;
         var next=Orders.JSON.fromJson(Files.readString(file),Orders.Order.class);
         if(order==null || !order.step().equals(next.step())){
-            order=next;done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;initialCeiling=ceilingPackets;initialBlank=blankCeiling;clicked=false;diagnostic="";
+            order=next;SharpChecks.next();done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;initialCeiling=ceilingPackets;initialBlank=blankCeiling;clicked=false;diagnostic="";
             if(!order.action().equals("use"))mc.gui.getChat().clearMessages(false);
         }
         if(done)return;
@@ -91,6 +93,7 @@ public final class PlayerControls {
             }
             return;
         }
+        if(order.action().startsWith("sharp.")){stable++;return;}
         if(order.action().startsWith("sky.")||(order.action().equals("cinema")||order.action().equals("peripheral"))){stable++;return;}
         var hit=mc.player.pick(mc.player.blockInteractionRange(),1,false);
         diagnostic="ray="+(hit instanceof BlockHitResult h?h.getType()+" "+h.getBlockPos()+" "+h.getDirection():hit.getType())
@@ -111,8 +114,17 @@ public final class PlayerControls {
         if(done || order==null || stable<7 || order.action().equals("use"))return;
         try{capture();}catch(Exception|AssertionError failure){Orders.write("FAIL-"+ROLE,order.step()+": "+failure);throw failure;}
     }
+    @SubscribeEvent public static void projection(RenderLevelStageEvent event){
+        if(SharpChecks.sharp() && event.getStage()==RenderLevelStageEvent.Stage.AFTER_LEVEL)
+            SharpChecks.rememberProjection(event);
+    }
     private static void capture()throws Exception{
         if(order.action().startsWith("ui.")||order.action().equals("tablet"))return;
+        if(order.action().startsWith("sharp.")){
+            String observed=SharpChecks.capture(order,age,positive-atPositive,empty-atEmpty);
+            if(observed!=null)acknowledge(observed);
+            return;
+        }
         if(order.action().startsWith("sky.")){
             var active=field(Class.forName("dev.anya.storage.pocket.SkyCeilingClient"),"current").get(null);
             if(order.action().equals("sky.unavailable")){

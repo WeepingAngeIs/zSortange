@@ -1,6 +1,8 @@
 # Anya Storage Plus
 
-**Skygrid chest sync candidate** for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. With room building enabled, enter with Build permission and place a vanilla chest against a wall, in a corner or elsewhere inside the room. Outside, right-click your linked tablet to use its storage. Leave the landing and exit clear. New rooms start empty. Existing chests keep their items inside the original blocks. The entrance keeps its illustration. Outdoor cameras still need an explicit tablet link.
+**Skygrid camera candidate** for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. Select your outdoor camera with the tablet, link your wall monitor, and look at the screen. The monitor shows nearby visible surfaces with their block textures, local lighting, rain and a limited set of moving figures. A visible player uses a standard Minecraft model. The outdoor area must already be loaded, and the camera and monitor must both allow you to view them. Looking at a screen does not keep its outdoor area loaded.
+
+With room building enabled, enter with Build permission and place a vanilla chest against a wall, in a corner or elsewhere inside the room. Outside, right-click your linked tablet to use its storage. Leave the landing and exit clear. New rooms start empty. Existing chests keep their items inside the original blocks. The entrance keeps its illustration.
 
 ### Earlier milestones
 

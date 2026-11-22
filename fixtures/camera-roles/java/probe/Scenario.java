@@ -24,13 +24,16 @@ import static probe.Orders.check;
 @Mod("roomroles")
 @EventBusSubscriber(modid="roomroles")
 public final class Scenario {
+    private static final String FLAVOR=System.getProperty("roomroles.trial","");
+    private static final boolean SHARP=FLAVOR.startsWith("sharp-"), SOLO=FLAVOR.equals("sharp-solo");
+    private static final boolean OLD_PICTURE=FLAVOR.equals("sharp-old");
     private static final String OWNER="CamOwner", BUILDER="RoomBuilder", GUEST="RoomVisitor";
     private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial"));
     private static final boolean BASELINE="baseline".equals(System.getProperty("roomroles.trial"));
     private static final BlockPos HUB=new BlockPos(7,81,-5), DOOR=HUB.east(2);
     private static final BlockPos CAMERA=new BlockPos(0,82,0), WALL=new BlockPos(6,82,5), UP=new BlockPos(-6,81,0);
     private static final Direction NORTH=Direction.NORTH, SOUTH=Direction.SOUTH;
-    private static final List<String> ROLES=BASELINE||STUDIO?List.of(OWNER,BUILDER):List.of(OWNER,BUILDER,GUEST);
+    private static final List<String> ROLES=SOLO?List.of(OWNER):BASELINE||STUDIO||SHARP?List.of(OWNER,BUILDER):List.of(OWNER,BUILDER,GUEST);
     private static final List<Step> steps=new ArrayList<>();
     private static final Map<String,Orders.Order> pending=new HashMap<>();
     private static final Set<String> receivedClicks=new HashSet<>();
@@ -85,7 +88,8 @@ public final class Scenario {
             current=next.name();started=now;acks=0;pending.clear();receivedClicks.clear();
             Orders.write("step.txt",current);next.start().run();return;
         }
-        if(now-started>600)throw new AssertionError("Timed out at "+current+" pending="+pending.keySet()+" received="+receivedClicks);
+        int timeout = current.equals("remove-outdoor-load-cause") ? 1800 : SHARP ? 1000 : 600;
+        if(now-started>timeout)throw new AssertionError("Timed out at "+current+" pending="+pending.keySet()+" received="+receivedClicks);
         if(STUDIO&&current.equals("motion-on-indoor-monitor")&&(now-started)%8==0)StudioEvidence.move(StudioEvidence.creeper);
         for(var entry:pending.entrySet()){
             var role=entry.getKey();
@@ -104,17 +108,18 @@ public final class Scenario {
         home.setBlockAndUpdate(DOOR,PocketContent.ENTRANCE.get().defaultBlockState());
         var owner=player(OWNER);hub=(StorageEntity)home.getBlockEntity(HUB);hub.owner=owner.getUUID();
         ((PocketContent.EntranceEntity)home.getBlockEntity(DOOR)).owner=owner.getUUID();
-        hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD);
-        if(!BASELINE&&!STUDIO)hub.setMember(player(GUEST).getUUID(),BasePermissions.VISIT);
+        if(!SOLO)hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD);
+        if(!BASELINE&&!STUDIO&&!SHARP)hub.setMember(player(GUEST).getUUID(),BasePermissions.VISIT);
         int i=0;
         for(String name:ROLES){
             var p=player(name);
-            check(!p.hasPermissions(2) && p.gameMode.getGameModeForPlayer()==GameType.SURVIVAL,"Expected ordinary Survival "+name);
+            check((SOLO || !p.hasPermissions(2)) && p.gameMode.getGameModeForPlayer()==GameType.SURVIVAL,"Expected ordinary Survival "+name);
             p.teleportTo(home,11.5+i,81,8.5,0,0);i++;
         }
         owner.getInventory().setItem(1,new ItemStack(Content.CUPID_TABLET.get()));
         frontUse("bind-tablet-to-hub",HUB,Content.CUPID_TABLET.get(),true);
         frontUse("bind-room-cube",DOOR,Content.CUPID_TABLET.get(),true);
+        if(SHARP){sharpSteps();return;}
         if(STUDIO)studioOutside();else if(!BASELINE)outsideCameraSteps();
         for(String role:ROLES){
             String name="enter-"+role;
@@ -185,6 +190,126 @@ public final class Scenario {
             return true;
         });
     }
+    private static final BlockPos SOURCE=new BlockPos(168,82,8);
+    private static net.minecraft.world.entity.animal.Cow sharpCow;
+
+    private static void wallScene(Block center) {
+        for(int x=-6;x<=6;x++)for(int y=-1;y<=2;y++) {
+            Block block=Math.abs(x)<=2 ? center : x<0 ? Blocks.BOOKSHELF : Blocks.OAK_LOG;
+            home.setBlockAndUpdate(SOURCE.north(5).offset(x,y,0),block.defaultBlockState());
+        }
+    }
+    private static void sharpStage(){
+        // Vanilla spawn spans the hub and lens until the outdoor player reaches the camera.
+        // A single-player visit continues to require a loaded home hub independent of the feed.
+        home.setDefaultSpawnPos(new BlockPos(88,81,0),0);
+        home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(7,server);
+        home.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);
+        home.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false,server);
+        for(var cell:BlockPos.betweenClosed(SOURCE.offset(-9,-2,-9),SOURCE.offset(9,-2,7)))
+            home.setBlockAndUpdate(cell,Blocks.MOSS_BLOCK.defaultBlockState());
+        home.setBlockAndUpdate(SOURCE.south(),Blocks.SMOOTH_STONE.defaultBlockState());
+        wallScene(Blocks.STONE);
+    }
+    private static void sharpView(String name,String action){
+        viewStudio(name,OWNER,"sharp."+action,-1);
+    }
+    private static void sharpReference(String name){
+        if(SOLO || OLD_PICTURE)return;
+        step(name,()->{
+            var p=player(BUILDER);var feet=p.position();
+            order(BUILDER,"sharp.reference",SOURCE,feet,feet.add(2,1.6,2),Items.AIR,false,null,0);
+        },()->true);
+    }
+    private static void sharpSteps(){
+        verify("set-up-identical-outdoor-subject-and-blocks",Scenario::sharpStage);
+        step("mount-outdoor-camera-using-held-block",()->northUse(SOURCE.south(),CameraDevices.CAMERA.get().asItem(),false),()->{
+            var d=StudioEvidence.device(home,SOURCE);return d!=null && d.owned(player(OWNER));
+        });
+        step("select-outdoor-camera-with-tablet",()->northUse(SOURCE,Content.CUPID_TABLET.get(),true),()->true);
+        for(String role:ROLES){
+            step("enter-room-"+role,()->front(role,DOOR,Items.AIR,false),()->{
+                var p=player(role);if(!PocketService.inPocket(p.level()))return false;
+                room=PocketService.ledger(server).get(((PocketContent.EntranceEntity)home.getBlockEntity(DOOR)).pocket);
+                var pos=roomPos(role.equals(OWNER)?9:13,65,22);
+                p.connection.teleport(pos.getX()+.5,65,pos.getZ()+.5,0,0);return true;
+            });
+        }
+        verify("provide-wall-backing-inside-skygrid",()->{
+            var screen=studioWall();
+            for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)
+                inside().setBlockAndUpdate(screen.south().offset(x,y,0),PocketContent.PANEL.get().defaultBlockState());
+        });
+        studioHit("place-flat-screen",OWNER,0,1,CameraDevices.WALL.get().asItem(),false);
+        studioHit("link-flat-screen-through-tablet",OWNER,0,0,Content.CUPID_TABLET.get(),true);
+        sharpView("small-day","clear");
+        studioHit("open-screen-size-controls",OWNER,0,0,Items.AIR,false);
+        uiStep("widen-to-two","width");uiStep("widen-to-three","width");uiStep("raise-to-two","height");uiStep("raise-to-three","height");uiStep("close-settings","close");
+        if(!SOLO){
+            verify("grant-ordinary-storage-view-without-camera-ownership",()->hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD|BasePermissions.VIEW));
+            viewStudio("private-while-source-loaded",BUILDER,"sharp.private",-1);
+            step("outside-observer-returns-to-the-real-source",()->PocketService.recover(player(BUILDER)),()->player(BUILDER).level()==home);
+            verify("outside-player-naturally-tracks-source",()->{
+                player(BUILDER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0);
+                home.setDefaultSpawnPos(HUB,0);home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(2,server);
+            });
+        }
+        sharpView("large-day","clear");
+        verify("replace-stone-with-same-map-color-stone-bricks",()->{
+            check(Blocks.STONE.defaultBlockState().getMapColor(home,SOURCE).col==Blocks.STONE_BRICKS.defaultBlockState().getMapColor(home,SOURCE).col,"Map colors differ");
+            wallScene(Blocks.STONE_BRICKS);
+        });
+        sharpView("large-brick","brick");
+        if(!OLD_PICTURE){
+            verify("place-a-distinct-visible-block",()->home.setBlockAndUpdate(SOURCE.north(5),Blocks.GOLD_BLOCK.defaultBlockState()));
+            sharpView("source-cell-clear","gold");
+            verify("deny-only-that-source-cell",()->StudioEvidence.denied=SOURCE.north(5));
+            sharpView("source-cell-masked","masked");
+            verify("restore-matched-subject",()->{StudioEvidence.denied=null;home.setBlockAndUpdate(SOURCE.north(5),Blocks.STONE_BRICKS.defaultBlockState());});
+        }
+        verify("spawn-visible-vanilla-cow",()->{
+            sharpCow=net.minecraft.world.entity.EntityType.COW.create(home);
+            sharpCow.setNoAi(true);sharpCow.setNoGravity(true);sharpCow.setPersistenceRequired();
+            sharpCow.moveTo(SOURCE.getX()-1.0,81,SOURCE.getZ()-2.7,52,0);
+            sharpCow.setYHeadRot(52);sharpCow.yBodyRot=52;
+            home.addFreshEntity(sharpCow);
+        });
+        sharpView("large-cow","cow");
+        if(!SOLO){
+            verify("outside-player-walks-obliquely-into-view",()->{
+                var other=player(BUILDER);
+                other.connection.teleport(SOURCE.getX()+1.55,81,SOURCE.getZ()-3.0,-45,0);
+                other.setYHeadRot(-45);other.yBodyRot=-45;
+            });
+            sharpView("large-player","player");
+            if(!OLD_PICTURE)sharpView("terrain-renderer-comparison","renderer-compare");
+            sharpReference("reference-day");
+            verify("restore-oblique-player-yaw",()->{
+                var p=player(BUILDER);p.connection.teleport(p.getX(),p.getY(),p.getZ(),-45,0);p.setYHeadRot(-45);p.yBodyRot=-45;
+            });
+            verify("outside-player-becomes-invisible",()->player(BUILDER).addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.INVISIBILITY,1200,0,false,false)));
+            sharpView("large-invisible","invisible");
+            verify("restore-outside-visibility",()->player(BUILDER).removeEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY));
+        }
+        step("start-rain-at-the-outdoor-lens",()->home.setWeatherParameters(0,24000,true,false),()->home.getRainLevel(1)>.93f);
+        sharpView("large-rain","rain");sharpReference("reference-rain");
+        step("clear-rain-and-switch-to-midnight",()->{home.setWeatherParameters(24000,0,false,false);home.setDayTime(18000);},()->home.getRainLevel(1)<.03f);
+        sharpView("large-night","night");sharpReference("reference-night");
+        verify("source-claim-denies-this-viewer",()->StudioEvidence.denied=SOURCE);
+        sharpView("claim-denied","unavailable");
+        verify("allow-lens-in-daylight-again",()->{StudioEvidence.denied=null;home.setDayTime(6000);});
+        sharpView("restored-after-claim","restored");
+        step("remove-outdoor-load-cause",()->{
+            home.setDefaultSpawnPos(HUB,0);home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(2,server);
+            if(!SOLO)player(BUILDER).connection.teleport(HUB.getX()+3,81,HUB.getZ()+3,0,0);
+        },()->home.getChunkSource().getChunkNow(SOURCE.getX()>>4,SOURCE.getZ()>>4)==null);
+        sharpView("source-unloaded","unavailable");
+        step("watching-does-not-reload-the-empty-source",()->{},()->{
+            check(home.getChunkSource().getChunkNow(SOURCE.getX()>>4,SOURCE.getZ()>>4)==null,"Watching forced the source back into memory");
+            return server.getTickCount()-started>=50;
+        });
+    }
+
     private static void studioOutside(){
         verify("slim-camera-six-attachments-selection-collision-and-source",()->{
             equip(player(OWNER),Items.AIR);MountProbe.sixFaces(player(OWNER));

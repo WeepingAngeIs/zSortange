@@ -17,6 +17,7 @@ import org.lwjgl.opengl.*;
 public final class CameraScreen {
     private static CameraDevices.Device target;
     private static CameraFeed.Frame current;
+    private static CameraScene scene;
     private static long tick,expiry,request;
     private static String motion="";
     static {
@@ -26,16 +27,24 @@ public final class CameraScreen {
         };
         CameraConsole.motionReceiver=(connection,cue)->{
             var mc=Minecraft.getInstance();
-            if(current!=null&&target!=null&&target.getLevel()==mc.level&&target.getBlockPos().equals(cue.pos())
+            if((current!=null||scene!=null)&&target!=null&&target.getLevel()==mc.level&&target.getBlockPos().equals(cue.pos())
                     &&mc.getConnection()!=null&&mc.getConnection().getConnection()==connection)motion=cue.kind();
         };
         CameraFeed.receiver=(connection,frame)->{
-            var mc=Minecraft.getInstance();
-            if(target==null || target.getLevel()!=mc.level || target.isRemoved() || mc.getConnection()==null
-                    || mc.getConnection().getConnection()!=connection || !target.getBlockPos().equals(frame.pos()))return;
+            if(!accepts(connection,frame.pos()))return;
             current=frame.pixels().length==256||frame.pixels().length==1024?frame:null;
-            motion="";expiry=tick+16;
+            scene=null;motion="";expiry=tick+16;
         };
+        CameraScene.receiver=(connection,frame)->{
+            if(!accepts(connection,frame.pos()) || !(target.getBlockState().getBlock() instanceof WallMonitorBlock))return;
+            scene=frame.time()>=0 && frame.cells().length==CameraScene.SIDE*CameraScene.SIDE?frame:null;
+            current=null;motion="";expiry=tick+16;
+        };
+    }
+    private static boolean accepts(net.minecraft.network.Connection connection,BlockPos pos){
+        var mc=Minecraft.getInstance();
+        return target!=null && !target.isRemoved() && target.getLevel()==mc.level && target.getBlockPos().equals(pos)
+                && mc.getConnection()!=null && mc.getConnection().getConnection()==connection;
     }
     private static CameraDevices.Device pick(Minecraft mc){
         if(mc.player==null || !mc.player.isAlive() || mc.player.isSpectator() || mc.screen!=null || mc.level==null
@@ -75,12 +84,13 @@ public final class CameraScreen {
         }
         return null;
     }
-    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;SkyglassPixels.clear();}
+    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;scene=null;motion="";SkyglassPixels.clear();CameraPicture.clear();}
     @SubscribeEvent public static void update(ClientTickEvent.Post event){
         tick++;
         var mc=Minecraft.getInstance();var d=pick(mc);
-        if(target!=d){motion="";current=null;target=d;request=0;}
-        if(tick>expiry)current=null;
+        if(target!=d){motion="";current=null;scene=null;target=d;request=0;}
+        if(tick>expiry){current=null;scene=null;}
+        if(scene==null && CameraPicture.rendered()!=null)CameraPicture.clear();
         if(d!=null && tick>=request && mc.getConnection()!=null && mc.getConnection().hasChannel(CameraFeed.Watch.TYPE)){
             PacketDistributor.sendToServer(new CameraFeed.Watch(d.getBlockPos()));request=tick+8;
         }
@@ -100,6 +110,24 @@ public final class CameraScreen {
             float w=wall?target.panel.width()-.075f:4;
             float h=wall?target.panel.height()-.075f:4;
             var right=wall?WallPanel.right(face):null;
+            if(wall && scene!=null){
+                var image=CameraPicture.surface(scene);
+                if(image!=null){
+                    var buffers=mc.renderBuffers().bufferSource();
+                    // Opaque unlit texture with the normal world depth test. Lighting is already in the feed.
+                    var type=RenderType.beaconBeam(image,false);
+                    var v=buffers.getBuffer(type);
+                    // Fill non-square panels without stretching the camera's blocks or animals.
+                    float uSpan=Math.min(1f,w/h),vSpan=Math.min(1f,h/w);
+                    float left=(1-uSpan)*.5f,top=(1-vSpan)*.5f;
+                    point(p,v,right,-w*.5f,h*.5f,left,top);
+                    point(p,v,right,-w*.5f,-h*.5f,left,top+vSpan);
+                    point(p,v,right,w*.5f,-h*.5f,left+uSpan,top+vSpan);
+                    point(p,v,right,w*.5f,h*.5f,left+uSpan,top);
+                    buffers.endBatch(type);
+                    return;
+                }
+            }
             var buffers=mc.renderBuffers().bufferSource();var type=wall?RenderType.debugQuads():RenderType.lightning();var vertices=buffers.getBuffer(type);
             int side=current!=null&&current.pixels().length==1024?32:16;
             for(int y=0;y<side;y++)for(int x=0;x<side;x++){
@@ -123,17 +151,24 @@ public final class CameraScreen {
             buffers.endBatch(type);
         }finally{p.popPose();}
     }
+    private static void point(com.mojang.blaze3d.vertex.PoseStack p,com.mojang.blaze3d.vertex.VertexConsumer v,
+                              net.minecraft.core.Direction right,float x,float y,float u,float t){
+        v.addVertex(p.last(),right.getStepX()*x,y,right.getStepZ()*x).setColor(0xffffffff).setUv(u,t)
+                .setLight(net.minecraft.client.renderer.LightTexture.FULL_BRIGHT)
+                .setNormal(p.last(),-right.getStepZ(),0,right.getStepX());
+    }
     @SubscribeEvent public static void status(RenderGuiEvent.Post event){
         var mc=Minecraft.getInstance();if(target==null || target.isRemoved() || mc.screen!=null || mc.level!=target.getLevel())return;
         String line;
-        if(current==null)line="Camera unavailable";
+        if(current==null && scene==null)line="Camera unavailable";
         else{
-            long hour=Math.floorMod(current.time()/1000+6,24);
-            line="Outdoor camera  "+String.format(java.util.Locale.ROOT,"%02d:%02d",hour,Math.floorMod(current.time(),1000)*60/1000);
+            long time=scene==null?current.time():scene.time();
+            long hour=Math.floorMod(time/1000+6,24);
+            line="Outdoor camera  "+String.format(java.util.Locale.ROOT,"%02d:%02d",hour,Math.floorMod(time,1000)*60/1000);
             var id=net.minecraft.resources.ResourceLocation.tryParse(motion);
             if(!motion.isEmpty()&&id!=null)line+="  ·  Motion: "+net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
                     .getOptional(id).map(type->type.getDescription().getString()).orElse("Mob");
-            if(current.background()<0 && java.util.Arrays.stream(current.pixels()).anyMatch(value->value==CameraFeed.SKY))line+="  Â·  Sky image unavailable";
+            if(current!=null && current.background()<0 && java.util.Arrays.stream(current.pixels()).anyMatch(value->value==CameraFeed.SKY))line+="  Â·  Sky image unavailable";
         }
         var gui=event.getGuiGraphics();gui.drawCenteredString(mc.font,line,gui.guiWidth()/2,gui.guiHeight()-63,0xffeedcec);
     }

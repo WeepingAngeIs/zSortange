@@ -11,11 +11,14 @@ root = Path("build/role-check") / sys.argv[1]
 control = root / "control"
 control.mkdir(parents=True, exist_ok=True)
 server = root / "Server"
+solo = sys.argv[1] == 'sharp-solo'
+sharp = sys.argv[1].startswith('sharp-')
+server.mkdir(exist_ok=True)
 (server / "eula.txt").write_text("eula=true\n")
 (server / "server.properties").write_text(
     "server-ip=127.0.0.1\nserver-port=25574\nonline-mode=false\ngamemode=survival\n"
     "spawn-protection=0\nlevel-type=minecraft:flat\nview-distance=4\nsimulation-distance=3\n")
-roles = ["CamOwner","RoomBuilder"]
+roles = ["CamOwner"] if solo else ["CamOwner","RoomBuilder"]
 if sys.argv[1] == "candidate":
     roles.append("RoomVisitor")
 
@@ -42,19 +45,23 @@ def start(name, display):
                                         stdout=console, stderr=subprocess.STDOUT, text=True, env=env)
 
 try:
-    start("Server", False)
-    for _ in range(180):
-        if processes["Server"].poll() is not None:
-            raise RuntimeError("Server startup failed")
-        if "For help, type" in (server / "console.log").read_text(errors="replace"):
-            break
-        time.sleep(1)
-    else:
-        raise TimeoutError("Server startup")
+    if not solo:
+        start("Server", False)
+        for _ in range(180):
+            if processes["Server"].poll() is not None:
+                raise RuntimeError("Server startup failed")
+            if "For help, type" in (server / "console.log").read_text(errors="replace"):
+                break
+            time.sleep(1)
+        else:
+            raise TimeoutError("Server startup")
     for role in roles:
         start(role, True)
         time.sleep(1)
-    deadline = time.monotonic()+(630 if sys.argv[1]=="studio" else 380)
+    # The sharp trial exercises actual GPU draws on the software-hosted runners; its
+    # last step also waits for a genuine vanilla chunk eviction, not a simulated signal.
+    budget = 720 if sharp else 630 if sys.argv[1]=="studio" else 380
+    deadline = time.monotonic()+budget
     while not (control / "PASS.txt").exists():
         failures = list(control.glob("FAIL-*"))
         if failures:
@@ -68,7 +75,7 @@ try:
     print((control / "PASS.txt").read_text())
 finally:
     (control / "quit").touch()
-    if processes["Server"].poll() is None:
+    if "Server" in processes and processes["Server"].poll() is None:
         processes["Server"].stdin.write("stop\n")
         processes["Server"].stdin.flush()
     for proc in processes.values():
@@ -89,7 +96,7 @@ if sys.argv[1] == "studio":
             raise RuntimeError("Dedicated restart failed: "+(server/"restart.log").read_text(errors="replace")[-2500:])
         print((control/"restored").read_text())
     finally:
-        if processes["Server"].poll() is None:
+        if "Server" in processes and processes["Server"].poll() is None:
             processes["Server"].terminate()
         for log in logs:
             log.close()

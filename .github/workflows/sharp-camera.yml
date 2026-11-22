@@ -1,0 +1,84 @@
+name: Sharp camera source and monitor verification
+on:
+  push:
+    branches: [experiment/sharp-camera]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  camera:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      OLD: anya-storage-plus-0.3.0-beta.7-chestplacement.1.jar
+      NEW: anya-storage-plus-0.3.0-beta.7-sharpcam.1.jar
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-chestplacement.1
+          run-id: 44984917634
+          github-token: ${{ github.token }}
+          path: previous
+      - name: Build the cumulative camera candidate on Java 21
+        run: |
+          set -euo pipefail
+          test "$(cat previous/SOURCE_COMMIT.txt)" = faeb057133867d942fb070f072d49f5771eef2ed
+          echo "a6e70b58efbd3dfdb2aa7592a1700a05f90189caffd341eef8c49feac4a30aa8  previous/$OLD" | sha256sum -c -
+          git merge-base --is-ancestor faeb057133867d942fb070f072d49f5771eef2ed HEAD
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri python3-pil
+      - name: Capture the original monitor and candidate with two real clients
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          for trial in sharp-old sharp-new; do
+            jar="$PWD/build/libs/$NEW"
+            if [ "$trial" = sharp-old ]; then jar="$PWD/previous/$OLD"; fi
+            gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$trial" -ProlePlayable="$jar" prepareRoleTrial
+            python3 -u -B fixtures/camera-roles/run.py "$trial" | tee -a upload/CHECKS.txt
+          done
+      - name: Verify a single-player integrated server, visible detail and privacy
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial=sharp-solo -ProlePlayable="$PWD/build/libs/$NEW" prepareRoleTrial
+          python3 -u -B fixtures/camera-roles/run.py sharp-solo | tee -a upload/CHECKS.txt
+          /usr/bin/python3 -B fixtures/camera-roles/sharp_captures.py | tee -a upload/CHECKS.txt
+          cp "build/libs/$NEW" upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$NEW" > SHA256SUMS.txt)
+      - name: Show the exact step on failure
+        if: failure()
+        run: |
+          for f in build/role-check/sharp-*/control/{step.txt,*status,FAIL-*} build/role-check/sharp-*/*/console.log; do
+            if test -f "$f"; then echo "$f"; tail -35 "$f" | cut -c1-900; fi
+          done
+      - name: Preserve diagnostic captures for failed checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sharp-camera-diagnostics
+          path: |
+            build/role-check/sharp-*/control/
+            build/role-check/sharp-*/*/console.log
+          retention-days: 3
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-sharpcam.1
+          path: upload/
+          retention-days: 14
