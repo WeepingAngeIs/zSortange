@@ -16,7 +16,7 @@ public final class PocketView {
     private final UUID id;
     private final long epoch,policy;
     private final PocketLeases.Kind kind;
-    private final List<StorageEntity> chests,registry;
+    private final List<PocketInventories.Bank> chests;
     private final StorageEntity selectedChest;
     private final InteractionHand hand;
     private final ItemStack tablet;
@@ -32,68 +32,77 @@ public final class PocketView {
     }
     private PocketView(ServerPlayer player,PocketLedger.Pocket pocket,PocketLeases.Kind kind,StorageEntity selected,InteractionHand hand)throws java.io.IOException{
         this.player=player;this.id=pocket.id();this.epoch=pocket.epoch();this.kind=kind;
-        this.hand=hand;selectedChest=selected;
-        tablet=hand==null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        selectedChest=selected;
+        if (kind==PocketLeases.Kind.REMOTE) {
+            ItemStack active=PocketService.remoteTablet(player);
+            if(active==null)throw new java.io.IOException("Hold the tablet linked to this Skygrid.");
+            this.hand=player.getMainHandItem()==active ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND;
+            tablet=active;
+        } else {
+            this.hand=hand;
+            tablet=hand==null ? ItemStack.EMPTY : player.getItemInHand(hand);
+        }
         binding=tablet.get(DataComponents.CUSTOM_DATA);
         anchor=pocket.anchor();
         var lease=PocketService.lease(player.getUUID());
         visitDeadline=lease==null ? -1 : lease.deadline();
         StorageEntity hub=PocketService.home(player,pocket);if(hub==null)throw new java.io.IOException("Home identity unavailable");policy=hub.profileRevision;
-        if(localTablet()){
+        if(this.hand!=null){
             var data=BagInventory.data(tablet);
             if(!StorageItem.isTablet(tablet) || !StorageItem.permittedTablet(player,tablet)
                     || !data.hasUUID("PocketId") || !id.equals(data.getUUID("PocketId")) || !data.contains("HubPos",4)
                     || data.getLong("HubPos")!=anchor.hub() || !anchor.dimension().equals(data.getString("HubDimension"))
                     || !CreativeTabletAccess.priorHubBinding(player,tablet,hub))
-                throw new java.io.IOException("Use a tablet linked to the room you are visiting.");
+                throw new java.io.IOException("Use a tablet linked to this Skygrid.");
         }
-        var level=PocketService.dimension(player.getServer());var list=new ArrayList<StorageEntity>();
+        var level=PocketService.dimension(player.getServer());
         if(level==null||pocket.stage()!=PocketLedger.Stage.READY)throw new java.io.IOException("Pocket is not prepared");
-        registry=PocketRoomLayout.present(level,pocket);
-        for(StorageEntity chest:registry)if(selected==null||selected==chest)list.add(chest);
-        if(list.isEmpty())throw new java.io.IOException("Selected chest is not part of this pocket");chests=List.copyOf(list);
+        if(lease==null||lease.kind()!=kind||!id.equals(lease.pocket())||!PocketService.authorize(player,pocket,kind,false,0).isEmpty())
+            throw new java.io.IOException("Skygrid storage access is unavailable.");
+        chests=PocketInventories.discover(level,pocket,selected);
+        if(selected!=null && chests.isEmpty())throw new java.io.IOException("Selected chest is not part of this pocket");
         if(!valid())throw new java.io.IOException("Pocket view is no longer authorized");
     }
     public UUID id(){return id;}
-    public boolean localTablet(){return hand!=null;}
+    public boolean localTablet(){return hand!=null && kind==PocketLeases.Kind.VISIT;}
     public int tabletSlot(){return hand==InteractionHand.MAIN_HAND ? player.getInventory().selected : -1;}
-    public List<Container> containers(){return new ArrayList<>(chests);}
+    public List<Container> containers(){return chests.stream().map(PocketInventories.Bank::inventory).toList();}
     public boolean permits(int rights){
         try{
             var r=PocketService.ledger(player.getServer()).get(id);var l=PocketService.lease(player.getUUID());
             if(r==null||r.epoch()!=epoch||l==null||!l.pocket().equals(id)||l.kind()!=kind||l.epoch()!=epoch||!PocketService.authorize(player,r,kind,false,rights).isEmpty())return false;
             StorageEntity hub=PocketService.home(player,r);if(hub==null||hub.profileRevision!=policy)return false;
-            if (localTablet() && !sameLocalVisit(r,l)) return false;
             var level=PocketService.dimension(player.getServer());
-            if(!registry.equals(PocketRoomLayout.present(level,r)))return false;
-            for(StorageEntity chest:chests){
-                if(chest.isRemoved()||!level.hasChunkAt(chest.getBlockPos())||level.getBlockEntity(chest.getBlockPos())!=chest||!id.equals(chest.pocketId)||Transactions.quarantined(chest))return false;
+            if(level==null || !sameSession(r,l))return false;
+            for(var bank:chests){
+                var chest=bank.entity();
+                if(chest.isRemoved()||!level.hasChunkAt(chest.getBlockPos())||level.getBlockEntity(chest.getBlockPos())!=chest||Transactions.quarantined(bank.inventory()))return false;
                 if(!Safety.locationReason(player,level,chest.getBlockPos()).isEmpty())return false;
             }
-            // Claim hooks above can change the held item, current grant or chest registry.
-            // Pin all of them again before exposing rows or committing a local transfer.
+            // A claim callback can change the tablet, either half of a double, a lock, or a grant.
+            // Recheck against the live room before a row is exposed or a transaction commits.
+            if (!sameSession(r,PocketService.lease(player.getUUID())) || PocketService.loadedPocket(player.getServer(),id)!=r
+                    || PocketService.home(player,r)!=hub || hub.profileRevision!=policy || !hub.allowed(player)
+                    || !hub.permits(player,rights | (kind==PocketLeases.Kind.VISIT ? BasePermissions.VISIT : 0))
+                    || !player.isAlive() || player.isSpectator() || !PocketService.enabled()) return false;
+            if (kind==PocketLeases.Kind.VISIT && (player.serverLevel()!=level
+                    || !r.contains(player.blockPosition().getX(),player.blockPosition().getY(),player.blockPosition().getZ())))return false;
+            if (kind==PocketLeases.Kind.REMOTE && !(CreativeTabletAccess.pocketSession(player,id)
+                    ? CreativeTabletAccess.permitsPocket(player,r,hub) : Network.inRange(player,hub)))return false;
             if(selectedChest!=null){
                 var pos=selectedChest.getBlockPos();
-                return player.serverLevel()==level && player.distanceToSqr(pos.getX()+.5,pos.getY()+.5,pos.getZ()+.5)<=64
-                        && player.isAlive() && !player.isSpectator() && PocketService.enabled()
-                        && r.contains(player.blockPosition().getX(),player.blockPosition().getY(),player.blockPosition().getZ())
-                        && Objects.equals(l,PocketService.lease(player.getUUID()))
-                        && PocketService.ledger(player.getServer()).get(id)==r && PocketService.home(player,r)==hub
-                        && hub.profileRevision==policy && hub.permits(player,BasePermissions.VISIT|rights)
-                        && !Transactions.quarantined(selectedChest) && registry.equals(PocketRoomLayout.present(level,r));
+                if(player.distanceToSqr(pos.getX()+.5,pos.getY()+.5,pos.getZ()+.5)>64)return false;
             }
-            return !localTablet() || (sameLocalVisit(r,PocketService.lease(player.getUUID()))
-                    && PocketService.ledger(player.getServer()).get(id)==r && PocketService.home(player,r)==hub
-                    && hub.profileRevision==policy && hub.permits(player,BasePermissions.VISIT|rights)
-                    && registry.equals(PocketRoomLayout.present(level,r)));
+            return chests.equals(PocketInventories.discover(level,r,selectedChest));
         }catch(java.io.IOException|RuntimeException e){return false;}
     }
-    private boolean sameLocalVisit(PocketLedger.Pocket room,PocketLeases.Lease lease) {
-        return lease!=null && lease.kind()==PocketLeases.Kind.VISIT && id.equals(lease.pocket())
-                && lease.deadline()==visitDeadline && lease.epoch()==epoch && anchor.equals(room.anchor())
-                && player.getItemInHand(hand)==tablet && tablet.getCount()==1
+    private boolean sameSession(PocketLedger.Pocket room,PocketLeases.Lease lease) {
+        if (lease==null || lease.kind()!=kind || !id.equals(lease.pocket()) || lease.deadline()!=visitDeadline
+                || lease.epoch()!=epoch || !anchor.equals(room.anchor())) return false;
+        if (kind==PocketLeases.Kind.REMOTE && PocketService.remoteTablet(player)!=tablet) return false;
+        return hand==null || (player.getItemInHand(hand)==tablet && tablet.getCount()==1
                 && tablet.get(DataComponents.CUSTOM_DATA)==binding && StorageItem.isTablet(tablet)
-                && StorageItem.permittedTablet(player,tablet);
+                && StorageItem.permittedTablet(player,tablet));
     }
     public boolean valid(){return permits(0);}
     public BooleanSupplier guard(int rights){return ()->permits(rights);}

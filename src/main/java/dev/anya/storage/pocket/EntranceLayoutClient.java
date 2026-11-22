@@ -7,7 +7,6 @@ import net.minecraft.network.Connection;
 import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -16,7 +15,6 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 /** One short-lived observation, tied to the picked entrance object and the connection that granted it. */
-@EventBusSubscriber(modid = AnyaStorage.ID, value = Dist.CLIENT)
 public final class EntranceLayoutClient {
     static final boolean CHEST_LAYOUT_STILL = Boolean.getBoolean("anyastorage.chestLayoutStill")
             || Boolean.getBoolean("anyastorage.stillFramePeek");

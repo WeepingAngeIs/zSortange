@@ -61,9 +61,9 @@ public final class RoomEditor {
     public static boolean enabled(){return PocketService.enabled()&&ExpansionRules.get().pocketEditing;}
     public static boolean supported(Block block){return buildingBlock(block)||block==Content.CRATE.get()||Furniture.isFurniture(block);}
     static boolean canAddChest(int registeredChests, int configuredLimit) {
-        return registeredChests >= 4 && registeredChests < Math.min(8, configuredLimit);
+        return registeredChests >= 0 && registeredChests < configuredLimit;
     }
-    public static String help(){return "Room editing enabled = "+enabled()+". Enter with Visit and Build access to edit. Your linked tablet can pause or resume editing. Right-click with a plain supported block in your main hand to place it. Left-click to return a block to your inventory. Place a plain Labelled Storage Chest on clear room floor.";}
+    public static String help(){return "Room building enabled = "+enabled()+". With Visit and Build access, use ordinary place and break controls inside Skygrid. Keep the landing and exit clear.";}
     // Server commands use the current pose, never a previous-tick interpolated camera.
     public static BlockHitResult looking(ServerPlayer p){
         BlockHitResult hit = loadedHit(p);
@@ -135,26 +135,19 @@ public final class RoomEditor {
 
     public static String setMode(ServerPlayer p, boolean on) {
         if (p.getServer() == null || !p.getServer().isSameThread()) return "Room controls need the server thread.";
-        if (on) {
-            try { MODES.put(p.getUUID(),builderAccess(p)); }
-            catch (IOException problem) { endVisit(p.getUUID()); return problem.getMessage(); }
-            notice(p,"Room editing on. Right-click to place a block. Left-click to take it back.");
-        } else {
-            endVisit(p.getUUID());
-            notice(p,"Room editing off.");
-        }
-        return "";
+        // Compatibility with earlier tablets. Building follows the live visit and Build grant.
+        return modeDenial(p);
     }
 
     public static boolean active(ServerPlayer p) {
         if (p.getServer() == null || !p.getServer().isSameThread()) return false;
         var access = MODES.get(p.getUUID());
-        if (access == null) return false;
-        if (access.current(p,BasePermissions.BUILD)
+        if (access != null && access.current(p,BasePermissions.BUILD)
                 && PocketService.authorize(p,access.room(),PocketLeases.Kind.VISIT,false,BasePermissions.BUILD).isEmpty()
                 && access.current(p,BasePermissions.BUILD) && MODES.get(p.getUUID()) == access) return true;
-        if (MODES.remove(p.getUUID(),access)) notice(p,"Room editing ended because your visit or Build access changed.");
-        return false;
+        MODES.remove(p.getUUID());
+        try { MODES.put(p.getUUID(),builderAccess(p)); return true; }
+        catch (IOException problem) { return false; }
     }
 
     static void tick(net.minecraft.server.MinecraftServer server) {
@@ -172,8 +165,8 @@ public final class RoomEditor {
 
     /** Event coordinates only identify the click. The server ray and current Visit control every edit. */
     static boolean click(ServerPlayer p, BlockPos clicked, net.minecraft.core.Direction face, boolean removal) {
+        if (!active(p)) return false;
         var mode = MODES.get(p.getUUID());
-        if (mode == null || !active(p)) return false;
         if (p.containerMenu != p.inventoryMenu) return true;
         try {
             var hit = looking(p);
@@ -210,13 +203,10 @@ public final class RoomEditor {
         int x=pos.getX()-r.x(),y=pos.getY(),z=pos.getZ()-r.z();
         boolean chest=state.is(Content.CRATE.get());
         if(chest){
-            if(y!=RoomBounds.CHEST_Y || !RoomBounds.decoration(x,y,z))return "Choose room floor away from the walls, starter chests and exit path.";
-            if(!removal && (!p.serverLevel().getBlockState(pos.below()).isFaceSturdy(p.serverLevel(),pos.below(),net.minecraft.core.Direction.UP)
-                    || !p.serverLevel().isEmptyBlock(pos.above())))return "Choose a solid floor spot with clear space above the chest.";
+            if(!RoomBounds.decoration(x,y,z))return "Keep the room shell, landing and exit clear.";
             denied=PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
             if(!denied.isEmpty())return "Chest editing additionally requires View, Deposit and Withdraw";
-        }else if(!removal && p.serverLevel().getBlockState(pos.below()).is(Content.CRATE.get()))return "Leave the space above the chest clear.";
-        else if(!RoomBounds.decoration(x,y,z))return "Keep the room shell, chest approaches and exit path clear.";
+        }else if(!RoomBounds.decoration(x,y,z))return "Keep the room shell, landing and exit clear.";
         else if(!supported(state.getBlock()))return "This block needs special placement or removal handling.";
         if (state.is(Content.HATCH.get())) {
             denied = PocketService.authorize(p,r,PocketLeases.Kind.VISIT,false,CHEST_EDIT_RIGHTS);
@@ -272,9 +262,9 @@ public final class RoomEditor {
         if(!removal){
             if(!p.serverLevel().isEmptyBlock(pos)||!p.serverLevel().getFluidState(pos).isEmpty())throw new IOException("Target is occupied; replacement is not supported");
             if(!unobstructed(p,pos,proposed))throw new IOException("Do not build inside a player or entity");
-            if(proposed.is(Content.CRATE.get())&&!canAddChest(registry.size(),ExpansionRules.get().pocketContainers))throw new IOException("Pocket chest budget reached");
+            if(proposed.is(Content.CRATE.get())&&!canAddChest(PocketInventories.count(access.level(),r),ExpansionRules.get().pocketContainers))throw new IOException("Pocket chest budget reached");
         }else if(proposed.is(Content.CRATE.get())){
-            if(!(p.serverLevel().getBlockEntity(pos) instanceof StorageEntity c)||!r.id().equals(c.pocketId)||!r.owner().equals(c.owner)||!c.isEmpty()||Transactions.quarantined(c))throw new IOException("Only an empty registered optional chest may be removed; withdraw its contents first");
+            if(!(p.serverLevel().getBlockEntity(pos) instanceof StorageEntity c)||!r.id().equals(c.pocketId)||!r.owner().equals(c.owner)||!c.isEmpty()||Transactions.quarantined(c))throw new IOException("Empty the Labelled Storage Chest before moving it.");
         }else if (Furniture.isFurniture(proposed.getBlock())) {
             if (!(p.serverLevel().getBlockEntity(pos) instanceof FurnitureEntity furniture)
                     || !furniture.belongsTo(r.owner(), r.id()) || !furniture.ownerMayRemove(p) || !furniture.emptyForRemoval())
@@ -322,8 +312,7 @@ public final class RoomEditor {
             required |= rights(mark.state());
         }
         if (!access.current(player, required)) return "The pocket visit or your rights changed.";
-        int chests = PocketRoomLayout.present(access.level(),access.room()).size();
-        if (chestAdds == 1 && !canAddChest(chests, ExpansionRules.get().pocketContainers))
+        if (chestAdds == 1 && !canAddChest(PocketInventories.count(access.level(),access.room()), ExpansionRules.get().pocketContainers))
             return "The planned chest exceeds the room's chest limit.";
         for (Mark mark : marks) {
             if (!access.level().hasChunkAt(mark.pos()) || player.distanceToSqr(Vec3.atCenterOf(mark.pos())) > 36)
@@ -411,7 +400,7 @@ public final class RoomEditor {
         private boolean valid(){
             try{
                 var r=record(p);
-                if (!removal && proposed.is(Content.CRATE.get()) && !canAddChest(registry.size(), ExpansionRules.get().pocketContainers)) return false;
+                if (!removal && proposed.is(Content.CRATE.get()) && !canAddChest(PocketInventories.count(access.level(),r), ExpansionRules.get().pocketContainers)) return false;
                 return (removal || p.getInventory().selected==inputSlot) && r.equals(pocket)&&access.current(p,rights(proposed))&&permission(p,r,pos,proposed,removal).isEmpty()
                         &&access.current(p,rights(proposed))&&sight(p,hit)&&(!proposed.is(Content.CRATE.get())||registry.equals(PocketRoomLayout.present(access.level(),r)))&&cell.originalUnchanged()
                         && (cell.mode == null || canClick(p,hit.getBlockPos(),removal))

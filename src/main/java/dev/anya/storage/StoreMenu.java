@@ -19,7 +19,6 @@ import java.lang.reflect.Field;
 import dev.anya.storage.appearance.*;
 import dev.anya.storage.images.InteriorImages;
 import dev.anya.storage.pocket.PocketService;
-import dev.anya.storage.pocket.RoomBounds;
 import dev.anya.storage.pocket.RoomEditor;
 import dev.anya.storage.pocket.RoomPlans;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -38,7 +37,7 @@ public final class StoreMenu extends AbstractContainerMenu {
     private final SimpleContainer display=new SimpleContainer(54+StorageGrid.CHEST_EXTRA_SLOTS);
     private final ContainerData sync=new SimpleContainerData(23);
     private static final int TABLET_INTRO = 32, TABLET_RULE = 64, REMOTE_OPEN = 128, STORAGE_CAMEO = 256, CREATIVE_ACCESS=512, TABLET_ACCESS=1024;
-    private static final int LOCAL_ROOM=2048, EDIT_ALLOWED=4096, EDIT_ACTIVE=8192;
+    private static final int LOCAL_ROOM=2048, EDIT_ALLOWED=4096;
     private static final int PHYSICAL_CHEST=16384, PHYSICAL_CUBE=32768;
     private CreativeTabletAccess.Session creative;
     private ItemStack networkTablet;
@@ -193,7 +192,6 @@ public final class StoreMenu extends AbstractContainerMenu {
     public boolean storageView(){return (sync.get(4)&1)!=0;}
     public boolean localRoomPanel(){return (sync.get(4)&LOCAL_ROOM)!=0;}
     public boolean roomEditAllowed(){return (sync.get(4)&EDIT_ALLOWED)!=0;}
-    public boolean roomEditActive(){return (sync.get(4)&EDIT_ACTIVE)!=0;}
     public boolean hasTabletOpeningRule(){return (sync.get(4)&TABLET_RULE)!=0;}
     public boolean showsTabletIntro(){return (sync.get(4)&TABLET_INTRO)!=0;}
     public boolean creativeTabletOpening(){return (sync.get(4)&CREATIVE_ACCESS)!=0;}
@@ -246,24 +244,26 @@ public final class StoreMenu extends AbstractContainerMenu {
     @Override public boolean canTakeItemForPickAll(ItemStack s,Slot slot){return false;}
     @Override public void clicked(int slot,int button,ClickType type,Player p){if(owner!=null)sendAllDataToRemote();}
     private boolean physicalChestSession(){return owner!=null && (openingFlags&PHYSICAL_CHEST)!=0;}
-    private void concealPhysicalChest(){
+    private boolean guardedChestSession(){return pocket!=null || physicalChestSession();}
+    private void concealChestContents(){
         // The full-sync packet can be requested before vanilla closes an invalid menu.
         // Remove every result and control, including previews on pages opened from this chest.
         entries.clear();buttons.clear();display.clearContent();resetControlSlots();
         pending=null;pendingContainers=List.of();
         if(!privateView())bump();
-        sync.set(4,1|4|PHYSICAL_CHEST|(openingFlags&PHYSICAL_CUBE));
+        sync.set(4,1|4|(openingFlags&(PHYSICAL_CHEST|PHYSICAL_CUBE|CREATIVE_ACCESS)));
+        sync.set(22,0);
         for(int i=6;i<=12;i+=2)synchronizedInt(i,0);
     }
     @Override public void sendAllDataToRemote(){
-        if(physicalChestSession() && !stillValid(owner))concealPhysicalChest();
+        if(guardedChestSession() && !stillValid(owner))concealChestContents();
         super.sendAllDataToRemote();
     }
     @Override public void removed(Player p){if(chest!=null)chest.closeViewer();if(pocket!=null)pocket.close();if(creative!=null)CreativeTabletAccess.finish(owner,this);pending=null;super.removed(p);}
     @Override public void broadcastChanges(){
         boolean active=owner!=null&&owner.containerMenu==this;
-        if((active||physicalChestSession()) && !stillValid(owner)){
-            if(physicalChestSession())concealPhysicalChest();
+        if((active||guardedChestSession()) && !stillValid(owner)){
+            if(guardedChestSession())concealChestContents();
             active=false;
         }
         if(active){
@@ -305,8 +305,8 @@ public final class StoreMenu extends AbstractContainerMenu {
     public void action(Packets.Action packet){
         if(owner==null||owner.containerMenu!=this||packet.menu()!=containerId||packet.session()!=session())return;
         boolean physical=physicalChestSession();
-        if(physical && !stillValid(owner)){
-            concealPhysicalChest();owner.closeContainer();return;
+        if(guardedChestSession() && !stillValid(owner)){
+            concealChestContents();owner.closeContainer();return;
         }
         // A personal preference has no dependency on the inventory snapshot revision.
         if(packet.verb().equals("tooltips")){
@@ -358,14 +358,6 @@ public final class StoreMenu extends AbstractContainerMenu {
             }
             else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("remove_guests") && packet.value()==0){
                 PocketService.removeGuests(owner,pocket.id());
-            }
-            else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("room_edit")){
-                if(packet.value()!=0 && packet.value()!=1)return;
-                boolean desired=packet.value()==1;
-                if(desired==roomEditActive() || desired==RoomEditor.active(owner))return;
-                String reason=RoomEditor.setMode(owner,desired);
-                if(reason.isEmpty())owner.closeContainer();
-                else owner.displayClientMessage(Component.literal(reason),true);
             }
             else if(isStoragePage() && pocket!=null && pocket.localTablet() && packet.verb().equals("room_plan") && packet.value()==0){
                 if(RoomEditor.modeDenial(owner).isEmpty()){
@@ -433,7 +425,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         for(Container container:containers)for(int i=0;i<container.getContainerSize();i++){
             capacity++;ItemStack item=container.getItem(i);if(!item.isEmpty())occupied++;
             if(filtered&&(item.isEmpty()||!Categories.matches(item,input)||favoritesOnly&&!Profiles.of(owner).favorites.contains(Categories.id(item))))continue;
-            BlockPos pos=container instanceof StorageEntity be?be.getBlockPos():null;
+            BlockPos pos=container instanceof net.minecraft.world.level.block.entity.BlockEntity be?be.getBlockPos():null;
             if(pos==null&&bag==null)for(Network.Target target:targets)if(target.inventory()==container){pos=target.pos();break;}
             values.add(new Entry(container,i,item.copy(),pos));
         }
@@ -446,7 +438,6 @@ public final class StoreMenu extends AbstractContainerMenu {
         if(pocket!=null && pocket.localTablet()){
             roomFlags=LOCAL_ROOM;
             sync.set(22,PocketService.visitingOwner(owner,pocket.id())?1:0);
-            if(RoomEditor.active(owner))roomFlags|=EDIT_ACTIVE;
             if(RoomEditor.modeDenial(owner).isEmpty())roomFlags|=EDIT_ALLOWED;
         }
         int chestFlags=physicalChestPage()?openingFlags&(PHYSICAL_CHEST|PHYSICAL_CUBE):0;
@@ -479,27 +470,18 @@ public final class StoreMenu extends AbstractContainerMenu {
             return;
         }
         boolean showUpgrades = mayView && (openingFlags & REMOTE_OPEN) != 0;
-        String upgradeHint = "Enter through your linked Skygrid Cube. Owners can build on arrival when room editing is enabled.";
-        String upgradeAccess = "Room editing must be enabled. Requires Build, View, Deposit and Withdraw.";
-        String upgradeCommand = "Hold a plain Labelled Storage Chest and right-click a clear floor spot.";
-        Consumer<Click> action = c -> {
-            if (PocketService.inPocket(owner.level())) PocketService.recover(owner);
-            else AnyaStorage.tell(owner, "Home-radius storage only. Visit is a separate permission. Physical pocket: "
-                    + pocket.id() + (showUpgrades ? ". " + upgradeHint + " " + upgradeAccess + " " + upgradeCommand : ""));
-        };
+        String hint = "Place a chest inside Skygrid. Right-click your linked tablet here to open its storage.";
+        Consumer<Click> action = c -> AnyaStorage.tell(owner, hint);
         if (showUpgrades) {
-            // The client also draws the first line of this server-owned control beneath the slot total.
-            int occupiedPads = chestCount - RoomBounds.starterChestCount();
-            button(POCKET_ACTION_SLOT, ControlGlyph.POCKET_EDIT, "Room upgrades", action,
-                    occupiedPads + "/" + Math.max(0,Math.min(8,ExpansionRules.get().pocketContainers)-4) + " extra chests placed",
-                    upgradeHint, upgradeAccess, upgradeCommand);
+            button(POCKET_ACTION_SLOT, ControlGlyph.POCKET_EDIT, "Skygrid storage", action,
+                    chestCount == 0 ? "Place a chest inside Skygrid" : chestCount + (chestCount == 1 ? " chest block connected" : " chest blocks connected"), hint);
         } else {
             button(POCKET_ACTION_SLOT, ControlGlyph.EXIT, "Pocket exit / information", action);
         }
     }
     private String sourceLabel(Container inventory,BlockPos position,List<Container> stores){
         if(position==null)return "Backpack";
-        if(pocket!=null && inventory instanceof StorageEntity be && be.getLevel()!=owner.level())return "Pocket chest "+(stores.indexOf(inventory)+1);
+        if(pocket!=null && inventory instanceof net.minecraft.world.level.block.entity.BlockEntity be && be.getLevel()!=owner.level())return "Pocket chest "+(stores.indexOf(inventory)+1);
         return position.toShortString();
     }
     private Page storagePage(){return pocket!=null||chest!=null?Page.CHEST:bag!=null?Page.BAG:Page.NETWORK;}
@@ -656,7 +638,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         button(47,ControlGlyph.IMAGE,"Wall image",c->dev.anya.storage.pocket.SkygridWalls.cycle(owner,id,true),"Choose one of your images or turn the image off.");
         button(48,ControlGlyph.SYMBOL,"Exit color",c->dev.anya.storage.pocket.ExitGate.cycle(owner,id));
         button(49,ControlGlyph.MODELS,live?State.ON:State.OFF,"Live ceiling "+(live?"ON":"OFF"),c->dev.anya.storage.pocket.SkyCeiling.set(owner,id,!live),
-                "Place your Sky Camera outdoors. Turn this on to view it overhead.");
+                "Sneak-use your tablet on your outdoor Sky Camera, then turn this on.");
         button(50,ControlGlyph.INFO,"Select monitor",c->selectedMonitor=dev.anya.storage.pocket.RoomDisplays.choose(owner,id,selectedMonitor,true).id(),device.label());
         button(51,ControlGlyph.IMAGE,"Fit to wall",device.id()==null?null:c->dev.anya.storage.pocket.RoomDisplays.change(owner,id,device.id(),true),device.label());
         button(52,ControlGlyph.MODELS,"Link camera",device.id()==null?null:c->dev.anya.storage.pocket.RoomDisplays.change(owner,id,device.id(),false),
@@ -1029,7 +1011,7 @@ public final class StoreMenu extends AbstractContainerMenu {
         String report;
         if(pocket!=null){
             if(!permission(BasePermissions.VIEW|BasePermissions.DEPOSIT))return;
-            report="Pocket transfers use only this pocket's registered chests. See the latest counts in Field kit.";
+            report="Pocket transfers use this room's connected chests. See the latest counts in Field kit.";
         }else if(bag==null&&chest==null)report=Network.explain(owner,hub,slot,dump,creative);
         else if(Profiles.of(owner).protectedSlot(slot))report="Slot "+(slot+1)+" is protected from automatic deposits.";
         else if(!Config.get().quickStack||(bag!=null&&!Config.get().backpacks))report="The relevant storage feature is disabled by the server.";

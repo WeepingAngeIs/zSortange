@@ -19,7 +19,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -28,7 +27,6 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
  * One focus per connection, at most eight in total. Every server tick rechecks authorization;
  * an authorized viewer receives at most one mask per ten ticks, and a revocation clears immediately.
  */
-@EventBusSubscriber(modid = AnyaStorage.ID)
 public final class PocketPadObservation {
     private static final int MAX_VIEWERS = 8;
     private static final int RENEWAL_TIMEOUT = 25;

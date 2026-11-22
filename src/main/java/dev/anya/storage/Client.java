@@ -243,7 +243,6 @@ public final class Client {
             int max=dev.anya.storage.ui.StorageGrid.maxStartRow(menu.resultCount(),layout.rows());scrollTo((int)Math.round((y-box.y()-thumb*.5)/distance*max));
         }
         private static final StorageGrid.Box TOOLTIP_BUTTON=new StorageGrid.Box(274,11,96,16);
-        private static final StorageGrid.Box ROOM_WRENCH=new StorageGrid.Box(12,41,78,79);
         private int thumbHeight(){var box=layout.scroll();return Math.max(8,(int)(box.height()*Math.min(1,layout.rows()/(double)Math.max(1,dev.anya.storage.ui.StorageGrid.rows(menu.resultCount())))));}
         private int shown(){return menu.storageView()?Math.min(menu.shownSlots(),layout.rows()*9):45;}
         private StorageGrid.Box actionBox(int index){
@@ -271,12 +270,6 @@ public final class Client {
             if(!menu.roomCosmeticsView()&&input.mouseClicked(x,y,button)){focusSearch(true);return true;}focusSearch(false);
             if(button==0 && TOOLTIP_BUTTON.contains(x,y)){
                 press(94);send("tooltips","",menu.tooltipsEnabled()?0:1);return true;
-            }
-            if(button==0 && menu.localRoomPanel() && ROOM_WRENCH.contains(x,y)){
-                if(menu.roomEditActive() || menu.roomEditAllowed()){
-                    press(95);send("room_edit","",menu.roomEditActive()?0:1);
-                }
-                return true;
             }
             if(button==0&&x>=12&&x<90){
                 if(menu.roomCosmeticsView())return false;
@@ -372,17 +365,6 @@ public final class Client {
         private void option(GuiGraphics g,int slot,ControlGlyph glyph,String name,int y,ControlGlyph.State state,int mx,int my){
             ControlSprites.button(g,font,glyph,state,12,y,78,18,name,mx>=12&&mx<90&&my>=y&&my<y+18,pressed(slot));
         }
-        private void roomWrench(GuiGraphics g,int x,int y,int[] colors){
-            boolean active=menu.roomEditActive(), enabled=active||menu.roomEditAllowed();
-            boolean hover=enabled && ROOM_WRENCH.contains(x,y);
-            frame(g,ROOM_WRENCH,pressed(95)?0xff514052:hover?0xff494052:0xff262733,
-                    active?0xffa5e9dc:hover?0xffe1c9ee:colors[1]);
-            var pose=g.pose();pose.pushPose();
-            pose.translate(31,47,0);pose.scale(2.5f,2.5f,1);
-            ControlSprites.sprite(g,ControlGlyph.ROOM_WRENCH,0,0);pose.popPose();
-            g.drawCenteredString(font,"Edit Mode",51,91,enabled?0xfff3eaf4:0xffb2a6b8);
-            g.drawCenteredString(font,active?"ON":"OFF",51,105,active?0xffa5e9dc:0xffc6b5cd);
-        }
         void drawSlot(GuiGraphics g,int slot,StorageGrid.Box box,boolean hover,String label,int[] colors){
             var stack=menu.getSlot(slot).getItem();
             ControlGlyph.Face face=menu.controlSlot(slot)?ControlGlyph.read(stack):null;
@@ -402,7 +384,7 @@ public final class Client {
                 if(face!=null)return switch(face.glyph()){
                     case SCROLL_UP->"Scroll up";case SCROLL_DOWN->"Scroll down";case ORGANIZE->"Organize";
                     case QUICKSTACK->"QuickStack";case DUMP->"Dump";case PROTECT->"Lock slots";case UPGRADES->"Upgrades";
-                    case BASE->"Base";case SYMBOL->"Symbol";case EXIT->menu.localRoomPanel()?"Leave room":"Pocket";case POCKET_EDIT->"Upgrades";
+                    case BASE->"Base";case SYMBOL->"Symbol";case EXIT->menu.localRoomPanel()?"Leave room":"Pocket";case POCKET_EDIT->"Skygrid";
                     case FAVORITES->"Favorites";case INFO->"Field kit";
                     default->stack.getHoverName().getString();
                 };
@@ -419,7 +401,7 @@ public final class Client {
             if(lore!=null)lines.addAll(lore.lines());
             g.renderComponentTooltip(font,lines,x,y);
         }
-        private void drawPocketPadSummary(GuiGraphics graphics, int y, int color) {
+        private void drawPocketChestSummary(GuiGraphics graphics, int y, int color) {
             int slot = StoreMenu.POCKET_ACTION_SLOT;
             if (!menu.storageView() || !menu.remoteOpening() || menu.privateView() || !menu.controlSlot(slot)) return;
             ItemStack control = menu.getSlot(slot).getItem();
@@ -493,7 +475,8 @@ public final class Client {
                 ItemStack member=menu.getSlot(27).getItem();
                 g.drawString(font,font.plainSubstrByWidth(member.isEmpty()?"Select a member":member.getHoverName().getString(),78),12,131,colors[2],false);
             }else if(menu.localRoomPanel()){
-                roomWrench(g,x,y,colors);
+                g.drawCenteredString(font,"Skygrid",51,62,colors[2]);
+                g.drawWordWrap(font,Component.literal(menu.roomEditAllowed() ? "Place chests anywhere you can build." : "Room building is restricted."),14,78,74,0xffe5d6e5);
                 if(menu.guestControl())option(g,96,ControlGlyph.SYMBOL,"Exit color",127,ControlGlyph.State.NORMAL,x,y);
             }else{
                 if(custom!=null){int[] size=ClientInteriors.size();float scale=Math.min(74f/size[0],83f/size[1]);g.pose().pushPose();g.pose().translate(51-size[0]*scale/2,80-size[1]*scale/2,0);g.pose().scale(scale,scale,1);g.blit(custom,0,0,0,0,size[0],size[1],size[0],size[1]);g.pose().popPose();}
@@ -532,7 +515,7 @@ public final class Client {
             }
             int iy=layout.inventoryY();String summary=menu.privateView()?"Private contents":menu.storageView()?(menu.filteredView()?menu.resultCount()+" matches / "+menu.capacity()+" slots":menu.occupiedSlots()+" occupied / "+menu.capacity()+" slots"):"Your inventory";
             g.drawString(font,font.plainSubstrByWidth(summary,170),104,iy-19,colors[2],false);
-            drawPocketPadSummary(g, iy - 10, colors[2]);
+            drawPocketChestSummary(g, iy - 10, colors[2]);
             long remaining=menu.transferRemainders();
             for(int i=0;i<36;i++){
                 var box=layout.inventory(i);
@@ -546,12 +529,7 @@ public final class Client {
             g.pose().popPose();
             containerForeground(g,mx,my);
             if(!tips)return;
-            if(menu.localRoomPanel() && ROOM_WRENCH.contains(x,y)){
-                String help=menu.roomEditActive()?"Click to turn off room editing.":menu.roomEditAllowed()
-                        ?"Click to edit. Place or remove supported blocks inside your room."
-                        :"Ask the owner for Build access and check that room editing is enabled.";
-                g.renderComponentTooltip(font,List.of(Component.literal("Edit Mode"),Component.literal(help)),mx,my);
-            }else if(menu.accessView()&&x>=12&&x<90&&y>=129&&y<145&&!menu.getSlot(27).getItem().isEmpty()){
+            if(menu.accessView()&&x>=12&&x<90&&y>=129&&y<145&&!menu.getSlot(27).getItem().isEmpty()){
                 controlTooltip(g,menu.getSlot(27).getItem(),mx,my);
             }else if(hover>=0){var stack=menu.getSlot(hover).getItem();if(!stack.isEmpty()){
                 if(menu.controlSlot(hover))controlTooltip(g,stack,mx,my);

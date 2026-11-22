@@ -15,29 +15,17 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 
-/** Draws the public study or the selected, currently authorized view of the registered pads. */
+/** Fixed entrance illustration. A room can be unoccupied or offline while the cover is displayed. */
 @EventBusSubscriber(modid = AnyaStorage.ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketContent.EntranceEntity> {
     private static final ResourceLocation STUDY = ResourceLocation.fromNamespaceAndPath(
             AnyaStorage.ID, "textures/entity/starter_room_study.png");
-    private static final ResourceLocation PLAN = ResourceLocation.fromNamespaceAndPath(
-            AnyaStorage.ID, "textures/entity/pocket_pad_plan.png");
     private static final ResourceLocation CHEST_LAYOUT = ResourceLocation.fromNamespaceAndPath(
             AnyaStorage.ID, "textures/entity/framed_chest_still.png");
     private static final ResourceLocation FRAME_GLINTS = ResourceLocation.fromNamespaceAndPath(
             AnyaStorage.ID, "textures/entity/framed_still_glints.png");
-    // Face texels in the art atlas, ordered as the four starters then the four optional pads.
-    private static final int[] PAD_X = {88,110,131,153,76,97,161,183};
-    private static final int[] PAD_Y = {116,117,119,121,136,137,142,144};
-
-    @SubscribeEvent
-    public static void setup(FMLClientSetupEvent event) {
-        event.enqueueWork(() -> { PocketPadPackets.receiver = EntranceLayoutClient::receive;RoomCover.receiver=EntranceLayoutClient::cover; });
-    }
-
     @SubscribeEvent
     public static void register(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(PocketContent.ENTITY.get(), context -> new EntranceStudyRenderer());
@@ -62,49 +50,23 @@ public final class EntranceStudyRenderer implements BlockEntityRenderer<PocketCo
         pose.translate(.5, .5, .5);
         EntranceFacePose.orient(pose, face, client.gameRenderer.getMainCamera().getYRot());
         if (EntranceLayoutClient.CHEST_LAYOUT_STILL) {
-            drawChestLayout(EntranceLayoutClient.visibleMask(entrance), pose, buffers, face, overlay);
-            cover(entrance,pose,buffers,face,overlay);
-            pose.popPose();
-            EntranceFrameSounds.drewFace(entrance);
-            return;
+            drawFramedIllustration(pose, buffers, face, overlay);
+        } else {
+            VertexConsumer art = buffers.getBuffer(RenderType.entityCutout(STUDY));
+            quad(pose, art, face, 0, 0, 1, 1, 0, 0, 1, 1, -.501f, overlay);
         }
-        int mask = EntranceLayoutClient.visibleMask(entrance);
-        boolean plan = mask >= 0;
-        ResourceLocation surface = plan ? PLAN : STUDY;
-        VertexConsumer material = buffers.getBuffer(RenderType.entityCutout(surface));
-        // The diagram and its repeated chest sprites share one public atlas and one render type.
-        quad(pose, material, face, 0, 0, 1, 1, 0, 0, plan ? .5f : 1, 1, -.501f, overlay);
-        if (plan) {
-            ChestLayoutProjection.placed(mask,EntranceLayoutClient.coordinates,(i,left,top)->{
-                quad(pose, material, face, left/256f, top/256f, (left+25)/256f, (top+22)/256f,
-                        .5f, 0, 281/512f, 22/256f, -.5015f, overlay);
-            });
-        }
-        if(plan)cover(entrance,pose,buffers,face,overlay);
         pose.popPose();
         EntranceFrameSounds.drewFace(entrance);
     }
 
-    private static void cover(PocketContent.EntranceEntity entrance,PoseStack pose,MultiBufferSource buffers,Direction face,int overlay){
-        if(EntranceLayoutClient.visibleMask(entrance)<0)return;
-        var surface=RoomCoverImage.surface(EntranceLayoutClient.coverTick());
-        if(surface!=null)quad(pose,buffers.getBuffer(RenderType.entityCutout(surface)),face,0,0,1,1,0,0,1,1,-.502f,overlay);
-    }
-
-    private static void drawChestLayout(int mask, PoseStack pose, MultiBufferSource buffers, Direction face,
-                                        int overlay) {
-        if (!ChestLayoutProjection.validMask(mask)) {
-            VertexConsumer publicArt = buffers.getBuffer(RenderType.entityCutout(STUDY));
-            quad(pose, publicArt, face, 0, 0, 1, 1, 0, 0, 1, 1, -.501f, overlay);
-            return;
-        }
+    private static void drawFramedIllustration(PoseStack pose, MultiBufferSource buffers, Direction face, int overlay) {
         float size = ChestLayoutProjection.FACE_SIZE;
         float width = ChestLayoutProjection.ATLAS_WIDTH;
         VertexConsumer atlas = buffers.getBuffer(RenderType.entityCutout(CHEST_LAYOUT));
         quad(pose, atlas, face, 0, 0, 1, 1, 0, 0, size / width, 1, -.501f, overlay);
         int sx = ChestLayoutProjection.STAMP_X, sy = ChestLayoutProjection.STAMP_Y;
         int sw = ChestLayoutProjection.STAMP_WIDTH, sh = ChestLayoutProjection.STAMP_HEIGHT;
-        ChestLayoutProjection.placed(mask,EntranceLayoutClient.coordinates, (bit, left, top) ->
+        ChestLayoutProjection.forEachChest(0x0f, (bit, left, top) ->
                 quad(pose, atlas, face, left / size, top / size, (left + sw) / size, (top + sh) / size,
                         sx / width, sy / size, (sx + sw) / width, (sy + sh) / size, -.5015f, overlay));
 

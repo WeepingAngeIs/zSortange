@@ -54,7 +54,7 @@ public final class SkyCeiling extends SavedData {
         if(on){
             var selected=store.choices.getCompound(p.getStringUUID());
             if(sky(p,selected)==null){
-                p.displayClientMessage(Component.literal("Place or select your Sky Camera outdoors. Its area must be loaded."),true);return;
+                p.displayClientMessage(Component.literal("Sneak-use your tablet on your outdoor Sky Camera first. Its area must be loaded."),true);return;
             }
             n=selected.copy();
         }

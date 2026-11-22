@@ -59,7 +59,7 @@ final class WallMonitorBlock extends CameraDevices.DeviceBlock {
                 var back=c.relative(f.getOpposite());
                 if(!level.hasChunkAt(c)||!level.hasChunkAt(back))return "Part of the wall is unloaded.";
                 if(r!=null&&!shellFace(r,c,f)&&!RoomBounds.decoration(c.getX()-r.x(),c.getY(),c.getZ()-r.z()))
-                    return "Keep the exit, shell and chest approaches clear.";
+                    return "Keep the exit and room shell clear.";
                 if(!level.getBlockState(back).isFaceSturdy(level,back,f))return "The screen needs a solid wall behind it.";
                 if(!c.equals(anchor)&&!level.isEmptyBlock(c))return "Clear the space in front of the wall first.";
                 if(!Safety.buildReason(p,level,c,state,false).isEmpty()||!Safety.locationReason(p,level,back).isEmpty())

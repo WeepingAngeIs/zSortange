@@ -1,0 +1,63 @@
+name: Skygrid ordinary chest placement and tablet access
+on:
+  push:
+    branches: [experiment/skygrid-chest-sync]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  chest-sync:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    env:
+      OLD: anya-storage-plus-0.3.0-beta.7-cctv.2.jar
+      NEW: anya-storage-plus-0.3.0-beta.7-chestsync.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-cctv.2
+          run-id: 44955145482
+          github-token: ${{ github.token }}
+          path: previous
+      - name: Verify the old playable and prepare the two versions
+        run: |
+          set -euo pipefail
+          test "$(cat previous/SOURCE_COMMIT.txt)" = f4e076586583c2db2c40cce48c6cad3abbf46f73
+          echo "da5a68461e0c7d3938d577b866432e189e5e32044622016fcc12daf4b4d7fa9e  previous/$OLD" | sha256sum -c -
+          gradle --no-daemon --console=plain --max-workers=2 jar roomBoundsTest
+          gradle --no-daemon --console=plain --max-workers=2 -I fixtures/skygrid-chest-sync/fixture.gradle -PbaselineJar="$PWD/previous/$OLD" -PcandidateJar="$PWD/build/libs/$NEW" prepareChestLegacyServer prepareChestCandidateServer prepareChestCandidateClient prepareChestCandidateBuilder
+      - name: Exercise real room changes, outside tablet transfers, migration and restart
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          ALSOFT_DRIVERS: 'null'
+          LP_NUM_THREADS: '2'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          mkdir -p upload
+          python3 -u -B fixtures/skygrid-chest-sync/run.py | tee upload/CHECKS.txt
+          cp "build/libs/$NEW" upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$NEW" > SHA256SUMS.txt)
+      - name: Show fixture diagnostics
+        if: failure()
+        run: |
+          for f in build/chest-sync/{Legacy,Candidate}/{Server,Client,Builder}/{*.log,FAILED,progress.txt}; do
+            if test -f "$f"; then echo "$f"; tail -55 "$f" | cut -c1-1200; fi
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-chestsync.1
+          path: upload/
+          retention-days: 14

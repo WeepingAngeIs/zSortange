@@ -16,7 +16,7 @@ final class ChestPadGuide {
     static void show(ServerPlayer player){
         String denial=RoomEditor.modeDenial(player);
         player.displayClientMessage(Component.literal(denial.isEmpty()
-            ?(RoomEditor.active(player)?"Hold a plain Labelled Storage Chest and right-click clear room floor.":"Turn on Edit Mode in your linked tablet, then right-click clear floor with a plain Labelled Storage Chest.")
+            ?"Place a chest inside Skygrid. Your linked tablet finds it automatically."
             :denial),true);
     }
     private ChestPadGuide(){}

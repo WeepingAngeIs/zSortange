@@ -1,6 +1,9 @@
 # Anya Storage Plus
 
-**Home Void room editor** · Test build for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. During a physical visit, open the linked tablet and click the wrench to turn **Edit Mode** on or off. [Room controls, materials and permissions](docs/HOME_VOID_ROOM_EDITOR.md)
+**Skygrid chest sync candidate** for Minecraft 1.21.1, NeoForge 21.1.249 and Java 21. With room building enabled, enter with Build permission and place a vanilla chest against a wall, in a corner or elsewhere inside the room. Outside, right-click your linked tablet to use its storage. Leave the landing and exit clear. New rooms start empty. Existing chests keep their items inside the original blocks. The entrance keeps its illustration. Outdoor cameras still need an explicit tablet link.
+
+### Earlier milestones
+
 
 The Twin Tails tablet beta restores eight close-up Cupid sequences on both physical tablets. [Expression guide and timings](docs/TWIN_TAILS_EXPRESSIONS.md).
 

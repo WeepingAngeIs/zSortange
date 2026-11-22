@@ -243,20 +243,20 @@ public final class PocketService {
         if(p.stage()==PocketLedger.Stage.READY)return true;
         Preparation job=PREPARING.computeIfAbsent(p.id(),id->new Preparation());
         if(!job.began){
-            if(ExpansionRules.get().pocketContainers<4)throw new IOException("This four-chest prototype exceeds the configured container limit");
             if(p.stage()!=PocketLedger.Stage.RESERVED)throw new IOException("Interrupted preparation cannot be replayed");
-            // Refuse collisions with pre-existing world data instead of clearing an occupied cell.
-            for(BlockPos pos:chestPositions(p))if(!level.isEmptyBlock(pos))throw new IOException("Allocated cell is not empty; automatic generation denied");
+            // A newly allocated room must never adopt an inventory already present in its plot.
+            for(int x=p.x()>>4;x<=(p.x()+31)>>4;x++)for(int z=p.z()>>4;z<=(p.z()+31)>>4;z++){
+                var chunk=level.getChunkSource().getChunkNow(x,z);
+                if(chunk==null)return false;
+                for(var pos:chunk.getBlockEntitiesPos())if(p.contains(pos.getX(),pos.getY(),pos.getZ()))
+                    throw new IOException("This Skygrid space already contains a block entity. Its contents were preserved.");
+            }
             if(!level.isEmptyBlock(exitPosition(p)))throw new IOException("Exit position is occupied; generation denied");
             ledger.stage(p.id(),PocketLedger.Stage.RESERVED,PocketLedger.Stage.BUILDING);job.blocks=shell(p);job.began=true;
         }
         int budget=256;
         while(budget-->0&&job.cursor<job.blocks.size()){Placement put=job.blocks.get(job.cursor++);if(!level.isEmptyBlock(put.pos()))throw new IOException("Occupied shell position: preparation stopped without overwriting it");level.setBlock(put.pos(),put.state(),3);lastPreparedBlocks++;}
         if(job.cursor<job.blocks.size())return false;
-        for(BlockPos pos:chestPositions(p)){
-            if(!level.isEmptyBlock(pos))throw new IOException("Chest destination changed during preparation; no inventory was overwritten");
-            level.setBlock(pos,Content.CRATE.get().defaultBlockState(),3);var chest=(StorageEntity)level.getBlockEntity(pos);chest.owner=p.owner();chest.pocketId=p.id();chest.storageIdentity();chest.setChanged();
-        }
         if(!level.isEmptyBlock(exitPosition(p)))throw new IOException("Exit position changed during preparation; no block was overwritten");
         level.setBlock(exitPosition(p),Blocks.LODESTONE.defaultBlockState(),3);
         level.getChunkSource().save(true); // commit newly built region data before publishing READY
@@ -277,7 +277,7 @@ public final class PocketService {
         String help;
         var hub=home(p,pocket);
         if(owner || (hub!=null && hub.permitsMember(p.getUUID(),BasePermissions.VISIT | BasePermissions.BUILD))){
-            String reason=RoomEditor.setMode(p,true);
+            String reason=RoomEditor.modeDenial(p);
             help=reason.isEmpty()?"Right-click with a block to build.":reason;
         }else help="You are visiting. The room owner can grant Build access.";
         AnyaStorage.tell(p,"Welcome to Skygrid. "+help+" Walk through the glowing exit to go home. You can also right-click the lodestone or use Leave room on your tablet.");
@@ -408,6 +408,7 @@ public final class PocketService {
     public static void logout(ServerPlayer p){release(p.getUUID());RECOVERY.remove(p.getUUID());RETRY.remove(p.getUUID());TEST_PLAYERS.remove(p.getUUID());if(p.getServer()!=null)syncTickets(p.getServer());}
     public static void died(ServerPlayer p){p.closeContainer();release(p.getUUID());}
     private static final Map<UUID,ItemStack> REMOTE_TABLETS=new HashMap<>();
+    static ItemStack remoteTablet(ServerPlayer player) {return REMOTE_TABLETS.get(player.getUUID());}
     private static void release(UUID player){
         REMOTE_TABLETS.remove(player);
         PENDING.remove(player);

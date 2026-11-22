@@ -1,0 +1,41 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def fixture = p.sourceSets.create('chestProbe')
+    fixture.java.srcDir 'fixtures/skygrid-chest-sync/java'
+    fixture.resources.srcDir 'fixtures/skygrid-chest-sync/resources'
+    p.neoForge.addModdingDependenciesTo(fixture)
+    p.dependencies.add(fixture.compileOnlyConfigurationName, p.files(p.file(p.property('baselineJar'))))
+    def probe = p.tasks.register('chestProbeJar', Jar) {
+        dependsOn fixture.classesTaskName
+        from fixture.output
+        archiveBaseName='hosted-chest-sync-probe'
+        destinationDirectory=p.layout.buildDirectory.dir('chest-sync/probe')
+    }
+    ['Legacy', 'Candidate'].each { version ->
+        def runtime = p.sourceSets.create('chestRuntime'+version)
+        p.neoForge.addModdingDependenciesTo(runtime)
+        def playable = p.file(p.property(version=='Legacy'?'baselineJar':'candidateJar'))
+        p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(playable,probe))
+        def sides = version=='Legacy' ? ['Server'] : ['Server','Client','Builder']
+        sides.each { side ->
+            def title='Chest'+version+side
+            def folder=p.file('build/chest-sync/'+version+'/'+side)
+            p.neoForge.runs.create(title.uncapitalize()) {
+                if(side=='Server'){server();programArgument '--nogui'}
+                else {
+                    client()
+                    def playerName=side=='Client' ? 'ChestOwner' : 'ChestBuilder'
+                    programArguments.addAll '--username',playerName,'--quickPlayMultiplayer','127.0.0.1:25577','--width','854','--height','480'
+                }
+                sourceSet=runtime
+                loadedMods=[]
+                gameDirectory=folder
+                systemProperty 'chest.sync.role',side
+                jvmArguments.addAll '-XX:ActiveProcessorCount=2','-Xms160m','-Xmx1300m'
+            }
+            p.tasks.register('prepare'+title) {
+                dependsOn probe,'create'+title+'LaunchScript'
+                doLast {folder.mkdirs();new File(folder,'launch.txt').text=p.tasks.named('create'+title+'LaunchScript').get().launchScript.get().asFile.absolutePath}
+            }
+        }
+    }
+}}

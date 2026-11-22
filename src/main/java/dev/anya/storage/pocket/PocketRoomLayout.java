@@ -9,39 +9,40 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-/** Bounded discovery of four original chests plus four optional pads. Never scans arbitrary machinery. */
+/** Discovers physical Labelled Storage Chests in the four already-loaded room chunks. */
 public final class PocketRoomLayout {
     public static List<BlockPos> pads(PocketLedger.Pocket r){
         return RoomBounds.PAD_X.stream()
                 .map(x -> new BlockPos(r.x() + x, RoomBounds.CHEST_Y, r.z() + RoomBounds.PAD_Z))
                 .toList();
     }
-    /** The same stable order is used for discovery and the layout preview's occupancy bits. */
+    /** Original illustration coordinates, retained for interpreting old layouts and fixtures. */
     static List<BlockPos> positions(PocketLedger.Pocket room) {
         var positions = new ArrayList<>(PocketService.chestPositions(room));
         positions.addAll(pads(room));
         return positions;
     }
     public static boolean registeredPosition(PocketLedger.Pocket r,BlockPos p){
-        return PocketService.chestPositions(r).contains(p)||p.getY()==RoomBounds.CHEST_Y && RoomBounds.decoration(p.getX()-r.x(),p.getY(),p.getZ()-r.z());
+        return RoomBounds.decoration(p.getX()-r.x(),p.getY(),p.getZ()-r.z());
     }
     public static List<StorageEntity> present(ServerLevel level,PocketLedger.Pocket r)throws IOException{
         if(level==null)throw new IOException("Pocket is not ready");
         return scan(r,locations(new LoadedPocketBlocks(level),r),level::hasChunkAt,level::isEmptyBlock,level::getBlockEntity,StorageEntity::storageIdentity);
     }
     static List<BlockPos> locations(LoadedPocketBlocks blocks,PocketLedger.Pocket room)throws IOException{
-        var all=new ArrayList<>(PocketService.chestPositions(room));
-        var extras=new TreeSet<BlockPos>();
+        var actual=new TreeSet<BlockPos>();
         for(int x=room.x()>>4;x<=(room.x()+31)>>4;x++)for(int z=room.z()>>4;z<=(room.z()+31)>>4;z++){
             var chunk=blocks.chunk(x,z);
             if(chunk==null)throw new IOException("The room is still loading.");
             for(var pos:chunk.getBlockEntitiesPos()){
-                if(!all.contains(pos)&&registeredPosition(room,pos)&&blocks.getBlockState(pos).is(Content.CRATE.get()))extras.add(pos);
+                if(registeredPosition(room,pos)&&blocks.getBlockState(pos).is(Content.CRATE.get()))actual.add(pos);
             }
         }
-        if(extras.size()>4)throw new IOException("Unexpected chest count; room contents preserved.");
-        all.addAll(extras);
-        return all;
+        // Preserve legacy storage ordering wherever the original four are still physically present.
+        var ordered=new ArrayList<BlockPos>();
+        for(var legacy:PocketService.chestPositions(room))if(actual.remove(legacy))ordered.add(legacy);
+        ordered.addAll(actual);
+        return List.copyOf(ordered);
     }
     static List<StorageEntity> present(PocketLedger.Pocket r, Predicate<BlockPos> loaded,
             Predicate<BlockPos> empty, Function<BlockPos,BlockEntity> entityAt)throws IOException{
@@ -70,7 +71,7 @@ public final class PocketRoomLayout {
         for(int i=0;i<positions.size();i++){
             BlockPos p=positions.get(i);
             if(!loaded.test(p))throw new IOException("Registered chest chunk is not loaded");
-            if(i>=4&&empty.test(p)){
+            if(empty.test(p)){
                 if(entityAt.apply(p)!=null)throw new IOException("Empty registered pad still has a block entity");
                 continue;
             }

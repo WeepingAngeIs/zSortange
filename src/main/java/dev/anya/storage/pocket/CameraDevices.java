@@ -44,7 +44,7 @@ public final class CameraDevices {
                 if(s.is(CAMERA.get())&&s.getValue(BlockStateProperties.FACING).getAxis().isHorizontal()){
                     d.tracking.mode=CameraTracking.Mode.MOTION;d.tracking.group=CameraTracking.Group.HOSTILE;d.tracking.rest=0;
                 }
-                d.setChanged();if(s.is(SKY_CAMERA.get()))SkyCeiling.remember(p,d);}
+                d.setChanged();}
         }
     }
     public static final class Device extends BlockEntity{
@@ -98,7 +98,13 @@ public final class CameraDevices {
         if(StorageItem.isTablet(p.getItemInHand(hand)) && p.isShiftKeyDown()){
             if(isCamera(d.getBlockState())){
                 if(PocketService.inPocket(p.level()))msg="Place the camera outdoors.";
-                else{if(d.getBlockState().is(SKY_CAMERA.get()))SkyCeiling.remember(p,d);selected.put(p,new Link(p.level().dimension().location().toString(),d.getBlockPos(),d.identity));msg="Camera selected. Sneak-use your tablet on a monitor. Right-click a wall camera with an empty hand to swivel it.";}
+                else if(d.getBlockState().is(SKY_CAMERA.get()) && !SkyCeiling.remember(p,d))msg="Sky Camera unavailable.";
+                else{
+                    selected.put(p,new Link(p.level().dimension().location().toString(),d.getBlockPos(),d.identity));
+                    msg=d.getBlockState().is(SKY_CAMERA.get())
+                            ?"Sky Camera selected. In Skygrid, open Cosmetics on your tablet and turn on Live ceiling."
+                            :"Camera selected. Sneak-use your tablet on a monitor to link it.";
+                }
             }else{
                 var link=selected.get(p);
                 if(link==null)msg="Sneak-use your tablet on your outdoor camera first.";
@@ -126,7 +132,7 @@ public final class CameraDevices {
         }else if(d.getBlockState().getBlock() instanceof WallMonitorBlock&&p.getItemInHand(hand).isEmpty()){
             CameraConsole.open(p,d);return true;
         }else if(d.getBlockState().is(SKY_CAMERA.get())){
-            msg=SkyCeiling.remember(p,d)?"Sky Camera selected. Open your tablet inside Skygrid, then Cosmetics and Live ceiling.":"Place your Sky Camera outdoors.";
+            msg="Sneak-use your tablet on this Sky Camera to select it.";
         }else msg=d.getBlockState().is(CAMERA.get())?"Right-click a wall camera with an empty hand to swivel. Sneak-use a tablet to link it, or sneak-use an empty hand for tracking settings.":"Look to view. Right-click a wall monitor for settings. Sneak-use your tablet to link a camera.";
         p.displayClientMessage(Component.literal(msg),true);return true;
     }

@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+[[mods]]
+modId="chestsyncprobe"
+version="1"
+displayName="Hosted Skygrid chest checks"
+[[dependencies.chestsyncprobe]]
+modId="anyastorage"
+type="required"
+versionRange="[0.3.0-beta.4,)"
+ordering="AFTER"
+side="BOTH"

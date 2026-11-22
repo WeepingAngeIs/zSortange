@@ -36,6 +36,14 @@ public final class PocketEvents {
         if(e.getEntity() instanceof ServerPlayer p&&PocketService.inPocket(p.level()))for(ItemEntity item:e.getDrops()){item.setTarget(p.getUUID());item.getPersistentData().putUUID("AnyaPocketDropOwner",p.getUUID());}
     }
     @SubscribeEvent public static void toss(ItemTossEvent e){if(PocketService.inPocket(e.getPlayer().level())){e.getEntity().setTarget(e.getPlayer().getUUID());e.getEntity().getPersistentData().putUUID("AnyaPocketDropOwner",e.getPlayer().getUUID());}}
+    @SubscribeEvent(priority=EventPriority.LOWEST) public static void buildingDrops(BlockDropsEvent e){
+        if(PocketService.inPocket(e.getLevel()) && e.getBreaker() instanceof ServerPlayer p && RoomEditor.active(p)){
+            for(ItemEntity item:e.getDrops()){
+                item.setTarget(p.getUUID());
+                item.getPersistentData().putUUID("AnyaPocketDropOwner",p.getUUID());
+            }
+        }
+    }
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void pickup(ItemEntityPickupEvent.Pre e){
         if(!(e.getPlayer() instanceof ServerPlayer p)||!PocketService.inPocket(p.level()))return;
         var data=e.getItemEntity().getPersistentData();
@@ -52,7 +60,7 @@ public final class PocketEvents {
     @SubscribeEvent(priority=EventPriority.HIGHEST) public static void breakBlock(BlockEvent.BreakEvent e){
         if(RoomEditor.permissionEvent(e))return;
         if(e.getLevel() instanceof Level level&&PocketService.inPocket(level)){
-            if(!(e.getPlayer() instanceof ServerPlayer p) || RoomEditor.supported(e.getState().getBlock()) || !NativeRoomBuild.breakable(p,e.getPos()))e.setCanceled(true);
+            if(!(e.getPlayer() instanceof ServerPlayer p) || NativeRoomBuild.special(e.getState()) || !NativeRoomBuild.breakable(p,e.getPos()))e.setCanceled(true);
             return;
         }
         if(e.getLevel().getBlockEntity(e.getPos()) instanceof StorageEntity chest&&chest.pocketId!=null){e.setCanceled(true);return;}
@@ -73,11 +81,12 @@ public final class PocketEvents {
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void clickToRemove(PlayerInteractEvent.LeftClickBlock e){
         if(!PocketService.inPocket(e.getLevel()))return;
         boolean denied=e.getUseBlock().isFalse() || e.getUseItem().isFalse();
-        if(!denied && !RoomEditor.supported(e.getLevel().getBlockState(e.getPos()).getBlock())
+        boolean special=NativeRoomBuild.special(e.getLevel().getBlockState(e.getPos()));
+        if(!denied && !special
                 && (e.getLevel().isClientSide || e.getEntity() instanceof ServerPlayer p && NativeRoomBuild.breakable(p,e.getPos())))return;
         // NeoForge still sends START, but suppresses client mining, block callbacks, and predicted Creative breaks.
         e.setCanceled(true);
-        if(!denied && e.getEntity() instanceof ServerPlayer p && e.getAction()==PlayerInteractEvent.LeftClickBlock.Action.START)
+        if(!denied && special && e.getEntity() instanceof ServerPlayer p && e.getAction()==PlayerInteractEvent.LeftClickBlock.Action.START)
             RoomEditor.click(p,e.getPos(),e.getFace(),true);
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public static void useBlock(PlayerInteractEvent.RightClickBlock e){
@@ -96,18 +105,27 @@ public final class PocketEvents {
             var target=e.getLevel().getBlockState(e.getPos());
             var held=e.getItemStack();
             boolean nativeItem=NativeRoomBuild.useNative(held);
+            if(target.is(net.minecraft.world.level.block.Blocks.CHEST)
+                    && (!e.getEntity().isSecondaryUseActive() || e.getEntity().getMainHandItem().isEmpty() && e.getEntity().getOffhandItem().isEmpty())){
+                boolean opened=e.getLevel().isClientSide || e.getEntity() instanceof ServerPlayer p && NativeRoomBuild.openChest(p,e.getPos());
+                e.setCanceled(true);e.setCancellationResult(opened?InteractionResult.sidedSuccess(e.getLevel().isClientSide):InteractionResult.FAIL);return;
+            }
             boolean ordinaryInteraction=!NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)
                     && !RoomEditor.supported(target.getBlock()) && !nativeItem && !(held.getItem() instanceof net.minecraft.world.item.BlockItem);
             if(nativeItem || ordinaryInteraction){
                 if(e.getLevel().isClientSide)return;
                 if(e.getEntity() instanceof ServerPlayer p){
-                    if(nativeItem && !net.minecraft.world.item.ItemStack.isSameItemSameComponents(held,new net.minecraft.world.item.ItemStack(held.getItem()))){
+                    if(nativeItem && !NativeRoomBuild.placeableStack(held)){
                         p.displayClientMessage(Component.literal("This block item has custom data. It stays in your hand."),true);
-                    }else if(nativeItem && !NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)){
+                    }else if(nativeItem && ((!NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)) || p.isSecondaryUseActive())){
                         var ctx=new net.minecraft.world.item.context.BlockPlaceContext(p,e.getHand(),held,e.getHitVec());
                         var state=((net.minecraft.world.item.BlockItem)held.getItem()).getBlock().defaultBlockState();
                         if(state.getBlock() instanceof WallMonitorBlock monitor)state=monitor.getStateForPlacement(ctx);
-                        if(state!=null&&NativeRoomBuild.cell(p,ctx.getClickedPos(),state,false,state.hasBlockEntity())){
+                        if(state!=null && state.is(net.minecraft.world.level.block.Blocks.CHEST) && !NativeRoomBuild.canAddChest(p)){
+                            p.displayClientMessage(Component.literal("No free chest capacity in this room."),true);
+                            e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);return;
+                        }
+                        if(state!=null&&NativeRoomBuild.cell(p,ctx.getClickedPos(),state,false,state.hasBlockEntity()&&!state.is(net.minecraft.world.level.block.Blocks.CHEST))){
                             // Only the held block item may run here; container use is a separate authorized click.
                             e.setUseBlock(TriState.FALSE);return;
                         }
@@ -115,7 +133,7 @@ public final class PocketEvents {
                         NativeRoomBuild.watch(p,e.getPos());e.setUseItem(TriState.FALSE);return;
                     }
                 }
-                if(!NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)){
+                if((!NativeRoomBuild.special(target) && !target.is(net.minecraft.world.level.block.Blocks.LODESTONE)) || e.getEntity().isSecondaryUseActive()){
                     e.setCanceled(true);e.setCancellationResult(InteractionResult.FAIL);return;
                 }
             }
