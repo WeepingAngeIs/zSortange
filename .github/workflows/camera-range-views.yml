@@ -10,7 +10,7 @@ env:
   OLD: anya-storage-plus-0.3.0-beta.7-sharpcam.3.jar
 jobs:
   build:
-    if: github.event.repository.private == false
+    if: github.event.repository.private == false && !startsWith(github.event.head_commit.message, 'Recheck captured camera frames')
     runs-on: ubuntu-latest
     timeout-minutes: 22
     steps:
@@ -111,16 +111,33 @@ jobs:
           if-no-files-found: ignore
   compare:
     needs: observe
+    if: always() && github.event.repository.private == false && (needs.observe.result == 'success' || (needs.observe.result == 'skipped' && startsWith(github.event.head_commit.message, 'Recheck captured camera frames')))
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
+        if: needs.observe.result == 'success'
         with:
           pattern: observed-*
           path: observations
+      - name: Check the revision of the original observations
+        if: needs.observe.result == 'skipped'
+        run: |
+          set -eu
+          base=5c54c86c208d4658ffdb073a75349f50475f290e
+          git merge-base --is-ancestor "$base" HEAD
+          git diff --exit-code "$base" HEAD -- src gradle.properties build.gradle fixtures/appearance-check fixtures/camera-roles/java fixtures/camera-roles/resources fixtures/camera-roles/run.py fixtures/camera-roles/fixture.gradle
+      - uses: actions/download-artifact@v4
+        if: needs.observe.result == 'skipped'
+        with:
+          pattern: observed-*
+          path: observations
+          run-id: 45050792343
+          github-token: ${{ github.token }}
       - name: Compare the presented screens with the physical lens
         run: |
           set -euo pipefail

@@ -100,10 +100,19 @@ def actor_images(trial, kind):
     return get(trial,"visible-skin"),get(trial,"invisible-skin")
 
 
-def gold_pixels(image):
-    return sum(1 for y in range(78,114) for x in range(78,114)
-               for r,g,b in [image.getpixel((x,y))]
-               if r>95 and g>85 and min(r,g)>b*1.55)
+def changed_gold_pixels(image, beyond):
+    # Distinguish bright gold from an olive moss floor and the stationary player reticle.
+    # Use the observer's matching empty aperture at the same camera and head pose.
+    low,high=round(image.width*.42),round(image.width*.58)
+    count=0
+    for y in range(low,high):
+        for x in range(low,high):
+            r,g,b=image.getpixel((x,y))
+            prior_r,prior_g,_=beyond.getpixel((x,y))
+            if (r>=g*1.04 and r>=90 and g>85 and min(r,g)>b*1.7
+                    and r-prior_r>20 and g-prior_g>15):
+                count+=1
+    return count
 
 
 report = {"renderedPanelMatch":{}, "skin":{}, "range":{}}
@@ -123,11 +132,15 @@ for trial in ("old","new","solo"):
         assert (record["goldCells"]>0)==expected
         if expected:
             assert distance-1<record["nearestGoldRadialBlocks"]<=limit
-        pixels=gold_pixels(panel(trial,shot))
-        absent=gold_pixels(panel(trial,"range-65"))
-        if expected:
-            assert pixels>absent+4,(trial,distance,pixels,absent)
-        report["range"][f"{trial}/{distance}"]={**record,"presentedGoldPixels":pixels}
+        pixels=changed_gold_pixels(panel(trial,shot),panel(trial,"range-65"))
+        native=changed_gold_pixels(read(str(path(trial,shot))+".source.png"),
+                                   read(str(path(trial,"range-65"))+".source.png"))
+        # The previous renderer's wire reach and actually visible distance are separate observations.
+        if expected and trial!="old":
+            assert pixels>4 and native>8,(trial,distance,pixels,native)
+        if not expected:
+            assert pixels==0 and native==0,(trial,distance,pixels,native)
+        report["range"][f"{trial}/{distance}"]={**record,"presentedGoldPixels":pixels,"screenTextureGoldPixels":native}
     if trial=="old":
         continue
     for name in ("face-away-from-screen","front-camera-facing-away","screen-behind-opaque-wall"):
