@@ -134,6 +134,7 @@ final class CameraTerrain {
         var forward = scene.forward();
         var up = scene.up();
         var right = scene.right();
+        var resolved = new CameraPicture.SurfacePixel();
         for (int row = 0; row < grid; row++) for (int col = 0; col < grid; col++) {
             int index = row * grid + col, cell = samples[index];
             int sx = col * tile, sy = row * tile;
@@ -159,26 +160,18 @@ final class CameraTerrain {
                     int sample = color.getPixelRGBA(x, glY);
                     float z = depth.get(glY * size + x);
                     double distance = linearDepth(z,projection);
-                    if ((sample >>> 24) >= 32 && z < 1 && matches(view, permitted,
+                    if ((sample >>> 24) >= 32 && sample != CameraPicture.MASK && z < 1 && matches(view, permitted,
                             eye.x + dx * distance, eye.y + dy * distance, eye.z + dz * distance)) {
                         sceneDepth[y * size + x] = (float)distance;
                         out.setPixelRGBA(x, y, sample | 0xff000000);
                     } else {
-                        // Distant depth values can quantize outside a block's bounds. Re-intersect
-                        // only authorized baked triangles, and read their own texture. Never adopt
-                        // the color of an unrecognized hardware surface or look behind its depth.
-                        double maxDepth = z < 1 ? linearDepth(Math.nextUp(z),projection) : Double.POSITIVE_INFINITY;
-                        double nearest = Double.POSITIVE_INFINITY;
-                        int approved = 0;
-                        for (int ref : permitted) {
-                            var face = view.surfaces[ref];
-                            double t = face.intersection(dx,dy,dz);
-                            if (!(t >= NEAR && t < FAR && t <= maxDepth && t < nearest)) continue;
-                            int rgba = face.sample(eye.x + dx*t,eye.y + dy*t,eye.z + dz*t);
-                            if (rgba != 0) { nearest = t; approved = rgba; }
-                        }
-                        sceneDepth[y * size + x] = (float)nearest;
-                        out.setPixelRGBA(x, y, approved == 0 ? CameraPicture.background(scene.sky(), backing, dx, dy, dz) : approved);
+                        // An ambiguous GL depth value cannot prove which block is in front.
+                        // Intersect the actual triangles and use only the approved material.
+                        view.sample(index,permitted,dx,dy,dz,resolved);
+                        sceneDepth[y * size + x] = (float)resolved.distance;
+                        int rgba=resolved.color!=0 ? resolved.color : resolved.distance==0 ? CameraPicture.MASK
+                                : CameraPicture.background(scene.sky(),backing,dx,dy,dz);
+                        out.setPixelRGBA(x,y,rgba);
                     }
                 }
             }

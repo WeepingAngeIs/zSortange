@@ -31,7 +31,7 @@ size = 192
 frames = []
 full = []
 stats = {"renderer":json.loads((trial/"native-render-stats.json").read_text())}
-for state in ("copper","blue"):
+for state in ("vista","copper","blue"):
     source = photo(trial/f"native-{state}-outdoor-lens.png").resize((size,size),Image.Resampling.BOX)
     wall = trial/f"native-{state}-skygrid-monitor.png"
     panel = displayed(wall,size)
@@ -49,17 +49,19 @@ for state in ("copper","blue"):
 # The server changed a real orange marker to blue at the same place; verify the same moving
 # color boundary on the lens and monitor. A frozen screenshot cannot pass this check.
 for kind,idx in (("outdoor",0),("wall",1)):
-    a,b = frames[0][idx],frames[1][idx]
+    a,b = frames[1][idx],frames[2][idx]
     n = 0
-    for y in range(64,114):
-        for x in range(68,124):
+    # The 11x9 outdoor board is centered at +25 horizontally and +5 vertically
+    # on the near face 92.265625 blocks along the lens axis (95.72 radial).
+    for y in range(83,101):
+        for x in range(112,132):
             r,g,blue = a.getpixel((x,y))
             rr,gg,bb = b.getpixel((x,y))
             n += r>1.45*blue and g>.15*r and bb>1.25*rr and gg>1.25*rr and abs(r-rr)+abs(blue-bb)>60
     assert n>=35,(kind,n)
     stats[kind+"ChangedMarkerPixels"] = n
 assert list(Path("observations/observed-solo").glob("solo-stock-source-unavailable-*.png"))
-board=Image.new("RGB",(1120,575),"#191c24");draw=ImageDraw.Draw(board)
+board=Image.new("RGB",(1120,843),"#191c24");draw=ImageDraw.Draw(board)
 for x,text in ((12,"Stock lens at outdoor camera"),(294,"Actual wall in Skygrid"),(702,"Same wall, cropped to screen"),(924,"Marker")):
     draw.text((x,9),text,fill="white")
 for row,(source,panel) in enumerate(frames):
@@ -67,8 +69,8 @@ for row,(source,panel) in enumerate(frames):
     board.paste(source.resize((256,256),Image.Resampling.NEAREST),(12,y))
     board.paste(full[row].resize((384,256),Image.Resampling.LANCZOS),(294,y))
     board.paste(panel.resize((208,208),Image.Resampling.LANCZOS),(702,y+16))
-    draw.text((924,y+95),("Orange","Light blue")[row], fill="white")
-    draw.text((924,y+115),"12-block marker",fill="#bed3e2")
+    draw.text((924,y+95),("Open vista","Orange marker","Light-blue marker")[row], fill="white")
+    draw.text((924,y+115),("24 to 112 blocks","95.7 blocks","95.7 blocks")[row],fill="#bed3e2")
 board.save(out/"live-native-wall.png")
 (out/"native-checks.json").write_text(json.dumps(stats,indent=2)+"\n")
 print(json.dumps(stats,indent=2))

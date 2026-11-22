@@ -1,4 +1,5 @@
 """Measure photographed, hosted Minecraft monitors against the same outdoor lens and source scene."""
+import argparse
 import json
 import math
 import os
@@ -6,16 +7,21 @@ import statistics
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-if os.environ.get("GITHUB_ACTIONS")!="true":
-    raise SystemExit("Hosted fixture only")
-base=Path("observations")
-out=Path("comparison")
+parser=argparse.ArgumentParser(description="Read existing camera capture PNGs and receipts; never launches Minecraft.")
+parser.add_argument("--captures-dir",type=Path)
+parser.add_argument("--output",type=Path,default=Path("comparison"))
+args=parser.parse_args()
+if args.captures_dir is None and os.environ.get("GITHUB_ACTIONS")!="true":
+    raise SystemExit("Supply a directory of existing hosted screenshots.")
+base=args.captures_dir or Path("observations")
+out=args.output
 out.mkdir(parents=True,exist_ok=True)
 side=384
 
 
 def game(trial):
-    return base/("observed-"+trial)
+    named=base/("observed-"+trial)
+    return named if named.is_dir() else base/trial
 
 
 def image(file):
@@ -56,12 +62,15 @@ def reference(trial,shot,wide=False):
 def color(rgb,name):
     r,g,b=rgb
     if name=="sky":return b>115 and b>r*1.12 and b>g*1.045
-    if name=="gold":return r>75 and g>65 and r>=.97*g and min(r,g)>b*1.52
-    if name=="lapis":return b>45 and b>r*1.5 and b>g*1.35
-    if name=="red":return r>58 and r>g*1.8 and r>b*1.5
-    if name=="emerald":return g>55 and g>1.4*r and g>1.16*b
-    if name=="purple":return b>45 and b>1.65*g and r>1.3*g and b>r*1.12
-    if name=="orange":return r>65 and r>g*1.45 and g>1.45*b
+    # Match chroma across daylight and real block lighting. The shaded stock gold can be
+    # (39,34,10); the unavailable texture is neutral navy (22,23,34).
+    if name=="gold":return r>=20 and g>=16 and r>=.97*g and min(r,g)>b*1.52
+    # Lapis has dark, strongly blue facets. The clear atmosphere is bright blue too.
+    if name=="lapis":return 20<=b<218 and g<125 and b>r*1.68 and b>g*1.60
+    if name=="red":return r>=18 and r>g*1.8 and r>b*1.5
+    if name=="emerald":return g>=23 and g>1.4*r and g>1.16*b
+    if name=="purple":return b>=24 and b>1.65*g and r>1.3*g and b>r*1.12
+    if name=="orange":return r>=30 and r>g*1.45 and g>1.45*b
     if name=="magenta":return min(r,b)>60 and min(r,b)>1.45*g and .74<r/b<1.9
     raise ValueError(name)
 
@@ -91,9 +100,15 @@ def largest_component(points):
     return maximum
 
 
-def colored_reference_coverage(sample,stock,rect,names):
+def colored_reference_coverage(sample,stock,rect,names,sample_before=None,stock_before=None):
     normal=colors_in(stock,rect,names)
     drawn=colors_in(sample,rect,names)
+    def material_change(rgb,previous):
+        return max(abs(a-b) for a,b in zip(rgb,previous))>18
+    if stock_before is not None:
+        normal={p:v for p,v in normal.items() if material_change(stock.getpixel(p),stock_before.getpixel(p))}
+    if sample_before is not None:
+        drawn={p:v for p,v in drawn.items() if material_change(sample.getpixel(p),sample_before.getpixel(p))}
     matching=sum(drawn.get(point)==tint for point,tint in normal.items())
     return {"stock_pixels":len(normal),"sample_pixels":len(drawn),"matched_pixels":matching,
             "stock_fraction":round(matching/max(1,len(normal)),4)}
@@ -156,14 +171,22 @@ for trial in ("old","new"):
     central=box(.43,.43,.57,.57)
     hidden_gold=colors_in(texture(trial,"checker-hidden-behind-claim"),central,["gold","lapis"])
     assert not hidden_gold,(trial,"occluded checker pixels",len(hidden_gold))
+    if receipt(trial,"checker-hidden-behind-claim").get("samePacketRendererComparison"):
+        denied_software=image(str(file(trial,"checker-hidden-behind-claim"))+".software.png")
+        assert not colors_in(denied_software,central,["gold","lapis"]),"Denied checker visible in software rendering"
+    empty_monitor=monitor(trial,"open-sky");empty_texture=texture(trial,"open-sky");empty_stock=reference(trial,"open-sky")
     for d in (24,48,64,80,96,112):
         shot=f"checker-{d}";stock=reference(trial,shot);stats=receipt(trial,shot)
         axial=stats["axialNearFaceBlocks"]
         rect=box(.5-8.1/axial,.5-5.1/axial,.5+8.1/axial,.5+5.1/axial)
         core=box(.5-2.8/axial,.5-1.9/axial,.5+2.8/axial,.5+1.9/axial)
         surface=texture(trial,shot);screen=monitor(trial,shot)
-        metrics=colored_reference_coverage(screen,stock,rect,["gold","lapis"])
-        metrics["texture"]=colored_reference_coverage(surface,stock,rect,["gold","lapis"])
+        metrics=colored_reference_coverage(screen,stock,rect,["gold","lapis"],empty_monitor,empty_stock)
+        metrics["texture"]=colored_reference_coverage(surface,stock,rect,["gold","lapis"],empty_texture,empty_stock)
+        if stats.get("samePacketRendererComparison"):
+            software=image(str(file(trial,shot))+".software.png")
+            metrics["software"]=colored_reference_coverage(software,stock,rect,["gold","lapis"],empty_texture,empty_stock)
+            add_sheet("identical-96-packet.png",["Native terrain pass","Software terrain pass","Stock outdoor lens"],[[surface,software,stock]])
         component=largest_component(colors_in(surface,core,["gold"]))
         stock_component=largest_component(colors_in(stock,core,["gold"]))
         metrics.update({"stock_gold_core":stock_component,"largest_contiguous_gold_core":component,
@@ -189,6 +212,18 @@ for trial in ("old","new"):
             metrics=colored_reference_coverage(screen,stock,rect,[tint])
             metrics["texture"]=colored_reference_coverage(surface,stock,rect,[tint])
             metrics["near_face_center_radial_blocks"]=round(math.hypot(axial,x),2)
+            # Each landmark is one block thick. Its near plane gives a conservative count
+            # of stock silhouette pixels which could be in range; the far plane proves which
+            # rays span the entire thickness in range. This matters for the 96-block crown.
+            stock_cells=colors_in(stock,rect,[tint])
+            eligible=set();entire=0
+            for sx,sy in stock_cells:
+                k=math.sqrt(1+(((sx+.5)*2/side-1)*angles)**2+((1-(sy+.5)*2/side)*angles)**2)
+                if axial*k<=96:eligible.add((sx,sy))
+                entire+=(axial+1)*k<=96
+            metrics["stock_pixels_with_near_face_in_96"]=len(eligible)
+            metrics["stock_pixels_with_full_thickness_in_96"]=entire
+            metrics["displayed_matches_within_near_96"]=len(eligible&colors_in(screen,rect,[tint]).keys())
             assert metrics["stock_pixels"]>8,(key,"missing actual landmark in stock scene",d,metrics)
             vista[str(d)]=metrics
         edge=box(.91,.21,.995,.71)
@@ -216,10 +251,21 @@ add_sheet("distance-comparison.png",["Previous monitor","Updated monitor","Stock
     [monitor("old",f"checker-{d}"),monitor("new",f"checker-{d}"),reference("new",f"checker-{d}")] for d in (24,48,64,80,96,112)])
 (out/"horizon-results.json").write_text(json.dumps(report,indent=2)+"\n")
 print(json.dumps(report,indent=2))
-assert all(s["stock_fraction"]>.72 for s in report["sky"]["new"]),report["sky"]
+failures=[]
+if not all(s["stock_fraction"]>.72 for s in report["sky"]["new"]):
+    failures.append(("open sky",report["sky"]["new"]))
 for d in (48,64,80,96):
     current=report["distance"][f"new/{d}"];prior=report["distance"][f"old/{d}"]
-    assert current["stock_fraction"]>prior["stock_fraction"]+.15,(d,current,prior)
-    assert current["core_fraction"]>.4,(d,"gold center has too many breaks",current)
-assert report["distance"]["new/80"]["stock_fraction"]>.45
-assert report["distance"]["new/112"]["primary_hits"]==0
+    if current["stock_fraction"]<=prior["stock_fraction"]+.15:
+        failures.append((d,"visible surface coverage",current["stock_fraction"],prior["stock_fraction"]))
+    if current["core_fraction"]<=.4:
+        failures.append((d,"gold center continuity",current["core_fraction"]))
+if report["distance"]["new/80"]["stock_fraction"]<=.45:
+    failures.append((80,"less than 45 percent of stock checker coverage"))
+if report["distance"]["new/112"]["primary_hits"]!=0:
+    failures.append((112,"preview exceeded the observation limit"))
+for mode in ("standard","wide"):
+    crown=report["vista"]["new/"+mode]["96"]
+    if crown["matched_pixels"]<12 or crown["texture"]["matched_pixels"]<20:
+        failures.append((96,mode,"purple-crown landmark not visibly depicted",crown["matched_pixels"],crown["stock_pixels"]))
+assert not failures,failures

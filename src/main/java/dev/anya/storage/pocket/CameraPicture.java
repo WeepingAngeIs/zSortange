@@ -132,10 +132,12 @@ final class CameraPicture {
      * a material/color on the opposite side of an unknown or denied ray proves nothing. */
     static final class SurfaceView {
         final ProjectedSurface[] surfaces;
-        private final int[][] coarse, fine;
+        private final int[][] coarse, fine, projected;
+        private final Vec3 eye;
         private static final int TILE = SIZE / CameraScene.SIDE, MICRO = TILE / CameraScene.DETAIL_SIDE;
 
         SurfaceView(CameraScene scene) {
+            eye = scene.eye();
             var models = new HashMap<ModelFace, List<Facet>>();
             surfaces = new ProjectedSurface[scene.surfaces().size()];
             for (int i = 0; i < surfaces.length; i++) {
@@ -143,6 +145,7 @@ final class CameraPicture {
                 var key = new ModelFace(s.stateId(), s.face());
                 surfaces[i] = new ProjectedSurface(s, models.computeIfAbsent(key, CameraPicture::model), scene);
             }
+            projected = projectedBins(scene);
             var refs = new int[MAX_NEIGHBOURS];
             var edge = new int[4];
             coarse = new int[scene.cells().length*4][];
@@ -188,12 +191,90 @@ final class CameraPicture {
             int i = cell*CameraScene.DETAIL_AREA + localY/MICRO*CameraScene.DETAIL_SIDE + localX/MICRO;
             return scene.detail()[i] == 0 ? ordinary : fine[i];
         }
+
+        // A depth buffer may represent metres of source space in very few values near its
+        // far plane. Bin ALL the transmitted faces by their true angular extent, independently
+        // of which of them a particular microtile is allowed to show.
+        private int[][] projectedBins(CameraScene scene) {
+            int side = CameraScene.SIDE;
+            var bins = new it.unimi.dsi.fastutil.ints.IntArrayList[side*side];
+            var right = scene.right().scale(1/scene.right().lengthSqr());
+            var up = scene.up().scale(1/scene.up().lengthSqr());
+            var forward = scene.forward();
+            for (int ref=0; ref<surfaces.length; ref++) {
+                var face = surfaces[ref];
+                double minX=Double.POSITIVE_INFINITY,maxX=Double.NEGATIVE_INFINITY;
+                double minY=Double.POSITIVE_INFINITY,maxY=Double.NEGATIVE_INFINITY;
+                int behind=0;
+                for (int corner=0; corner<4; corner++) {
+                    int a=corner&1,b=corner>>1;
+                    double x=(face.axis==0?face.s.plane():face.s.x()+a)-eye.x;
+                    double y=(face.axis==1?face.s.plane():face.s.y()+b)-eye.y;
+                    double z=(face.axis==2?face.s.plane():face.s.z()+(face.axis==0?a:b))-eye.z;
+                    double t=x*forward.x+y*forward.y+z*forward.z;
+                    if (t<=0) { behind++; continue; }
+                    double u=(1+(x*right.x+y*right.y+z*right.z)/t)*.5;
+                    double v=(1-(x*up.x+y*up.y+z*up.z)/t)*.5;
+                    minX=Math.min(minX,u); maxX=Math.max(maxX,u);
+                    minY=Math.min(minY,v); maxY=Math.max(maxY,v);
+                }
+                if (behind==4) continue;
+                if (behind!=0) { minX=0; maxX=1; minY=0; maxY=1; }
+                if (maxX<0 || minX>1 || maxY<0 || minY>1) continue;
+                int firstX=Math.clamp((int)Math.floor(side*minX-1e-6),0,side-1);
+                int lastX=Math.clamp((int)Math.floor(side*maxX+1e-6),0,side-1);
+                int firstY=Math.clamp((int)Math.floor(side*minY-1e-6),0,side-1);
+                int lastY=Math.clamp((int)Math.floor(side*maxY+1e-6),0,side-1);
+                for (int y=firstY;y<=lastY;y++) for (int x=firstX;x<=lastX;x++) {
+                    int cell=y*side+x;
+                    if (bins[cell]==null) bins[cell]=new it.unimi.dsi.fastutil.ints.IntArrayList();
+                    bins[cell].add(ref);
+                }
+            }
+            int[][] result=new int[bins.length][];
+            int[] empty=new int[0];
+            for (int i=0;i<bins.length;i++) result[i]=bins[i]==null ? empty : bins[i].toIntArray();
+            return result;
+        }
+
+        void sample(int cell, int[] permitted, double dx, double dy, double dz, SurfacePixel pixel) {
+            pixel.color=0;
+            pixel.distance=Double.POSITIVE_INFINITY;
+            int front=-1;
+            for (int ref : permitted) {
+                var face=surfaces[ref];
+                double t=face.intersection(dx,dy,dz);
+                if (!(t>.03 && t<CameraScene.FAR_CLIP && t<pixel.distance)) continue;
+                int color=face.sample(eye.x+dx*t,eye.y+dy*t,eye.z+dz*t);
+                if (color!=0) {
+                    pixel.color=color; pixel.distance=t; front=ref;
+                }
+            }
+            if (front<0) return;
+            // Never paint a permitted distant triangle through an independently observed nearer
+            // opaque triangle. An occluder may only suppress this pixel, never supply its color.
+            for (int ref : projected[cell]) {
+                if (ref==front) continue;
+                var face=surfaces[ref];
+                double t=face.intersection(dx,dy,dz);
+                if (!(t>0 && t<pixel.distance-1e-6)) continue;
+                if (face.sample(eye.x+dx*t,eye.y+dy*t,eye.z+dz*t)!=0) {
+                    pixel.color=0; pixel.distance=0; return;
+                }
+            }
+        }
+    }
+
+    static final class SurfacePixel {
+        int color;
+        double distance;
     }
 
     private static void drawScene(CameraScene scene, SurfaceView view, NativeImage out) {
         int grid = CameraScene.SIDE, tile = SIZE / grid;
         int[] cells = scene.cells();
-        Vec3 eye = scene.eye(), forward = scene.forward(), up = scene.up(), right = scene.right();
+        Vec3 forward = scene.forward(), up = scene.up(), right = scene.right();
+        var sample = new SurfacePixel();
         double stepX = right.x * 2 / SIZE, stepY = right.y * 2 / SIZE, stepZ = right.z * 2 / SIZE;
         for (int row = 0; row < grid; row++) for (int col = 0; col < grid; col++) {
             int index = row*grid+col, cell = cells[index], startX = col * tile, startY = row * tile;
@@ -215,19 +296,9 @@ final class CameraPicture {
                         out.setPixelRGBA(x, y, MASK);
                         continue;
                     }
-                    double nearest = Double.POSITIVE_INFINITY;
-                    int color = 0;
-                    for (int ref : permitted) {
-                        var face = view.surfaces[ref];
-                        double scale = face.intersection(dx, dy, dz);
-                        if (!(scale > 0 && scale < nearest)) continue;
-                        int sample = face.sample(eye.x + dx * scale, eye.y + dy * scale, eye.z + dz * scale);
-                        if (sample == 0) continue;
-                        nearest = scale;
-                        color = sample;
-                    }
-                    if (color == 0) color = background(scene.sky(), backing, dx, dy, dz);
-                    depth[y * SIZE + x] = (float)nearest;
+                    view.sample(index,permitted,dx,dy,dz,sample);
+                    int color=sample.color!=0 ? sample.color : sample.distance==0 ? MASK : background(scene.sky(), backing, dx, dy, dz);
+                    depth[y * SIZE + x] = (float)sample.distance;
                     out.setPixelRGBA(x, y, color);
                 }
             }

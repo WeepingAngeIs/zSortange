@@ -28,6 +28,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.entity.EntityTypeTest;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -40,12 +41,14 @@ final class CameraSceneCapture {
     private static final long NEAR_TIME=9_000_000L, FAR_TIME=14_000_000L, DETAIL_TIME=20_000_000L;
     // These results never reach a client. Denied and unavailable space produce the same mask.
     private static final int TRACE_CLEAR=0x10000, OUT_OF_CHECKS=0x10001, DENIED=0x10002, UNLOADED=0x10003;
+    private static final byte ALLOWED=1, FORBIDDEN=2, CLEAR_AIR=3;
     private static final int[] SAMPLE_ORDER=sampleOrder();
     private enum Pass { NEAR, FAR, BACKDROP, DETAIL }
     // Optional dedicated-server fixture observer. Never serialized, cached between frames or
     // exposed to a player. Counts are aggregate and carry no source coordinates or identities.
     record Work(int positionChecks,int nearBudget,int farBudget,int ambientFallback,int denied,int unloaded,
-                int detailRays,int detailHits,long captureMicros,long permissionMicros) {}
+                int detailRays,int detailHits,int certifiedDetailRays,int certifiedBlockDistance,
+                long captureMicros,long permissionMicros) {}
     static java.util.function.Consumer<Work> diagnostics;
     private static final Direction[] FACE_DIRECTIONS=Direction.values();
     private static final Set<EntityType<?>> MODELS=Set.of(EntityType.PLAYER,EntityType.COW,EntityType.CREEPER,
@@ -64,7 +67,9 @@ final class CameraSceneCapture {
     private final Vec3 eye, origin;
     private final CameraSkyClearance skyClearance;
     private final BlockPos anchor;
-    private final Long2ByteOpenHashMap access=new Long2ByteOpenHashMap();
+    private final Long2ByteOpenHashMap access=new Long2ByteOpenHashMap(4096);
+    private LevelChunk lastChunk;
+    private int lastChunkX,lastChunkZ;
     private final Map<BlockState,Integer> materials=new IdentityHashMap<>();
     private final Map<CameraScene.Surface,Integer> faces=new LinkedHashMap<>();
     private final Map<LivingEntity,Integer> visibleActors=new LinkedHashMap<>();
@@ -72,6 +77,7 @@ final class CameraSceneCapture {
     private int claimLimit=NEAR_CHECKS;
     private long permissionTimeLimit=NEAR_TIME, permissionNanos, slowestPermission;
     private int nearBudget,farBudget,ambientFallback,denied,unloaded,detailRays,detailHits;
+    private int certifiedDetailRays,certifiedBlockDistance;
 
     private CameraSceneCapture(ServerPlayer player,ServerLevel level,CameraDevices.Device camera) {
         this.viewer=player; this.level=level; this.camera=camera;
@@ -88,6 +94,7 @@ final class CameraSceneCapture {
         var observer=diagnostics;
         if(observer!=null)observer.accept(new Work(capture.access.size(),capture.nearBudget,capture.farBudget,
                 capture.ambientFallback,capture.denied,capture.unloaded,capture.detailRays,capture.detailHits,
+                capture.certifiedDetailRays,capture.certifiedBlockDistance,
                 (System.nanoTime()-start)/1000,capture.permissionNanos/1000));
         return scene;
     }
@@ -128,7 +135,7 @@ final class CameraSceneCapture {
         // could exhaust the budget before most of the picture had even seen local open air.
         for(int i:SAMPLE_ORDER){
             Vec3 ray=rays[i], end=eye.add(ray.scale(NEAR_CLIP));
-            int result=trace(ray,end,sky,nearestActor(ray,end,false),Pass.NEAR);
+            int result=trace(eye,ray,end,sky,nearestActor(ray,end,false),Pass.NEAR);
             if(result==OUT_OF_CHECKS)nearBudget++;
             countMask(result);
             cells[i]=result==TRACE_CLEAR?TRACE_CLEAR:pictureCode(result);
@@ -138,7 +145,7 @@ final class CameraSceneCapture {
         for(int i:SAMPLE_ORDER){
             if(cells[i]!=TRACE_CLEAR)continue;
             Vec3 ray=rays[i], end=eye.add(ray.scale(REACH));
-            int result=trace(ray,end,sky,nearestActor(ray,end,false),Pass.FAR);
+            int result=trace(eye.add(ray.scale(NEAR_CLIP-.001)),ray,end,sky,nearestActor(ray,end,false),Pass.FAR);
             // Exhaustion contributes only the public climate at the lens after this exact ray
             // cleared the entire near clip. A real claim denial or unloaded chunk stays masked.
             cells[i]=result==OUT_OF_CHECKS?skyClearance.climate(ray,sky):pictureCode(result);
@@ -235,8 +242,8 @@ final class CameraSceneCapture {
         return false;
     }
 
-    // Start at the aim point and then distribute samples across progressively finer regions
-    // of the entire sensor instead of filling a horizontal or vertical strip.
+    // Start at the aim point. Spread farther queries along the central horizon and over the
+    // entire sensor together: a row of distant buildings can occupy only a few sensor rows.
     private static int[] sampleOrder(){
         int side=CameraScene.SIDE, at=0, mid=side/2;
         var seen=new boolean[side*side];
@@ -246,14 +253,21 @@ final class CameraSceneCapture {
                 int i=y*side+x;
                 if(!seen[i]){seen[i]=true;order[at++]=i;}
             }
+        int horizon=0, bits=Integer.numberOfTrailingZeros(side);
+        int[] centralRows={mid-1,mid,mid-2,mid+1};
         for(int s=0;s<seen.length;s++){
+            for(int k=0;k<3 && horizon<4*side;k++,horizon++){
+                int col=Integer.reverse(horizon/4) >>> (32-bits);
+                int i=centralRows[horizon%4]*side+col;
+                if(!seen[i]){seen[i]=true;order[at++]=i;}
+            }
             int x=0,y=0;
             for(int bit=side/2, shift=0;bit>0;bit>>=1,shift+=2){
                 if((s&(1<<shift))!=0)x|=bit;
                 if((s&(2<<shift))!=0)y|=bit;
             }
             int i=y*side+x;
-            if(!seen[i])order[at++]=i;
+            if(!seen[i]){seen[i]=true;order[at++]=i;}
         }
         return order;
     }
@@ -273,11 +287,20 @@ final class CameraSceneCapture {
             if(tiles==CameraScene.MAX_DETAIL_CELLS || spent() || faces.size()>=CameraScene.MAX_SURFACES)break;
             if(detail.length==0)detail=new int[cells.length*CameraScene.DETAIL_AREA];
             tiles++;
+            var prefix=clearDetailPrefix(cell,forward,right,up,face,offset);
             for(int j=0;j<CameraScene.DETAIL_AREA;j++){
                 double x=cell%side+((j%size)+.5)/size, y=cell/side+((j/size)+.5)/size;
                 Vec3 ray=forward.add(right.scale(2*x/side-1)).add(up.scale(1-2*y/side)).normalize();
                 Vec3 end=eye.add(ray.scale(REACH));
-                int got=trace(ray,end,sky,nearestActor(ray,end,false),Pass.DETAIL);
+                EntityHit actor=nearestActor(ray,end,false);
+                double skip=prefix.depth()==0?0:Math.min(REACH-.001,
+                        prefix.depth()/Math.abs(component(ray,prefix.axis())));
+                if(skip>=1){certifiedDetailRays++;certifiedBlockDistance+=(int)skip;}
+                // Actors move through empty blocks. Neither a near nor a distant body may
+                // reveal terrain behind it, even when the whole ray bundle proved clear air.
+                boolean hidden=actor!=null && eye.distanceToSqr(actor.point)<=skip*skip;
+                Vec3 start=skip>.002?eye.add(ray.scale(skip-.001)):eye;
+                int got=hidden?0:trace(start,ray,end,sky,actor,Pass.DETAIL);
                 detailRays++;
                 countMask(got);
                 if(got==OUT_OF_CHECKS)return detail;
@@ -286,6 +309,74 @@ final class CameraSceneCapture {
             }
         }
         return detail;
+    }
+
+    private record AirPrefix(int axis,double depth){}
+
+    private static double component(Vec3 v,int axis){
+        return switch(axis){case 0 -> v.x;case 1 -> v.y;default -> v.z;};
+    }
+
+    // All 36 rays in a sensor tile share a narrow pyramid starting at the lens. Certify its
+    // consecutive empty slices once. One unknown block anywhere in a slice ends the prefix:
+    // each individual ray then uses the ordinary shape, actor and permission traversal.
+    private AirPrefix clearDetailPrefix(int cell,Vec3 forward,Vec3 right,Vec3 up,CameraScene.Surface face,Vec3 offset){
+        int side=CameraScene.SIDE,col=cell%side,row=cell/side;
+        Vec3 mid=forward.add(right.scale((2.0*col+1)/side-1)).add(up.scale(1-(2.0*row+1)/side));
+        int axis=Math.abs(mid.x)>=Math.abs(mid.y)&&Math.abs(mid.x)>=Math.abs(mid.z)?0:
+                Math.abs(mid.y)>=Math.abs(mid.z)?1:2;
+        int a=(axis+1)%3,b=(axis+2)%3, sign=component(mid,axis)>0?1:-1;
+        double lowA=Double.POSITIVE_INFINITY,lowB=lowA,highA=Double.NEGATIVE_INFINITY,highB=highA;
+        int grid=CameraScene.DETAIL_SIDE;
+        for(int ky=0;ky<2;ky++)for(int kx=0;kx<2;kx++){
+            double x=col+(kx==0?.5:grid-.5)/grid,y=row+(ky==0?.5:grid-.5)/grid;
+            Vec3 d=forward.add(right.scale(2*x/side-1)).add(up.scale(1-2*y/side));
+            double major=sign*component(d,axis);
+            if(major<=.1)return new AirPrefix(axis,0);
+            double slopeA=component(d,a)/major,slopeB=component(d,b)/major;
+            lowA=Math.min(lowA,slopeA);highA=Math.max(highA,slopeA);
+            lowB=Math.min(lowB,slopeB);highB=Math.max(highB,slopeB);
+        }
+        // Direction ratios are monotone on each edge of the tile while its denominator
+        // keeps sign. Its four corners therefore bound every interior ray on each slice.
+        double m=component(eye,axis),pa=component(eye,a),pb=component(eye,b);
+        double faceCenter=(axis==0?face.x():axis==1?face.y():face.z())+.5;
+        double limit=Math.max(0,sign*(faceCenter-component(offset,axis))-1.5);
+        var pos=new BlockPos.MutableBlockPos();
+        int block=Mth.floor(m),last=block+sign*(int)Math.ceil(limit+2);
+        double start=0;
+        for(;block!=last && start<limit;block+=sign){
+            double end=Math.min(limit,sign>0?block+1-m:m-block);
+            if(end<=start)continue;
+            int x0=Mth.floor(pa+Math.min(start*lowA,end*lowA)-.0001);
+            int x1=Mth.floor(pa+Math.max(start*highA,end*highA)+.0001);
+            int y0=Mth.floor(pb+Math.min(start*lowB,end*lowB)-.0001);
+            int y1=Mth.floor(pb+Math.max(start*highB,end*highB)+.0001);
+            // Minecraft's DDA extends infinitesimally behind its starting point. If the
+            // lens sits exactly on a grid boundary, include that initial adjoining slice.
+            boolean boundary=start==0 && Math.abs(m-Math.rint(m))<.0001;
+            for(int plane=0;plane<=(boundary?1:0);plane++)for(int v=y0;v<=y1;v++)for(int u=x0;u<=x1;u++){
+                int w=block-plane*sign;
+                if(axis==0)pos.set(w,u,v);
+                else if(axis==1)pos.set(v,w,u);
+                else pos.set(u,v,w);
+                if(!publicAir(pos))return new AirPrefix(axis,start);
+            }
+            start=end;
+        }
+        return new AirPrefix(axis,start);
+    }
+
+    private boolean publicAir(BlockPos pos){
+        long key=pos.asLong();
+        byte prior=access.get(key);
+        if(prior==CLEAR_AIR)return true;
+        if(permission(pos,key,prior)!=0)return false;
+        if(pos.equals(camera.getBlockPos()))return true;
+        BlockState state=stateAt(pos);
+        if(!state.isAir() || state.hasBlockEntity() || !state.getFluidState().isEmpty())return false;
+        access.put(key,CLEAR_AIR);
+        return true;
     }
 
     private boolean eligible(LivingEntity e) {
@@ -329,9 +420,12 @@ final class CameraSceneCapture {
 
     private int permission(BlockPos pos) {
         long key=pos.asLong();
-        byte previous=access.get(key);
-        if(previous!=0)return previous==1?0:DENIED;
-        if(blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null)return UNLOADED;
+        return permission(pos,key,access.get(key));
+    }
+
+    private int permission(BlockPos pos,long key,byte previous) {
+        if(previous!=0)return previous==FORBIDDEN?DENIED:0;
+        if(chunkAt(pos)==null)return UNLOADED;
         if(spent())return OUT_OF_CHECKS;
         long start=System.nanoTime();
         boolean ok=Safety.locationReason(viewer,level,pos).isEmpty();
@@ -340,8 +434,22 @@ final class CameraSceneCapture {
         // Discount at most one isolated JIT/GC/descheduling outlier. All other latency
         // counts in full, so sustained claim cost reduces the remaining sampling work.
         slowestPermission=Math.max(slowestPermission,elapsed);
-        access.put(key,(byte)(ok?1:2));
+        access.put(key,ok?ALLOWED:FORBIDDEN);
         return ok?0:DENIED;
+    }
+
+    // Consecutive voxels usually share a chunk. The handle comes only from this observation's
+    // loaded-only resolver, and disappears with the rest of the observation.
+    private LevelChunk chunkAt(BlockPos pos){
+        int x=pos.getX()>>4,z=pos.getZ()>>4;
+        if(lastChunk!=null && x==lastChunkX && z==lastChunkZ)return lastChunk;
+        lastChunkX=x;lastChunkZ=z;
+        return lastChunk=blocks.chunk(x,z);
+    }
+
+    private BlockState stateAt(BlockPos pos){
+        LevelChunk chunk=chunkAt(pos);
+        return chunk==null?Blocks.BARRIER.defaultBlockState():chunk.getBlockState(pos);
     }
 
     // Some blocks consult neighboring states while calculating shape or emitted light. They may
@@ -349,7 +457,7 @@ final class CameraSceneCapture {
     private final BlockGetter geometry=new BlockGetter() {
         @Override public BlockState getBlockState(BlockPos pos) {
             if(!allowed(pos))return Blocks.BARRIER.defaultBlockState();
-            BlockState state=blocks.getBlockState(pos);
+            BlockState state=stateAt(pos);
             return state.hasBlockEntity()?Blocks.BARRIER.defaultBlockState():state;
         }
         @Override public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos){return null;}
@@ -385,29 +493,34 @@ final class CameraSceneCapture {
     }
 
     private int backdrop(Vec3 ray,SourceSky sky,EntityHit entity) {
-        return pictureCode(trace(ray,eye.add(ray.scale(REACH)),sky,entity,Pass.BACKDROP));
+        return pictureCode(trace(eye,ray,eye.add(ray.scale(REACH)),sky,entity,Pass.BACKDROP));
     }
 
-    private int trace(Vec3 ray,Vec3 end,SourceSky sky,EntityHit entity,Pass pass) {
-        // FAR is used only after the same individual ray cleared the complete near clip.
-        // Overlap the clipping plane slightly so an edge hit cannot fall between the passes.
-        Vec3 start=pass==Pass.FAR?eye.add(ray.scale(NEAR_CLIP-.001)):eye;
+    private int trace(Vec3 start,Vec3 ray,Vec3 end,SourceSky sky,EntityHit entity,Pass pass) {
         return BlockGetter.traverseBlocks(start,end,ray,(direction,pos)->{
-            int result=permission(pos);
+            long key=pos.asLong();
+            byte prior=access.get(key);
+            boolean actorHere=entity!=null && pos.equals(entity.cell);
+            if(prior==CLEAR_AIR && !actorHere)return null;
+            int result=permission(pos,key,prior);
             if(result!=0)return result;
             if(direction.y>0 && pos.getY()>=level.getMaxBuildHeight())
                 return pass==Pass.DETAIL || sky==null?0:1;
-            BlockState state=blocks.getBlockState(pos);
+            BlockState state=stateAt(pos);
             if(pos.equals(camera.getBlockPos()))return null;
-            // Stay opaque even for a sign with no text or an empty container.
+            // Even modded air-like blocks may carry private data or a fluid.
             if(state.hasBlockEntity() || !state.getFluidState().isEmpty())return 0;
+            if(state.isAir() && !actorHere){
+                access.put(key,CLEAR_AIR);
+                return null;
+            }
             BlockHitResult hit=null;
             if(!state.isAir()) {
                 var shape=state.getShape(geometry,pos);
                 hit=shape.clip(eye,end,pos);
                 if(hit!=null)hit=exposedEdgeFace(pos,shape,hit,ray);
             }
-            if(entity!=null && pos.equals(entity.cell) && (hit==null
+            if(actorHere && (hit==null
                     || eye.distanceToSqr(entity.point)<eye.distanceToSqr(hit.getLocation()))) {
                 if(pass==Pass.DETAIL || pass==Pass.BACKDROP && !visibleActors.containsKey(entity.entity))return 0;
                 return -1-visibleActors.computeIfAbsent(entity.entity,ignored->visibleActors.size());

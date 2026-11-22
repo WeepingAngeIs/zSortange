@@ -73,9 +73,9 @@ public final class HostedNativeLens {
         check(!owner()&&"RoomBuilder".equals(System.getProperty("roomroles.name"))&&order.target().equals(LENS)
                 && mc.level.dimension()==net.minecraft.world.level.Level.OVERWORLD && mc.getCameraEntity()==mc.player,"Untrusted native source");
         if(Files.exists(Orders.ROOT.resolve("native-presented-blue"))){
-            double seconds=(System.nanoTime()-firstRender)/1e9;
+            double seconds=(lastRender-firstRender)/1e9;
             Orders.write("native-render-stats.json",Orders.JSON.toJson(java.util.Map.of(
-                    "frames",sequence,"elapsedSeconds",seconds,"framesPerSecond",sequence/seconds,
+                    "frames",sequence,"firstToLastFrameSeconds",seconds,"framesPerSecond",(sequence-1)/seconds,
                     "meanCaptureMsIncludingPng",renderNanos/1e6/sequence,"pngBytes",byteCount)));
             return "Outside render completed "+sequence+" live second frames.";
         }
@@ -83,11 +83,11 @@ public final class HostedNativeLens {
         lastRender=System.nanoTime();
         if(!mc.level.hasChunkAt(MARK))return null;
         var marker=mc.level.getBlockState(MARK);
-        String state=marker.is(Blocks.ORANGE_CONCRETE)?STATE_ONE:marker.is(Blocks.LIGHT_BLUE_CONCRETE)?STATE_TWO:null;
+        String state=marker.isAir()?VISTA:marker.is(Blocks.ORANGE_CONCRETE)?STATE_ONE:marker.is(Blocks.LIGHT_BLUE_CONCRETE)?STATE_TWO:null;
         if(state==null)return null;
         Path raw=Orders.ROOT.resolve("native-current.png");
         long before=System.nanoTime();
-        if(firstRender==0)firstRender=before;
+        if(firstRender==0)firstRender=lastRender;
         SharpReference.capture(mc,LENS,raw);
         byte[] png=Files.readAllBytes(raw);
         renderNanos+=System.nanoTime()-before;byteCount+=png.length;
@@ -96,7 +96,7 @@ public final class HostedNativeLens {
             try(var shot=Screenshot.takeScreenshot(mc.getMainRenderTarget())){shot.writeToFile(Orders.ROOT.resolve("native-normal-outside.png"));}
         var next=Orders.ROOT.resolve("native-next.tmp");
         try(var packet=new DataOutputStream(Files.newOutputStream(next))){
-            packet.writeInt(++sequence);packet.writeBoolean(state.equals(STATE_TWO));packet.writeInt(png.length);packet.write(png);
+            packet.writeInt(++sequence);packet.writeUTF(state);packet.writeInt(png.length);packet.write(png);
         }
         Files.move(next,Orders.ROOT.resolve("native-frame.bin"),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
         return null;
@@ -122,7 +122,8 @@ public final class HostedNativeLens {
         var file=Orders.ROOT.resolve("native-frame.bin");
         if(!Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS))return;
         try(var input=new DataInputStream(Files.newInputStream(file))){
-            int serial=input.readInt();String state=input.readBoolean()?STATE_TWO:STATE_ONE;int bytes=input.readInt();
+            int serial=input.readInt();String state=input.readUTF();int bytes=input.readInt();
+            check(state.equals(VISTA)||state.equals(STATE_ONE)||state.equals(STATE_TWO),"Unknown scene");
             check(bytes>0 && bytes<=MAX_BYTES && serial>=lastSeen,"Invalid hosted source frame");
             if(serial==lastSeen && patched==scene)return;
             var png=input.readNBytes(bytes);check(png.length==bytes && input.read()==-1,"Partial frame");

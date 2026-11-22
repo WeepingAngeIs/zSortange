@@ -44,13 +44,41 @@ jobs:
       TRIAL: sharp-horizon-${{ matrix.trial }}
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with: {persist-credentials: false, fetch-depth: 0}
+      - name: Identify matching observations from the previous-JAR control
+        if: matrix.trial == 'old'
+        id: original
+        run: |
+          set -eu
+          base=f963f76dbab04daad175916d59b0fa5ea8e3d9f1
+          # Two native probes only run in new/solo. This exact reviewed HorizonChecks
+          # revision adds candidate-only 96-block GPU and software diagnostics.
+          checks=$(git rev-parse HEAD:fixtures/camera-roles/java/probe/HorizonChecks.java)
+          if [[ "$checks" == fb9fb7729553d854bcba57ca09c0724272b0b1b1 ]] && git merge-base --is-ancestor "$base" HEAD && git diff --quiet "$base" HEAD -- fixtures/camera-roles/java fixtures/camera-roles/resources fixtures/camera-roles/run.py fixtures/camera-roles/fixture.gradle ':!fixtures/camera-roles/java/probe/HostedNativeLens.java' ':!fixtures/camera-roles/java/probe/HostedNativeStage.java' ':!fixtures/camera-roles/java/probe/HorizonChecks.java'; then
+            echo 'reuse=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.original.outputs.reuse == 'true'
+        with:
+          name: observed-old
+          run-id: 45056572165
+          github-token: ${{ github.token }}
+          path: build/role-check/sharp-horizon-old/control
+      - name: Verify the reused baseline receipts
+        if: steps.original.outputs.reuse == 'true'
+        run: |
+          control=build/role-check/sharp-horizon-old/control
+          test -s "$control/PASS.txt"
+          test -s "$control/stock-standard-checker-112-RoomBuilder.png"
+          echo '45056572165 f963f76dbab04daad175916d59b0fa5ea8e3d9f1' > "$control/ORIGINAL_RUN.txt"
       - uses: actions/setup-java@v4
+        if: steps.original.outputs.reuse != 'true'
         with: {distribution: temurin, java-version: '21'}
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.original.outputs.reuse != 'true'
         with: {gradle-version: '8.14.3'}
       - uses: actions/download-artifact@v4
-        if: matrix.trial == 'old'
+        if: matrix.trial == 'old' && steps.original.outputs.reuse != 'true'
         with:
           name: camera-view-check-tools
           run-id: 45050792343
@@ -60,6 +88,7 @@ jobs:
         if: matrix.trial != 'old'
         with: {name: horizon-test-package, path: playable}
       - name: Run one or two real clients with naturally loaded source chunks
+        if: steps.original.outputs.reuse != 'true'
         run: |
           set -eu
           jar="$JAR"
@@ -75,7 +104,7 @@ jobs:
           gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$PWD/playable/$jar" prepareRoleTrial
           python3 -u -B fixtures/camera-roles/run.py "$TRIAL"
       - name: Save authentic captures and the last observed step
-        if: always()
+        if: always() && steps.original.outputs.reuse != 'true'
         run: |
           folder="build/role-check/$TRIAL"
           shopt -s nullglob
@@ -127,9 +156,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
           mkdir -p comparison
-          /usr/bin/python3 -B fixtures/camera-roles/horizon_captures.py | tee comparison/HORIZON.txt
-          /usr/bin/python3 -B fixtures/camera-roles/native_captures.py | tee comparison/NATIVE.txt
           git rev-parse HEAD > comparison/SOURCE_COMMIT.txt
+          result=0
+          /usr/bin/python3 -B fixtures/camera-roles/horizon_captures.py 2>&1 | tee comparison/HORIZON.txt || result=1
+          /usr/bin/python3 -B fixtures/camera-roles/native_captures.py 2>&1 | tee comparison/NATIVE.txt || result=1
+          exit "$result"
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: horizon-comparisons, path: comparison/, retention-days: 14}
