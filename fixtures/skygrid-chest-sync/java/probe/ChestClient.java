@@ -17,6 +17,14 @@ public final class ChestClient {
     private static String sent="";
     private static int ticks;
     private static final Path SERVER=Path.of("../Server");
+    @SubscribeEvent public static void chat(net.neoforged.neoforge.client.event.ClientChatReceivedEvent.System event) throws Exception {
+        if(!"Client".equals(System.getProperty("chest.sync.role")))return;
+        String message=event.getMessage().getString();
+        if(message.contains("No capacity or the destination filter rejects this item"))
+            Files.writeString(SERVER.resolve("rejected-offerFull"),"Real server rejected full destination");
+        if(message.contains("Your main inventory is full"))
+            Files.writeString(SERVER.resolve("rejected-takeFull"),"Real server rejected full player inventory");
+    }
     @SubscribeEvent public static void tick(ClientTickEvent.Post event) throws Exception {
         var game=Minecraft.getInstance();
         if(Files.exists(SERVER.resolve("FAILED")) || Files.exists(SERVER.resolve("upgrade.pass"))){game.stop();return;}
@@ -36,7 +44,7 @@ public final class ChestClient {
         }
         if(!Files.isRegularFile(SERVER.resolve("request")))return;
         String request=Files.readString(SERVER.resolve("request")).trim();
-        if(request.isEmpty() || request.equals("done") || request.equals(sent) && ++ticks<15)return;
+        if(request.isEmpty() || request.equals("done") || Files.exists(SERVER.resolve("rejected-"+request)) || request.equals(sent) && ++ticks<15)return;
         if(request.equals("open")){
             if(game.player.containerMenu!=game.player.inventoryMenu || !game.player.getMainHandItem().is(dev.anya.storage.Content.CUPID_TABLET.get()))return;
             game.gameMode.useItem(game.player,InteractionHand.MAIN_HAND);

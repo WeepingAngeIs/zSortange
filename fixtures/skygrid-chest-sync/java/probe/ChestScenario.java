@@ -27,7 +27,7 @@ public final class ChestScenario {
     static ItemStack TOKEN;
     static final int VIEW=BasePermissions.VIEW, VISIT=BasePermissions.VISIT, BUILD=BasePermissions.BUILD, ALL=BasePermissions.ALL;
     static String phase, label;
-    static int stage, start, now;
+    static int stage, start, now, readySince=-1;
     static ServerPlayer owner, builder, visitor, fresh;
     static UUID roomId, labelledId;
     static PocketLedger.Pocket room;
@@ -49,7 +49,7 @@ public final class ChestScenario {
     static void require(boolean ok,String error){if(!ok)throw new AssertionError(error);}
     static void passed(String detail){evidence.append("PASS ").append(detail).append('\n');}
     static void next(int target,String detail)throws Exception{
-        stage=target;start=now;label=detail;Files.writeString(Path.of("progress.txt"),phase+" stage "+stage+": "+detail+"\n",StandardOpenOption.CREATE,StandardOpenOption.APPEND);
+        stage=target;start=now;readySince=-1;label=detail;Files.writeString(Path.of("progress.txt"),phase+" stage "+stage+": "+detail+"\n",StandardOpenOption.CREATE,StandardOpenOption.APPEND);
     }
     static void request(String verb)throws Exception{Files.writeString(Path.of("request"),verb);}
     static boolean sent(String verb){return Files.isRegularFile(Path.of("sent-"+verb));}
@@ -77,6 +77,18 @@ public final class ChestScenario {
         require(labelled!=null && labelled.storageIdentity().equals(labelledId) && labelled.getItem(3).is(Items.EMERALD) && labelled.getItem(3).getCount()==7,"Legacy labelled chest UUID / emeralds");
         var chest=container(level,oldVanilla());
         require(chest instanceof ChestBlockEntity && chest.getItem(0).is(Items.DIAMOND) && chest.getItem(0).getCount()==11,"Legacy vanilla diamonds");
+    }
+    // No synchronous chunk request, ticking, or mutation. Admission is bounded by the per-stage clock.
+    static boolean ready(ServerLevel level,PocketLedger.Pocket target){
+        if(target==null || target.stage()!=PocketLedger.Stage.READY || level==null){readySince=-1;return false;}
+        for(int x=target.x()>>4;x<=(target.x()+31)>>4;x++)for(int z=target.z()>>4;z<=(target.z()+31)>>4;z++){
+            var chunk=level.getChunkSource().getChunkNow(x,z);
+            if(chunk==null || !chunk.getFullStatus().isOrAfter(net.minecraft.server.level.FullChunkStatus.FULL)){
+                readySince=-1;return false;
+            }
+        }
+        if(readySince<0)readySince=now;
+        return now-readySince>=2;
     }
     static void openEntered(ServerPlayer p){Actors.enter(p,Actors.DOOR);}
     @SubscribeEvent public static void tick(ServerTickEvent.Post event) throws Exception{
@@ -119,7 +131,7 @@ public final class ChestScenario {
             owner.getInventory().selected=0;
             Actors.place(owner,CAM,new ItemStack(CameraDevices.SKY_CAMERA.get()),true);
             openEntered(owner);next(1,"Migrate existing room");
-        }else if(stage==1 && Actors.inside(owner)){
+        }else if(stage==1 && Actors.inside(owner) && ready(inside,room)){
             legacyData(inside);var before=banks(owner,PocketLeases.Kind.VISIT);
             require(storageSize(before)==297 && before.contains(container(inside,oldVanilla())),"Expected 270 labelled slots plus 27 migrated vanilla slots");
             require(!SkyCeiling.enabled(owner,roomId),"Ceiling enabled before selection");
@@ -175,7 +187,7 @@ public final class ChestScenario {
             nearDoor(owner);Actors.standardTablet(owner);owner.setShiftKeyDown(true);Actors.useTop(owner,CAM);owner.setShiftKeyDown(false);openEntered(owner);
             var hub=(StorageEntity)home.getBlockEntity(Actors.HUB);hub.setMember(visitor.getUUID(),0);nearDoor(visitor);remote(visitor);
             next(4,"Confirm explicit camera selection");
-        }else if(stage==4 && Actors.inside(owner)){
+        }else if(stage==4 && Actors.inside(owner) && ready(inside,room)){
             require(PocketService.lease(visitor.getUUID())==null && menu(visitor)==null,"Unauthorized copied tablet opened private bank");
             SkyCeiling.set(owner,roomId,true);require(SkyCeiling.enabled(owner,roomId),"Explicit outdoor camera selection did not permit the owner's live ceiling");SkyCeiling.set(owner,roomId,false);
             passed("Placing a Sky Camera left the ceiling unlinked. Explicit owner tablet selection outdoors enabled the live-ceiling choice on returning. A copied tablet with no grant exposed no pocket menu.");
@@ -189,7 +201,9 @@ public final class ChestScenario {
         }else if(stage==6 && menu(owner)!=null){
             require(!Actors.inside(owner) && menu(owner).capacity()==378,"Expected 270 labelled + 108 ordinary chest slots on outside tablet, got "+menu(owner).capacity());
             request("offerFull");next(7,"Real network deposit with every destination full");
-        }else if(stage==7 && sent("offerFull") && now-start>=35){
+        }else if(stage==7 && Files.isRegularFile(Path.of("rejected-offerFull"))){
+            request("done");next(70,"Drain the completed negative deposit before making space");
+        }else if(stage==70 && now-start>=12){
             var banks=banks(owner,PocketLeases.Kind.REMOTE);require(tokens(banks)==0 && tokens(owner.getInventory())==13,"Rejected full deposit lost or duplicated items");
             container(inside,right()).setItem(4,ItemStack.EMPTY);request("offerSpace");next(8,"Real network stack deposit into the only free slot in second half");
         }else if(stage==8 && sent("offerSpace") && tokens(owner.getInventory())==0){
@@ -198,7 +212,9 @@ public final class ChestScenario {
             request("find");next(9,"Filter to named item");
         }else if(stage==9 && sent("find") && menu(owner)!=null && menu(owner).getSlot(0).getItem().is(Items.AMETHYST_SHARD)){
             request("takeFull");next(10,"Attempt withdrawal with full Survival inventory");
-        }else if(stage==10 && sent("takeFull") && now-start>=35){
+        }else if(stage==10 && Files.isRegularFile(Path.of("rejected-takeFull"))){
+            request("done");next(100,"Drain the completed negative withdrawal before making space");
+        }else if(stage==100 && now-start>=12){
             require(tokens(owner.getInventory())==0 && tokens(container(inside,right()))==13,"Full player inventory changed stored item");
             owner.getInventory().setItem(9,ItemStack.EMPTY);request("takeSpace");next(11,"Withdraw unchanged named stack");
         }else if(stage==11 && sent("takeSpace") && tokens(owner.getInventory())==13){
@@ -243,7 +259,7 @@ public final class ChestScenario {
     static void reload(MinecraftServer server)throws Exception{
         if(stage==0){
             owner=Actors.join(server,"ChestOwner");reloadIds(server);ensureTablet(owner);nearDoor(owner);remote(owner);next(1,"Post-restart external tablet");
-        }else if(stage==1 && menu(owner)!=null){
+        }else if(stage==1 && menu(owner)!=null && ready(PocketService.dimension(server),room)){
             var inside=PocketService.dimension(server);legacyData(inside);var banks=banks(owner,PocketLeases.Kind.REMOTE);
             require(storageSize(banks)==378 && menu(owner).capacity()==378 && container(inside,moved()) instanceof ChestBlockEntity && inside.isEmptyBlock(right()),"Stale topology after restart");
             require(tokens(owner.getInventory())==13 && tokens(banks)==0 && container(inside,left()).getItem(6).getCount()==5,"Restart conservation");
@@ -251,7 +267,7 @@ public final class ChestScenario {
             owner.closeContainer();fresh=Actors.join(server,"FirstTimer");
             var h=Actors.HUB.offset(12,0,0);var door=Actors.DOOR.offset(12,0,0);Actors.setup(server,fresh,h,door);
             roomId=BagInventory.data(fresh.getMainHandItem()).getUUID("PocketId");Actors.enter(fresh,door);next(2,"First-time empty room");
-        }else if(stage==2 && Actors.inside(fresh)){
+        }else if(stage==2 && Actors.inside(fresh) && ready(PocketService.dimension(server),PocketService.ledger(server).get(roomId))){
             room=PocketService.ledger(server).get(roomId);var empty=banks(fresh,PocketLeases.Kind.VISIT);
             require(empty.isEmpty(),"New rooms still contain mandatory starter chests");
             Actors.standardTablet(fresh);fresh.gameMode.useItem(fresh,fresh.serverLevel(),fresh.getMainHandItem(),InteractionHand.MAIN_HAND);

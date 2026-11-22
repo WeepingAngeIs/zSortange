@@ -239,8 +239,10 @@ public final class PocketService {
     public static BlockPos exitPosition(PocketLedger.Pocket p){return new BlockPos(p.x()+16,65,p.z()+28);}
     private static boolean prepare(MinecraftServer server,PocketLedger.Pocket p)throws IOException {
         ServerLevel level=dimension(server);if(level==null)throw new IOException("Pocket dimension missing");
+        // READY describes the saved room. Its existing lease tickets may still be promoting
+        // the four plot chunks to the FULL state used by inventory discovery.
+        if(p.stage()==PocketLedger.Stage.READY)return new LoadedPocketBlocks(level).fullPlot(p);
         for(Ticket t:pocketTickets(p))if(t.dimension().equals(DIMENSION)&&level.getChunkSource().getChunkNow(t.chunk().x,t.chunk().z)==null){level.getChunk(t.chunk().x,t.chunk().z);return false;} // at most one synchronous chunk request per global preparation tick
-        if(p.stage()==PocketLedger.Stage.READY)return true;
         Preparation job=PREPARING.computeIfAbsent(p.id(),id->new Preparation());
         if(!job.began){
             if(p.stage()!=PocketLedger.Stage.RESERVED)throw new IOException("Interrupted preparation cannot be replayed");
@@ -260,7 +262,9 @@ public final class PocketService {
         if(!level.isEmptyBlock(exitPosition(p)))throw new IOException("Exit position changed during preparation; no block was overwritten");
         level.setBlock(exitPosition(p),Blocks.LODESTONE.defaultBlockState(),3);
         level.getChunkSource().save(true); // commit newly built region data before publishing READY
-        ledger.stage(p.id(),PocketLedger.Stage.BUILDING,PocketLedger.Stage.READY);PREPARING.remove(p.id());return true;
+        ledger.stage(p.id(),PocketLedger.Stage.BUILDING,PocketLedger.Stage.READY);
+        PREPARING.remove(p.id());
+        return new LoadedPocketBlocks(level).fullPlot(p);
     }
     private static void arrive(Pending pending,PocketLedger.Pocket pocket)throws IOException {
         ServerPlayer p=pending.player();String denied=authorize(p,pocket,pending.kind(),true,0);if(!denied.isEmpty())throw new IOException(denied);
@@ -294,7 +298,11 @@ public final class PocketService {
             boolean valid=p!=null&&present(p)&&r!=null&&authorize(p,r,l.kind(),pending!=null,0).isEmpty();
             if(valid&&pending==null&&l.kind()==PocketLeases.Kind.REMOTE)valid=p.containerMenu instanceof StoreMenu m&&m.hasPocket(l.pocket());
             if(valid)valid=LEASES.renew(l.player(),r.epoch(),clock,80);
-            if(!valid)endLease(l.player(),p);
+            if(!valid){
+                if(pending!=null && p!=null && clock>=l.deadline())
+                    p.displayClientMessage(Component.literal("Skygrid did not finish loading in time. Try opening it again."),true);
+                endLease(l.player(),p);
+            }
             else if(pending==null && l.kind()==PocketLeases.Kind.VISIT){SkygridWalls.visit(p,r,clock);SkyCeiling.visit(p,r,clock);RoomHologram.visit(p,r,clock);ExitGate.visit(p,r,clock);}
         }
         LEASES.expire(clock);syncTickets(server);
