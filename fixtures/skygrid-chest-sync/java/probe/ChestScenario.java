@@ -98,7 +98,7 @@ public final class ChestScenario {
             if(phase==null){phase=Files.readString(Path.of("phase.txt")).trim();TOKEN=token(13);}
             if(now<40)return;
             var policy=ExpansionRules.get();policy.pocketStorage=true;policy.pocketEditing=true;policy.pocketSessionTicks=2400;
-            if(phase.equals("legacy"))legacy(server);else if(phase.equals("upgrade"))upgrade(server);else if(phase.equals("reload"))reload(server);else throw new AssertionError(phase);
+            if(phase.startsWith("layout-"))ChestLayout.tick(server);else if(phase.equals("legacy"))legacy(server);else if(phase.equals("upgrade"))upgrade(server);else if(phase.equals("reload"))reload(server);else throw new AssertionError(phase);
             if(stage!=0 && stage!=999 && now-start>1300)throw new AssertionError("Timed out at "+label);
         }catch(Throwable error){
             var out=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(out));

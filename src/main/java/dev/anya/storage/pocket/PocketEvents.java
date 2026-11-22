@@ -165,7 +165,10 @@ public final class PocketEvents {
                 var r=l==null?null:PocketService.ledger(p.getServer()).get(l.pocket());
                 if(r!=null&&e.getPos().equals(PocketService.exitPosition(r))){PocketService.recover(p);return;}
             }catch(java.io.IOException ignored){}
-            if(be instanceof StorageEntity chest&&chest.pocketId!=null)PocketService.openChest(p,chest);
+            boolean placingLabelledChest = p.isSecondaryUseActive()
+                    && e.getHand() == net.minecraft.world.InteractionHand.MAIN_HAND
+                    && e.getItemStack().is(Content.CRATE.get().asItem());
+            if(be instanceof StorageEntity chest&&chest.pocketId!=null && !placingLabelledChest)PocketService.openChest(p,chest);
             else if(be instanceof dev.anya.storage.furniture.FurnitureEntity furniture && e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND)
                 dev.anya.storage.furniture.Furniture.use(p,furniture);
             else if(e.getHand()==net.minecraft.world.InteractionHand.MAIN_HAND && e.getItemStack().getItem() instanceof net.minecraft.world.item.BlockItem

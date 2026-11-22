@@ -410,7 +410,9 @@ public final class RoomEditor {
         public String commit(){
             if(p.getServer()==null||!p.getServer().isSameThread()||editing||used)return "Repeated, overlapping or off-thread edit refused";
             used=true;long now=p.serverLevel().getGameTime();
-            if(now-LAST.getOrDefault(p,Long.MIN_VALUE/2)<5)return "Give the last edit a moment, then try again.";
+            // Direct chest placement can follow the next ordinary use. Bound expensive edits to one per player per tick.
+            int minTicks = cell.mode != null && !removal && proposed.is(Content.CRATE.get()) ? 1 : 5;
+            if(now-LAST.getOrDefault(p,Long.MIN_VALUE/2)<minTicks)return "Give the last edit a moment, then try again.";
             if(!plan.current())return "Build rights, view, inventory or world changed; no changes made";
             editing=true;
             try{

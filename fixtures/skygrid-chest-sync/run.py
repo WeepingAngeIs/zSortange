@@ -50,8 +50,13 @@ def run_phase(folder, name, with_client=False):
         if proc.returncode:
             raise RuntimeError(f"{name}: server returned {proc.returncode}")
 
-run_phase(legacy,"legacy")
-shutil.copytree(legacy/"world",current/"world")
-shutil.copyfile(legacy/"ids.txt",current/"ids.txt")
-run_phase(current,"upgrade",True)
-run_phase(current,"reload")
+if os.getenv("SKYGRID_CHEST_LAYOUT") == "true":
+    run_phase(legacy,"layout-baseline")
+    run_phase(current,"layout-play",True)
+    run_phase(current,"layout-restart")
+else:
+    run_phase(legacy,"legacy")
+    shutil.copytree(legacy/"world",current/"world")
+    shutil.copyfile(legacy/"ids.txt",current/"ids.txt")
+    run_phase(current,"upgrade",True)
+    run_phase(current,"reload")

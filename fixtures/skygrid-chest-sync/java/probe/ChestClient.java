@@ -29,6 +29,31 @@ public final class ChestClient {
         var game=Minecraft.getInstance();
         if(Files.exists(SERVER.resolve("FAILED")) || Files.exists(SERVER.resolve("upgrade.pass"))){game.stop();return;}
         if(game.player==null || game.gameMode==null)return;
+        if(Files.exists(SERVER.resolve("layout-play.pass"))){game.stop();return;}
+        if("Builder".equals(System.getProperty("chest.sync.role")) && Files.isRegularFile(SERVER.resolve("layout-shift"))){
+            boolean active=!Files.exists(SERVER.resolve("layout-unshift"));
+            game.options.keyShift.setDown(active);
+            Path aim=SERVER.resolve("layout-attach");
+            if(active && Files.isRegularFile(aim) && !Files.exists(SERVER.resolve("layout-sent")) &&
+                    game.player.getMainHandItem().is(dev.anya.storage.Content.CRATE.get().asItem())){
+                String location=Files.readString(aim).strip();if(location.isEmpty())return;
+                var target=net.minecraft.core.BlockPos.of(Long.parseLong(location));
+                if(game.player.pick(game.player.blockInteractionRange(),1,false) instanceof net.minecraft.world.phys.BlockHitResult hit &&
+                        hit.getType()==net.minecraft.world.phys.HitResult.Type.BLOCK && hit.getBlockPos().equals(target) &&
+                        hit.getDirection()==net.minecraft.core.Direction.SOUTH && game.player.isSecondaryUseActive()){
+                    game.gameMode.useItemOn(game.player,InteractionHand.MAIN_HAND,hit);
+                    game.player.swing(InteractionHand.MAIN_HAND);
+                    Files.writeString(SERVER.resolve("layout-sent"),"Client sent crouched use on labelled south face");
+                }
+            }
+            return;
+        }
+        if("Client".equals(System.getProperty("chest.sync.role")) && Files.isRegularFile(SERVER.resolve("layout-expect")) &&
+                game.player.containerMenu instanceof StoreMenu layout && layout.filteredView() && !Files.exists(SERVER.resolve("layout-seen"))){
+            var expected=Files.readAllLines(SERVER.resolve("layout-expect"));
+            if(!expected.isEmpty() && ChestLayout.shown(layout).equals(expected))
+                Files.writeString(SERVER.resolve("layout-seen"),"All named stacks and exact counts visible on client");
+        }
         if("Builder".equals(System.getProperty("chest.sync.role"))){
             Path job=SERVER.resolve("guest-place"),ack=SERVER.resolve("guest-placed");
             if(Files.exists(ack) || !Files.isRegularFile(job) || !game.player.getMainHandItem().is(Items.CHEST))return;
