@@ -80,7 +80,7 @@ final class CameraPicture {
                 int code = neighbour < 0 ? scene.backdrop()[i] : neighbour;
                 if (code < 2 || code == CameraScene.ATMOSPHERE) continue;
                 if (cell < 0 || neighbour < 0) {
-                    if (anchor == null || !adjacentOnPlane(anchor, faces.get(code - 2))) continue;
+                    if (anchor == null || !CameraScene.adjacentOnPlane(anchor, faces.get(code - 2))) continue;
                     besideActor = true;
                 }
                 count = include(indices, count, code - 2);
@@ -91,21 +91,39 @@ final class CameraPicture {
         // server actually sent, in the same plane and touching this independently verified one.
         if (besideActor && anchor != null) {
             for (int i = 0; i < faces.size(); i++)
-                if (adjacentOnPlane(anchor, faces.get(i))) count = include(indices, count, i);
+                if (CameraScene.adjacentOnPlane(anchor, faces.get(i))) count = include(indices, count, i);
         }
         return count;
-    }
-
-    private static boolean adjacentOnPlane(CameraScene.Surface a, CameraScene.Surface b) {
-        if (a.face() != b.face() || a.plane() != b.plane()) return false;
-        int dx = a.x() - b.x(), dy = a.y() - b.y(), dz = a.z() - b.z();
-        return a.face().getAxis().choose(dx, dy, dz) == 0 && Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && Math.abs(dz) <= 1;
     }
 
     private static int include(int[] indices, int count, int index) {
         for (int i = 0; i < count; i++) if (indices[i] == index) return count;
         if (count < indices.length) indices[count++] = index;
         return count;
+    }
+
+    static int quadrant(int localX, int localY, int tile) {
+        return (localY < tile / 2 ? 0 : 2) + (localX < tile / 2 ? 0 : 1);
+    }
+
+    /** Bind each supplemental source ray only to its own quarter of the source cell. */
+    static void edgeFaces(CameraScene scene, int cell, int[] base, int count, int[] edges) {
+        int backing = scene.cells()[cell] < 0 ? scene.backdrop()[cell] : scene.cells()[cell];
+        for (int q = 0; q < 4; q++) {
+            int proof = scene.edgeBackdrop()[cell * 4 + q];
+            edges[q] = proof < 0 ? -1 : 0;
+            if (backing < 2 || backing == CameraScene.ATMOSPHERE
+                    || proof < 2 || proof == CameraScene.ATMOSPHERE || proof == backing) continue;
+            var anchor = scene.surfaces().get(backing - 2);
+            var adjoining = scene.surfaces().get(proof - 2);
+            for (int i = 0; i < count; i++) {
+                var surface = scene.surfaces().get(base[i]);
+                if (CameraScene.adjacentOnPlane(anchor, surface) && CameraScene.sharesEdge(surface, adjoining)) {
+                    edges[q] = proof;
+                    break;
+                }
+            }
+        }
     }
 
     private static void drawScene(CameraScene scene, NativeImage out) {
@@ -118,7 +136,7 @@ final class CameraPicture {
             surfaces[i] = new ProjectedSurface(s, facets, scene);
         }
         int grid = CameraScene.SIDE, tile = SIZE / grid;
-        int[] cells = scene.cells(), neighbours = new int[MAX_NEIGHBOURS];
+        int[] cells = scene.cells(), neighbours = new int[MAX_NEIGHBOURS], edges = new int[4];
         Vec3 eye = scene.eye(), forward = scene.forward(), up = scene.up(), right = scene.right();
         double stepX = right.x * 2 / SIZE, stepY = right.y * 2 / SIZE, stepZ = right.z * 2 / SIZE;
         for (int row = 0; row < grid; row++) for (int col = 0; col < grid; col++) {
@@ -129,6 +147,7 @@ final class CameraPicture {
             }
             int count = nearbyFaces(scene, row, col, neighbours);
             int backing = cell < 0 ? scene.backdrop()[row * grid + col] : cell;
+            edgeFaces(scene, row * grid + col, neighbours, count, edges);
             double u = (startX + .5) * 2 / SIZE - 1;
             for (int y = startY; y < startY + tile; y++) {
                 double v = 1 - (y + .5) * 2 / SIZE;
@@ -136,10 +155,16 @@ final class CameraPicture {
                 double dy = forward.y + u * right.y + v * up.y;
                 double dz = forward.z + u * right.z + v * up.z;
                 for (int x = startX; x < startX + tile; x++, dx += stepX, dy += stepY, dz += stepZ) {
+                    int edge = edges[quadrant(x - startX, y - startY, tile)];
+                    if (edge < 0) {
+                        depth[y * SIZE + x] = 0;
+                        out.setPixelRGBA(x, y, MASK);
+                        continue;
+                    }
                     double nearest = Double.POSITIVE_INFINITY;
                     int color = 0;
-                    for (int i = 0; i < count; i++) {
-                        var face = surfaces[neighbours[i]];
+                    for (int i = 0; i < count + (edge >= 2 ? 1 : 0); i++) {
+                        var face = surfaces[i == count ? edge - 2 : neighbours[i]];
                         double scale = face.intersection(dx, dy, dz);
                         if (!(scale > 0 && scale < nearest)) continue;
                         int sample = face.sample(eye.x + dx * scale, eye.y + dy * scale, eye.z + dz * scale);

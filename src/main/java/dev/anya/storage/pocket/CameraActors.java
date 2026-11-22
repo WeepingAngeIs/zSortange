@@ -127,6 +127,7 @@ final class CameraActors {
                     int x0 = cell % side * size / side, y0 = cell / side * size / side;
                     int x1 = (cell % side + 1) * size / side, y1 = (cell / side + 1) * size / side;
                     for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) {
+                        if (scene.edgeBackdrop()[cell * 4 + CameraPicture.quadrant(x - x0, y - y0, x1 - x0)] < 0) continue;
                         int glY = size - 1 - y;
                         int pixel = readback.getPixelRGBA(x, glY);
                         if ((pixel >>> 24) <= 127) continue;

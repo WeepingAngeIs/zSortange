@@ -16,10 +16,10 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 /** A visible-surface observation local to the lens. The only absolute position is the viewer's monitor. */
 public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sky, float rain, float thunder,
                           Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
-                          List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop) implements CustomPacketPayload {
+                          List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop, int[] edgeBackdrop) implements CustomPacketPayload {
     public static final int SIDE = 32, ATMOSPHERE = Short.MAX_VALUE;
-    static final int MAX_SURFACES = 512, MAX_ACTORS = 6;
-    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v2"));
+    static final int MAX_SURFACES = 512, MAX_ACTORS = 6, MAX_EDGE_CELLS = 48;
+    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v3"));
     public static BiConsumer<Connection, CameraScene> receiver = (connection, scene) -> {};
 
     public record Surface(int stateId, int x, int y, int z, Direction face, float plane,
@@ -27,16 +27,37 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
     public record Actor(int typeId, Vec3 feet, float yaw, float headYaw, float pitch, float phase, float speed,
                         int skyLight, int blockLight) {}
 
+    static boolean adjacentOnPlane(Surface a, Surface b) {
+        int dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z;
+        return a.face==b.face && a.plane==b.plane && a.face.getAxis().choose(dx,dy,dz)==0
+                && Math.abs(dx)<=1 && Math.abs(dy)<=1 && Math.abs(dz)<=1;
+    }
+
+    /** Unit-face rectangles must share a line segment, not merely a corner or projected pixels. */
+    static boolean sharesEdge(Surface a, Surface b) {
+        Direction.Axis aa=a.face.getAxis(), ba=b.face.getAxis();
+        if(aa==ba || !outwardBoundary(a) || !outwardBoundary(b))return false;
+        int bp=aa.choose(b.x,b.y,b.z), ap=ba.choose(a.x,a.y,a.z);
+        if((a.plane!=bp && a.plane!=bp+1) || (b.plane!=ap && b.plane!=ap+1))return false;
+        if(aa!=Direction.Axis.X && ba!=Direction.Axis.X)return a.x==b.x;
+        if(aa!=Direction.Axis.Y && ba!=Direction.Axis.Y)return a.y==b.y;
+        return a.z==b.z;
+    }
+    private static boolean outwardBoundary(Surface s) {
+        int origin=s.face.getAxis().choose(s.x,s.y,s.z);
+        return s.plane==origin+(s.face.getAxisDirection()==Direction.AxisDirection.POSITIVE?1:0);
+    }
+
     @Override public Type<CameraScene> type() { return TYPE; }
 
     static CameraScene empty(BlockPos monitor) {
         return new CameraScene(monitor, -1, 0, null, 0, 0, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO,
-                List.of(), List.of(), new int[0], new int[0]);
+                List.of(), List.of(), new int[0], new int[0], new int[0]);
     }
 
     static void register(RegisterPayloadHandlersEvent event) {
         StreamCodec<RegistryFriendlyByteBuf, CameraScene> codec = StreamCodec.ofMember(CameraScene::write, CameraScene::read);
-        event.registrar("sharpcamera2").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
+        event.registrar("sharpcamera3").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
     }
 
     private void write(RegistryFriendlyByteBuf out) {
@@ -68,6 +89,19 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
             out.writeShort(cells[i]);
             if(cells[i]<0) out.writeShort(backdrop[i]);
         }
+        // Sparse by angular cell. Four signed refs at most per cell, ordered TL,TR,BL,BR.
+        int refined=0;
+        for(int i=0;i<cells.length;i++)if(hasEdgeProof(edgeBackdrop,i))refined++;
+        out.writeByte(refined);
+        for(int i=0;i<cells.length;i++)if(hasEdgeProof(edgeBackdrop,i)){
+            out.writeShort(i);
+            for(int q=0;q<4;q++)out.writeShort(edgeBackdrop[4*i+q]);
+        }
+    }
+
+    private static boolean hasEdgeProof(int[] refs,int cell) {
+        int i=cell*4;
+        return refs[i]!=0 || refs[i+1]!=0 || refs[i+2]!=0 || refs[i+3]!=0;
     }
 
     private static CameraScene read(RegistryFriendlyByteBuf in) {
@@ -108,7 +142,20 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
                 backdrop[i]=back==ATMOSPHERE?back:bounded(back,surfaces.size()+1);
             }
         }
-        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop);
+        int[] edge=new int[cells.length*4];
+        int refined=bounded(in.readUnsignedByte(),MAX_EDGE_CELLS), previous=-1;
+        for(int n=0;n<refined;n++){
+            int i=bounded(in.readUnsignedShort(),cells.length-1);
+            int base=cells[i]<0?backdrop[i]:cells[i];
+            if(i<=previous || base<2 || base==ATMOSPHERE)throw new IllegalArgumentException("Unexpected camera edge");
+            previous=i;
+            for(int q=0;q<4;q++){
+                int code=in.readShort();
+                if(code< -1 || code==1 || code>=surfaces.size()+2)throw new IllegalArgumentException("Unknown edge surface");
+                edge[4*i+q]=code;
+            }
+        }
+        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop,edge);
     }
 
     private static int bounded(int value,int max) {

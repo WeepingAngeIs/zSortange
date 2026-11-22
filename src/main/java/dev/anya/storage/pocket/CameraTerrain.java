@@ -135,6 +135,7 @@ final class CameraTerrain {
         int grid = CameraScene.SIDE, size = out.getWidth(), tile = size / grid;
         int[] samples = scene.cells();
         int[] indices = new int[CameraPicture.MAX_NEIGHBOURS];
+        int[] edges = new int[4];
         CameraScene.Surface[] neighbours = new CameraScene.Surface[indices.length];
         var eye = scene.eye();
         var forward = scene.forward();
@@ -150,10 +151,18 @@ final class CameraTerrain {
             int backing = cell < 0 ? scene.backdrop()[index] : cell;
             int count = CameraPicture.nearbyFaces(scene, row, col, indices);
             for (int i = 0; i < count; i++) neighbours[i] = scene.surfaces().get(indices[i]);
+            CameraPicture.edgeFaces(scene, index, indices, count, edges);
             for (int y = sy; y < sy + tile; y++) {
                 double ny = 1 - (y + .5) * 2 / size;
                 int glY = size - 1 - y;
                 for (int x = sx; x < sx + tile; x++) {
+                    int edge = edges[CameraPicture.quadrant(x - sx, y - sy, tile)];
+                    if (edge < 0) {
+                        sceneDepth[y * size + x] = 0;
+                        out.setPixelRGBA(x, y, CameraPicture.MASK);
+                        continue;
+                    }
+                    var adjoining = edge >= 2 ? scene.surfaces().get(edge - 2) : null;
                     double nx = (x + .5) * 2 / size - 1;
                     double dx = forward.x + nx * right.x + ny * up.x;
                     double dy = forward.y + nx * right.y + ny * up.y;
@@ -161,7 +170,7 @@ final class CameraTerrain {
                     int sample = color.getPixelRGBA(x, glY);
                     float z = depth.get(glY * size + x);
                     float distance = NEAR * FAR / (FAR - z * (FAR - NEAR));
-                    if ((sample >>> 24) >= 32 && z < 1 && matches(neighbours, count,
+                    if ((sample >>> 24) >= 32 && z < 1 && matches(neighbours, count, adjoining,
                             eye.x + dx * distance, eye.y + dy * distance, eye.z + dz * distance)) {
                         sceneDepth[y * size + x] = distance;
                         out.setPixelRGBA(x, y, sample | 0xff000000);
@@ -175,9 +184,9 @@ final class CameraTerrain {
     }
 
     /** Depth unprojects to a unique point. A face visible in a different part of the image is insufficient. */
-    private static boolean matches(CameraScene.Surface[] faces, int count, double x, double y, double z) {
-        for (int i = 0; i < count; i++) {
-            var s = faces[i];
+    private static boolean matches(CameraScene.Surface[] faces, int count, CameraScene.Surface adjoining, double x, double y, double z) {
+        for (int i = 0; i < count + (adjoining == null ? 0 : 1); i++) {
+            var s = i == count ? adjoining : faces[i];
             if (Math.abs(s.face().getAxis().choose(x, y, z) - s.plane()) <= .010
                     && x >= s.x() - .001 && x <= s.x() + 1.001
                     && y >= s.y() - .001 && y <= s.y() + 1.001

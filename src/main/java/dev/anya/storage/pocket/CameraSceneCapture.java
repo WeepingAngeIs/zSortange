@@ -130,6 +130,8 @@ final class CameraSceneCapture {
                 if(actor<0){backdrop[i]=cells[i];cells[i]=actor;}
             }
         }
+        List<CameraScene.Surface> palette=List.copyOf(faces.keySet());
+        int[] edge=cornerBackdrops(cells,backdrop,palette,forward,right,up);
         List<CameraScene.Actor> actors=new ArrayList<>(visibleActors.size());
         for(LivingEntity entity : visibleActors.keySet()) {
             // A claim callback during observation may have hidden a player or removed a mob.
@@ -139,7 +141,56 @@ final class CameraSceneCapture {
         }
         return new CameraScene(monitor,level.getDayTime(),(int)(level.getGameTime()&0xffff),sky,wet?level.getRainLevel(1):0,
                 wet?level.getThunderLevel(1):0,eye.subtract(origin),forward,right,up,
-                List.copyOf(faces.keySet()),List.copyOf(actors),cells,backdrop);
+                palette,List.copyOf(actors),cells,backdrop,edge);
+    }
+
+    /** Refine only cells beside a visible actor and an already seen physical wall/floor corner.
+     * These are backdrop queries: terrain must already have been seen independently, all claims
+     * on this actual quadrant ray must also pass and occluding terrain cannot be traversed. */
+    private int[] cornerBackdrops(int[] cells,int[] backs,List<CameraScene.Surface> palette,Vec3 forward,Vec3 right,Vec3 up) {
+        int side=CameraScene.SIDE, used=0;
+        int[] edge=new int[cells.length*4];
+        if(visibleActors.isEmpty())return edge;
+        var coplanar=new HashMap<CameraScene.Surface,List<CameraScene.Surface>>();
+        for(int i=0;i<cells.length && used<CameraScene.MAX_EDGE_CELLS;i++){
+            int ref=cells[i]<0?backs[i]:cells[i];
+            if(ref<2 || ref==CameraScene.ATMOSPHERE)continue;
+            int x=i%side, y=i/side, minX=Math.max(0,x-1), maxX=Math.min(side-1,x+1);
+            int minY=Math.max(0,y-1), maxY=Math.min(side-1,y+1);
+            boolean besideActor=false;
+            for(int r=minY;r<=maxY && !besideActor;r++)for(int c=minX;c<=maxX;c++)
+                if(cells[r*side+c]<0){besideActor=true;break;}
+            if(!besideActor)continue;
+            var base=palette.get(ref-2);
+            var adjoining=coplanar.computeIfAbsent(base,a->palette.stream().filter(b->CameraScene.adjacentOnPlane(a,b)).toList());
+            boolean corner=false;
+            for(int r=minY;r<=maxY && !corner;r++)for(int c=minX;c<=maxX;c++){
+                int n=r*side+c, other=cells[n]<0?backs[n]:cells[n];
+                if(other>=2 && other!=CameraScene.ATMOSPHERE && touchesCorner(adjoining,palette.get(other-2))){
+                    corner=true;break;
+                }
+            }
+            if(!corner)continue;
+            used++;
+            for(int q=0;q<4;q++){
+                double sx=x+((q&1)==0?1.0/6:5.0/6), sy=y+(q<2?1.0/6:5.0/6);
+                Vec3 ray=forward.add(right.scale(2*sx/side-1)).add(up.scale(1-2*sy/side)).normalize();
+                var actor=nearestActor(ray,eye.add(ray.scale(REACH)),false);
+                int proof=trace(ray,x,y,null,true,actor);
+                // Only look up the previously exposed backdrop behind this very actor. An
+                // unrelated body in front of a neighbouring tile is a conservative mask.
+                if(proof<0 && proof==cells[i])proof=trace(ray,x,y,null,true,null);
+                if(proof<2 || proof==CameraScene.ATMOSPHERE){edge[4*i+q]=-1;continue;}
+                var surface=palette.get(proof-2);
+                edge[4*i+q]=CameraScene.adjacentOnPlane(base,surface) || touchesCorner(adjoining,surface)?proof:-1;
+            }
+        }
+        return edge;
+    }
+
+    private static boolean touchesCorner(List<CameraScene.Surface> adjoining,CameraScene.Surface other) {
+        for(var known:adjoining)if(CameraScene.sharesEdge(known,other))return true;
+        return false;
     }
 
     private static int centerFirst(int i,int side) {return side/2+((i&1)==0?i/2:-(i+1)/2);}
@@ -222,6 +273,7 @@ final class CameraSceneCapture {
             }
             if(entity!=null && pos.equals(entity.cell) && (hit==null
                     || eye.distanceToSqr(entity.point)<eye.distanceToSqr(hit.getLocation()))) {
+                if(background && !visibleActors.containsKey(entity.entity))return 0;
                 return -1-visibleActors.computeIfAbsent(entity.entity,ignored->visibleActors.size());
             }
             if(hit==null)return null;
