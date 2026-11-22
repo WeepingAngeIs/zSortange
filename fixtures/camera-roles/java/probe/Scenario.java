@@ -192,6 +192,27 @@ public final class Scenario {
     }
     private static final BlockPos SOURCE=new BlockPos(168,82,8);
     private static net.minecraft.world.entity.animal.Cow sharpCow;
+    private static void fixtureRoof(boolean present){
+        for(var cell:BlockPos.betweenClosed(SOURCE.offset(-5,3,-8),SOURCE.offset(5,3,1))){
+            if(present)check(home.getBlockState(cell).isAir(),"Fixture roof would replace an existing block");
+            home.setBlockAndUpdate(cell,(present?Blocks.SPRUCE_PLANKS:Blocks.AIR).defaultBlockState());
+        }
+    }
+    private static boolean tracked(int z){
+        return home.getChunkSource().getChunkNow(SOURCE.getX()>>4,z)!=null;
+    }
+    private static int frontierDistance;
+    private static void moveToFrontier(){
+        // Measure the outdoor player's actual vanilla loaded radius. Room viewing must not add to it.
+        int distance=1;
+        while(distance<15 && tracked(-distance))distance++;
+        check(distance<15,"Could not locate the native tracking frontier");
+        frontierDistance=distance-1;
+        moveObserverSouth();
+    }
+    private static void moveObserverSouth(){
+        player(BUILDER).connection.teleport(SOURCE.getX()+.5,-59,SOURCE.getZ()+.5+frontierDistance*16,180,0);
+    }
 
     private static void wallScene(Block center) {
         for(int x=-6;x<=6;x++)for(int y=-1;y<=2;y++) {
@@ -255,6 +276,12 @@ public final class Scenario {
             });
         }
         sharpView("large-day","clear");
+        if(!OLD_PICTURE){
+            sharpView("day-open-atmosphere","open-sky");
+            verify("deny-air-between-lens-and-the-visible-sky",()->StudioEvidence.denied=SOURCE.above().north());
+            sharpView("upper-foreground-denied","shadow-sky");
+            verify("clear-foreground-denial",()->StudioEvidence.denied=null);
+        }
         verify("replace-stone-with-same-map-color-stone-bricks",()->{
             check(Blocks.STONE.defaultBlockState().getMapColor(home,SOURCE).col==Blocks.STONE_BRICKS.defaultBlockState().getMapColor(home,SOURCE).col,"Map colors differ");
             wallScene(Blocks.STONE_BRICKS);
@@ -282,23 +309,53 @@ public final class Scenario {
                 other.setYHeadRot(-45);other.yBodyRot=-45;
             });
             sharpView("large-player","player");
+            if(!OLD_PICTURE)sharpView("clear-repeat","player");
             if(!OLD_PICTURE)sharpView("terrain-renderer-comparison","renderer-compare");
             sharpReference("reference-day");
+            if(!OLD_PICTURE)sharpView("stock-lens-on-the-indoor-wall","reference-transfer");
+            if(!OLD_PICTURE){
+                verify("outside-actors-location-becomes-private",()->StudioEvidence.denied=player(BUILDER).blockPosition());
+                sharpView("private-outdoor-player","actor-denied");
+                verify("clear-the-actor-location-veto",()->StudioEvidence.denied=null);
+            }
             verify("restore-oblique-player-yaw",()->{
                 var p=player(BUILDER);p.connection.teleport(p.getX(),p.getY(),p.getZ(),-45,0);p.setYHeadRot(-45);p.yBodyRot=-45;
             });
             verify("outside-player-becomes-invisible",()->player(BUILDER).addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.INVISIBILITY,1200,0,false,false)));
             sharpView("large-invisible","invisible");
+            sharpReference("reference-invisible");
             verify("restore-outside-visibility",()->player(BUILDER).removeEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY));
         }
         step("start-rain-at-the-outdoor-lens",()->home.setWeatherParameters(0,24000,true,false),()->home.getRainLevel(1)>.93f);
         sharpView("large-rain","rain");sharpReference("reference-rain");
+        if(!OLD_PICTURE){
+            sharpView("rain-repeat","rain");
+            sharpView("rain-third","rain");
+            verify("build-an-opaque-roof-over-the-lens",()->fixtureRoof(true));
+            sharpView("rain-under-roof","roof");
+            verify("remove-the-fixture-roof",()->fixtureRoof(false));
+        }
         step("clear-rain-and-switch-to-midnight",()->{home.setWeatherParameters(24000,0,false,false);home.setDayTime(18000);},()->home.getRainLevel(1)<.03f);
         sharpView("large-night","night");sharpReference("reference-night");
         verify("source-claim-denies-this-viewer",()->StudioEvidence.denied=SOURCE);
         sharpView("claim-denied","unavailable");
         verify("allow-lens-in-daylight-again",()->{StudioEvidence.denied=null;home.setDayTime(6000);});
         sharpView("restored-after-claim","restored");
+        if(!SOLO && !OLD_PICTURE){
+            step("keep-the-lens-loaded-at-the-outdoor-players-actual-tracking-edge",Scenario::moveToFrontier,()->{
+                int elapsed=server.getTickCount()-started;
+                if(elapsed<160)return false;
+                if(tracked(0) && !tracked(-1))return true;
+                if(elapsed%160==0){
+                    frontierDistance+=tracked(0)?1:-1;
+                    check(frontierDistance>=2&&frontierDistance<=12,"No natural source tracking frontier");
+                    moveObserverSouth();
+                }
+                return false;
+            });
+            sharpView("unloaded-foreground","edge-sky");
+            verify("monitor-did-not-load-the-unobserved-frontier",()->check(tracked(0) && !tracked(-1),"Camera pulled in a missing foreground chunk"));
+        }
         step("remove-outdoor-load-cause",()->{
             home.setDefaultSpawnPos(HUB,0);home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(2,server);
             if(!SOLO)player(BUILDER).connection.teleport(HUB.getX()+3,81,HUB.getZ()+3,0,0);

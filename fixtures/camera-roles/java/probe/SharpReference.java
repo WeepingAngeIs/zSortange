@@ -2,12 +2,14 @@ package probe;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.pipeline.TextureTarget;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.anya.storage.pocket.CameraDevices;
 import dev.anya.storage.pocket.CameraFeed;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -55,14 +57,18 @@ final class SharpReference {
             var lens = new Lens();
             lens.at(mc,(Vec3)eyeMethod.invoke(null,camera),(Direction)aimMethod.invoke(null,camera));
             var view = new Matrix4f().rotation(lens.rotation().conjugate(new Quaternionf()));
-            var perspective = new Matrix4f().perspective((float)Math.PI / 2,1,.05f,128);
+            int width=primary.width,height=primary.height;
+            if(width<height)throw new IOException("Fixture expects a landscape client");
+            var perspective = new Matrix4f().perspective((float)Math.PI / 2,(float)width/height,.05f,128);
             // LevelRenderer internally rebinds getMainRenderTarget() after outline/translucent passes.
             // Redirect that field only inside this disposable client render and restore it in finally.
             var main = Minecraft.class.getDeclaredField("mainRenderTarget");
             var frustum = LevelRenderer.class.getDeclaredField("cullingFrustum");
             main.setAccessible(true); frustum.setAccessible(true);
             Object oldFrustum = frustum.get(mc.levelRenderer);
-            second = new TextureTarget(512,512,true,Minecraft.ON_OSX);
+            // Use the real window dimensions: stock entity/weather passes can reset the viewport
+            // to the window even while another framebuffer is bound. Crop the centered 90° square.
+            second = new TextureTarget(width,height,true,Minecraft.ON_OSX);
             try {
                 main.set(mc,second);
                 if (mc.getMainRenderTarget()!=second) throw new IOException("World renderer target was not redirected");
@@ -70,11 +76,24 @@ final class SharpReference {
                 RenderSystem.setProjectionMatrix(perspective,VertexSorting.DISTANCE_TO_ORIGIN);
                 second.bindWrite(true);
                 mc.levelRenderer.prepareCullFrustum(lens.getPosition(),view,perspective);
+                mc.getEntityRenderDispatcher().prepare(mc.level,lens,null);
+                mc.getBlockEntityRenderDispatcher().prepare(mc.level,lens,null);
                 mc.getProfiler().push("hosted_camera_reference");
                 try {
                     mc.levelRenderer.renderLevel(mc.getTimer(),false,lens,mc.gameRenderer,mc.gameRenderer.lightTexture(),view,perspective);
                 } finally { mc.getProfiler().pop(); }
-                try (var result=Screenshot.takeScreenshot(second)) { result.writeToFile(image); }
+                try(var result=Screenshot.takeScreenshot(second);var square=new NativeImage(height,height,false)){
+                    int left=(width-height)/2;
+                    for(int y=0;y<height;y++)for(int x=0;x<height;x++)square.setPixelRGBA(x,y,result.getPixelRGBA(left+x,y));
+                    square.writeToFile(image);
+                }
+                Vec3 rel=mc.player.position().add(0,.9,0).subtract(lens.getPosition());
+                var approach=Vec3.atLowerCornerOf(((Direction)aimMethod.invoke(null,camera)).getNormal());
+                var right=approach.cross(new Vec3(0,1,0)).normalize();
+                var up=right.cross(approach).normalize();
+                double distance=rel.dot(approach);
+                Files.writeString(image.resolveSibling(image.getFileName()+".actor.json"),Orders.JSON.toJson(
+                        new double[]{.5+.5*rel.dot(right)/distance,.5-.5*rel.dot(up)/distance}));
             } finally {
                 main.set(mc,primary);
                 frustum.set(mc.levelRenderer,oldFrustum);

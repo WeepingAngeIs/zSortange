@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 55
     env:
       OLD: anya-storage-plus-0.3.0-beta.7-chestplacement.1.jar
-      NEW: anya-storage-plus-0.3.0-beta.7-sharpcam.1.jar
+      NEW: anya-storage-plus-0.3.0-beta.7-sharpcam.2.jar
       LIBGL_ALWAYS_SOFTWARE: '1'
       ALSOFT_DRIVERS: 'null'
       LP_NUM_THREADS: '2'
@@ -79,6 +79,6 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-sharpcam.1
+          name: anya-storage-plus-sharpcam.2
           path: upload/
           retention-days: 14

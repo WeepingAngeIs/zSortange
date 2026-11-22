@@ -53,7 +53,7 @@ final class CameraPicture {
         if (pixels == null || scene.cells().length != CameraScene.SIDE * CameraScene.SIDE) return null;
         hardware = !forceSoftware && CameraTerrain.draw(scene, pixels, depth);
         if (!hardware) drawScene(scene, pixels);
-        CameraActors.draw(scene, pixels);
+        CameraActors.draw(scene, pixels, depth);
         drawRain(scene, pixels);
         texture.upload();
         rendered = scene;
@@ -86,12 +86,11 @@ final class CameraPicture {
             // adjacent allowed sample. Gather only faces actually visible in this 3x3 neighborhood.
             int count = 0;
             int backing = cell < 0 ? scene.backdrop()[row * grid + col] : cell;
-            boolean sky = backing == 1;
             if (cell < 0) {
                 // An animal's bounding box precedes a background ray. Only its independently
                 // observed backdrop may show between the legs or around the actual model.
-                if (backing >= 2) neighbours[count++] = backing - 2;
-            } else {
+                if (backing >= 2 && backing != CameraScene.ATMOSPHERE) neighbours[count++] = backing - 2;
+            } else if (cell != CameraScene.ATMOSPHERE) {
                 for (int r = Math.max(0, row - 1); r <= Math.min(grid - 1, row + 1); r++) {
                     for (int c = Math.max(0, col - 1); c <= Math.min(grid - 1, col + 1); c++) {
                         int index = cells[r * grid + c] - 2;
@@ -120,7 +119,7 @@ final class CameraPicture {
                         nearest = scale;
                         color = sample;
                     }
-                    if (color == 0) color = sky && scene.sky() != null ? sky(scene.sky(), dx, dy, dz) : MASK;
+                    if (color == 0) color = background(scene.sky(), backing, dx, dy, dz);
                     depth[y * SIZE + x] = (float)nearest;
                     out.setPixelRGBA(x, y, color);
                 }
@@ -128,9 +127,12 @@ final class CameraPicture {
         }
     }
 
-    static int sky(SourceSky sky, double dx, double dy, double dz) {
-        int sample = sky.direction(new Vec3(dx, dy, dz));
-        int rgb = SkyglassPixels.color(sample, sky.background(), sky.clarity());
+    static int background(SourceSky sky, int code, double dx, double dy, double dz) {
+        if (sky == null || (code != 1 && code != CameraScene.ATMOSPHERE)) return MASK;
+        // Open air to the local range limit proves the ambient color only. Celestial sprites
+        // require the server's independent authorization along the remaining line to the sky.
+        int rgb = sky.background();
+        if (code == 1) rgb = SkyglassPixels.color(sky.direction(new Vec3(dx, dy, dz)), rgb, sky.clarity());
         return 0xff000000 | (rgb & 255) << 16 | (rgb & 0xff00) | rgb >>> 16;
     }
 
@@ -251,7 +253,9 @@ final class CameraPicture {
         }
     }
 
-    /** Draw nearby precipitation in the outdoor lens volume, occluded by nearer scene surfaces. */
+    private static final double[] RAIN_DISTANCE = {.8, 1.55, 2.7, 4.5};
+
+    /** Sample the entire rain sheet on four vertical shells in front of the exterior lens. */
     private static void drawRain(CameraScene scene, NativeImage out) {
         if (!(scene.rain() > .01f)) return;
         if (!rainTried) {
@@ -262,34 +266,50 @@ final class CameraPicture {
             } catch (java.io.IOException unavailable) { return; }
         }
         if (rainTexture == null) return;
-        var random = RandomSource.create(8141);
-        int drops = (int)(scene.rain() * 900);
-        var clientLevel = Minecraft.getInstance().level;
-        long rainTick = clientLevel == null ? scene.time() : clientLevel.getGameTime();
-        for (int i = 0; i < drops; i++) {
-            double x = (random.nextDouble() - .5) * 10;
-            double z = (random.nextDouble() - .5) * 10;
-            double y = 4 - ((random.nextDouble() * 8 + Math.floorMod(rainTick, 160) * .25) % 8);
-            float u = random.nextFloat();
-            double distance = x * scene.forward().x + y * scene.forward().y + z * scene.forward().z;
-            if (distance < .6) continue;
-            double nx = (x * scene.right().x + y * scene.right().y + z * scene.right().z) / (distance * scene.right().lengthSqr());
-            double ny = (x * scene.up().x + y * scene.up().y + z * scene.up().z) / (distance * scene.up().lengthSqr());
-            int px = (int)((nx + 1) * SIZE * .5), py = (int)((1 - ny) * SIZE * .5);
-            int length = Math.clamp((int)(SIZE * .065 / distance), 1, 22);
-            for (int k = 0; k < length; k++) {
-                int yy = py + k;
-                if (px < 0 || yy < 0 || px >= SIZE || yy >= SIZE || distance > depth[yy * SIZE + px]) continue;
-                int cell = scene.cells()[(yy * CameraScene.SIDE / SIZE) * CameraScene.SIDE + px * CameraScene.SIDE / SIZE];
+        var forward = scene.forward(); var right = scene.right(); var up = scene.up();
+        double[] actorDepth = new double[scene.actors().size()];
+        for (int i = 0; i < actorDepth.length; i++)
+            actorDepth[i] = scene.actors().get(i).feet().subtract(scene.eye()).dot(forward) - .5;
+        int tw = rainTexture.getWidth(), th = rainTexture.getHeight(), grid = CameraScene.SIDE;
+        double[] offset = new double[RAIN_DISTANCE.length];
+        for (int i = 0; i < offset.length; i++)
+            offset[i] = .371 * i - scene.weatherTick() * (6 + i) / 128.0;
+        // Source simulation time keeps the rain moving while the daylight clock is frozen.
+        for (int y = 0; y < SIZE; y++) {
+            double ny = 1 - (y + .5) * 2 / SIZE;
+            for (int x = 0; x < SIZE; x++) {
+                int cell = scene.cells()[y * grid / SIZE * grid + x * grid / SIZE];
                 if (cell == 0) continue;
-                if (cell < 0 && distance > scene.actors().get(-1-cell).feet().subtract(scene.eye()).dot(scene.forward())-.5) continue;
-                int texel = rainTexture.getPixelRGBA((int)(u * rainTexture.getWidth()), k * rainTexture.getHeight() / length);
-                float alpha = (texel >>> 24) / 255f * .6f;
-                int old = out.getPixelRGBA(px, yy);
-                int r = (int)((old & 255) * (1 - alpha) + (texel & 255) * alpha);
-                int g = (int)((old >> 8 & 255) * (1 - alpha) + (texel >> 8 & 255) * alpha);
-                int b = (int)((old >> 16 & 255) * (1 - alpha) + (texel >> 16 & 255) * alpha);
-                out.setPixelRGBA(px, yy, 0xff000000 | b << 16 | g << 8 | r);
+                int pixel = out.getPixelRGBA(x, y);
+                if (pixel == MASK) continue;
+                double nx = (x + .5) * 2 / SIZE - 1;
+                double dx = forward.x + nx * right.x + ny * up.x;
+                double dy = forward.y + nx * right.y + ny * up.y;
+                double dz = forward.z + nx * right.z + ny * up.z;
+                double horizontal = Math.sqrt(dx * dx + dz * dz);
+                if (horizontal < .05) continue;
+                double turn = Math.atan2(dz, dx) / (2 * Math.PI);
+                double limit = depth[y * SIZE + x];
+                if (cell < 0) limit = Math.min(limit, actorDepth[-1 - cell]);
+                for (int layer = RAIN_DISTANCE.length - 1; layer >= 0; layer--) {
+                    double radius = RAIN_DISTANCE[layer], distance = radius / horizontal;
+                    double height = scene.eye().y + dy * distance;
+                    if (distance >= limit || Math.abs(height) > 6) continue;
+                    // A full repeat of the pack's sheet is roughly one block wide by four high.
+                    // Integral repeats meet at the back seam. The gentle crosswind shears the streaks.
+                    double u = turn * Math.round(2 * Math.PI * radius) + height * .10 + .217 * layer;
+                    double v = -height * .25 + offset[layer];
+                    int sample = rainTexture.getPixelRGBA(Math.floorMod((int)Math.floor(u * tw), tw),
+                            Math.floorMod((int)Math.floor(v * th), th));
+                    int opacity = sample >>> 24;
+                    if (opacity == 0) continue;
+                    float alpha = opacity / 255f * scene.rain() * (1 - layer * .065f);
+                    int r = (int)((pixel & 255) * (1 - alpha) + (sample & 255) * alpha);
+                    int g = (int)((pixel >> 8 & 255) * (1 - alpha) + (sample >> 8 & 255) * alpha);
+                    int b = (int)((pixel >> 16 & 255) * (1 - alpha) + (sample >> 16 & 255) * alpha);
+                    pixel = 0xff000000 | b << 16 | g << 8 | r;
+                }
+                out.setPixelRGBA(x, y, pixel);
             }
         }
     }

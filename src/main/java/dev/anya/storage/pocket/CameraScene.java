@@ -14,12 +14,12 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 /** A visible-surface observation local to the lens. The only absolute position is the viewer's monitor. */
-public record CameraScene(BlockPos pos, long time, SourceSky sky, float rain, float thunder,
+public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sky, float rain, float thunder,
                           Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
                           List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop) implements CustomPacketPayload {
-    public static final int SIDE = 32;
+    public static final int SIDE = 32, ATMOSPHERE = Short.MAX_VALUE;
     static final int MAX_SURFACES = 512, MAX_ACTORS = 6;
-    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene"));
+    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v2"));
     public static BiConsumer<Connection, CameraScene> receiver = (connection, scene) -> {};
 
     public record Surface(int stateId, int x, int y, int z, Direction face, float plane,
@@ -30,19 +30,20 @@ public record CameraScene(BlockPos pos, long time, SourceSky sky, float rain, fl
     @Override public Type<CameraScene> type() { return TYPE; }
 
     static CameraScene empty(BlockPos monitor) {
-        return new CameraScene(monitor, -1, null, 0, 0, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO,
+        return new CameraScene(monitor, -1, 0, null, 0, 0, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO,
                 List.of(), List.of(), new int[0], new int[0]);
     }
 
     static void register(RegisterPayloadHandlersEvent event) {
         StreamCodec<RegistryFriendlyByteBuf, CameraScene> codec = StreamCodec.ofMember(CameraScene::write, CameraScene::read);
-        event.registrar("sharpcamera1").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
+        event.registrar("sharpcamera2").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
     }
 
     private void write(RegistryFriendlyByteBuf out) {
         out.writeBlockPos(pos);
         out.writeLong(time);
         if (time < 0) return;
+        out.writeShort(weatherTick);
         out.writeBoolean(sky != null);
         if (sky != null) {
             out.writeInt(sky.background()); out.writeFloat(sky.clarity());
@@ -72,6 +73,7 @@ public record CameraScene(BlockPos pos, long time, SourceSky sky, float rain, fl
     private static CameraScene read(RegistryFriendlyByteBuf in) {
         BlockPos monitor = in.readBlockPos(); long time = in.readLong();
         if (time < 0) return empty(monitor);
+        int weatherTick=in.readUnsignedShort();
         SourceSky sky = in.readBoolean() ? new SourceSky(in.readInt() & 0xffffff, bounded(in.readFloat(),0,1),
                 bounded(in.readFloat(),-7,7), bounded(in.readUnsignedByte(),7)) : null;
         float rain=bounded(in.readFloat(),0,1), thunder=bounded(in.readFloat(),0,1);
@@ -99,11 +101,14 @@ public record CameraScene(BlockPos pos, long time, SourceSky sky, float rain, fl
         int[] cells=new int[SIDE*SIDE], backdrop=new int[SIDE*SIDE];
         for(int i=0;i<cells.length;i++) {
             int cell=in.readShort();
-            if(cell < -actors.size() || cell >= 2+surfaces.size()) throw new IllegalArgumentException("Unknown camera cell");
+            if(cell != ATMOSPHERE && (cell < -actors.size() || cell >= 2+surfaces.size())) throw new IllegalArgumentException("Unknown camera cell");
             cells[i]=cell;
-            if(cell<0) backdrop[i]=bounded(in.readUnsignedShort(),surfaces.size()+1);
+            if(cell<0) {
+                int back=in.readUnsignedShort();
+                backdrop[i]=back==ATMOSPHERE?back:bounded(back,surfaces.size()+1);
+            }
         }
-        return new CameraScene(monitor,time,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop);
+        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop);
     }
 
     private static int bounded(int value,int max) {

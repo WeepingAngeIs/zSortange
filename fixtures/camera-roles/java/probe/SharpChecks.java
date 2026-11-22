@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.function.BiConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.renderer.texture.DynamicTexture;
+import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
@@ -61,6 +63,39 @@ final class SharpChecks {
     }
     private static Field field(Class<?> type,String name)throws Exception{var f=type.getDeclaredField(name);f.setAccessible(true);return f;}
     private static Object comparedScene;
+    private static Object transferredScene;
+    private static String transfer(Minecraft mc,CameraDevices.Device target,Object scene)throws Exception{
+        check(System.getenv("GITHUB_ACTIONS").equals("true") && trial.equals("sharp-new")
+                && "CamOwner".equals(System.getProperty("roomroles.name"))
+                && Orders.ROOT.toAbsolutePath().normalize().endsWith(Path.of("role-check","sharp-new","control")),
+                "Stock comparison is restricted to the synthetic hosted room owner");
+        var type=Class.forName("dev.anya.storage.pocket.CameraPicture");
+        var cached=field(type,"rendered");
+        if(cached.get(null)!=scene)return null;
+        var file=Orders.ROOT.resolve("reference-day-RoomBuilder.png");
+        check(Files.isRegularFile(file,LinkOption.NOFOLLOW_LINKS) && Files.isRegularFile(Orders.ack("RoomBuilder","reference-day")),
+                "The trusted outdoor client has not captured this synthetic lens");
+        if(transferredScene==scene){
+            try{
+                savePanel(mc,target,Orders.ROOT.resolve("stock-lens-on-the-indoor-wall-CamOwner.png"));
+                return "Rendered the outdoor client's source-lens-only stock framebuffer on the authorized indoor monitor; disposable fixture transfer";
+            }finally{
+                // Rebuild the original scene on the next draw. No bytes are sent over mod networking.
+                transferredScene=null;cached.set(null,null);
+            }
+        }
+        transferredScene=null;
+        var texture=(DynamicTexture)field(type,"texture").get(null);
+        if(texture==null)return null;
+        try(var in=Files.newInputStream(file);var shot=NativeImage.read(in)){
+            var pixels=texture.getPixels();
+            check(shot.getWidth()==shot.getHeight() && shot.getWidth()==480 && pixels!=null,"Unexpected source reference surface");
+            for(int y=0;y<pixels.getHeight();y++)for(int x=0;x<pixels.getWidth();x++)
+                pixels.setPixelRGBA(x,y,shot.getPixelRGBA(x*shot.getWidth()/pixels.getWidth(),y*shot.getHeight()/pixels.getHeight()));
+            texture.upload();
+        }
+        transferredScene=scene;return null;
+    }
     private static String compareRenderers(Minecraft mc,CameraDevices.Device target,Object scene)throws Exception{
         var type=Class.forName("dev.anya.storage.pocket.CameraPicture");
         var method=type.getDeclaredMethod("hardware");method.setAccessible(true);
@@ -123,11 +158,12 @@ final class SharpChecks {
                 var rot=mc.options.getCameraType();var main=mc.getMainRenderTarget();var yaw=mc.player.getYRot();var pitch=mc.player.getXRot();
                 check(camera==mc.player,"Outdoor player is not in ordinary first person");
                 screenshot(mc,Orders.ROOT.resolve(order.step()+"-outside-before.png"));
-                SharpReference.capture(mc,order.target(),path);
+                long started=System.nanoTime();SharpReference.capture(mc,order.target(),path);
+                double millis=(System.nanoTime()-started)/1_000_000.0;
                 check(mc.getCameraEntity()==camera && mc.level==level && mc.getMainRenderTarget()==main && mc.options.getCameraType()==rot
                         && pose.equals(mc.player.position()) && yaw==mc.player.getYRot() && pitch==mc.player.getXRot(),"Native reference failed to restore the outside player");
                 screenshot(mc,Orders.ROOT.resolve(order.step()+"-outside-after.png"));
-                return "Native lens framebuffer, normal outside player before/after and restored viewpoint";
+                return "Native lens framebuffer, normal outside player before/after and restored viewpoint. Single capture including framebuffer readback and PNG I/O: "+millis+" ms";
             }finally{referenceInProgress=false;}
         }
         var target=(CameraDevices.Device)field(CameraScreen.class,"target").get(null);
@@ -157,6 +193,8 @@ final class SharpChecks {
         long visible=java.util.Arrays.stream(cells).filter(v->v!=0).count();
         int cow=BuiltInRegistries.ENTITY_TYPE.getId(EntityType.COW),person=BuiltInRegistries.ENTITY_TYPE.getId(EntityType.PLAYER);
         float rain=((Number)prop(scene,"rain")).floatValue();
+        int upper=cells[32*2+16];
+        int atmosphere=32767;
         var blockTypes=new java.util.HashSet<net.minecraft.world.level.block.Block>();
         for(var surface:surfaces){
             int state=((Number)prop(surface,"stateId")).intValue();
@@ -166,11 +204,32 @@ final class SharpChecks {
                 || action.equals("gold") && !blockTypes.contains(Blocks.GOLD_BLOCK))return null;
         if(action.equals("masked") && (blockTypes.contains(Blocks.GOLD_BLOCK) || !blockTypes.contains(Blocks.STONE_BRICKS)
                 || cells[16*32+16]!=0))return null;
-        if(action.equals("cow") && !types.contains(cow) || action.equals("player") && !types.contains(person) || action.equals("invisible") && types.contains(person))return null;
+        if(action.equals("cow") && !types.contains(cow) || action.equals("player") && !types.contains(person))return null;
+        if(action.equals("actor-denied")||action.equals("invisible")){
+            for(var actor:actors)if(((Number)prop(actor,"typeId")).intValue()==person)return null;
+            if(!types.contains(cow))return null;
+        }
         if(action.equals("rain") && rain<.8 || action.equals("night") && (rain>.1 || Math.floorMod(((Number)prop(scene,"time")).longValue(),24000)!=18000))return null;
+        if(action.equals("open-sky") && upper!=1 && upper!=atmosphere
+                || (action.equals("shadow-sky")||action.equals("edge-sky")) && (upper!=0||!blockTypes.contains(Blocks.STONE_BRICKS)&&!blockTypes.contains(Blocks.STONE)))return null;
+        if(action.equals("roof") && (rain>.01 || upper<2 || upper==atmosphere || upper-2>=surfaces.size()
+                || !net.minecraft.world.level.block.Block.stateById(((Number)prop(surfaces.get(upper-2),"stateId")).intValue()).is(Blocks.SPRUCE_PLANKS)))return null;
         if(visible<cells.length/12)return null;
         if(action.equals("renderer-compare"))return compareRenderers(mc,target,scene);
-        savePanel(mc,target,path);return "Fresh authorized source rendered. surface types="+surfaces.size()+", visible cells="+visible+" of "+cells.length+", actors="+types+", rain="+rain+", time="+prop(scene,"time");
+        if(action.equals("reference-transfer")){
+            if(!types.contains(person)||!types.contains(cow)||!blockTypes.contains(Blocks.STONE_BRICKS)||rain!=0)return null;
+            return transfer(mc,target,scene);
+        }
+        if(action.equals("player")){
+            for(var actor:actors)if(((Number)prop(actor,"typeId")).intValue()==person){
+                Vec3 rel=((Vec3)prop(actor,"feet")).add(0,.9,0).subtract((Vec3)prop(scene,"eye"));
+                Vec3 right=(Vec3)prop(scene,"right"),up=(Vec3)prop(scene,"up");
+                double distance=rel.dot((Vec3)prop(scene,"forward"));
+                Files.writeString(path.resolveSibling(path.getFileName()+".actor.json"),Orders.JSON.toJson(
+                        new double[]{.5+.5*rel.dot(right)/distance/right.lengthSqr(),.5-.5*rel.dot(up)/distance/up.lengthSqr()}));
+            }
+        }
+        savePanel(mc,target,path);return "Fresh authorized source rendered. surface types="+surfaces.size()+", visible cells="+visible+" of "+cells.length+", actors="+types+", upper center="+upper+", rain="+rain+", time="+prop(scene,"time");
     }
     private SharpChecks(){}
 }

@@ -2,7 +2,7 @@
 import json
 import math
 from pathlib import Path
-from PIL import Image, ImageChops, ImageDraw, ImageStat
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageStat
 
 base = Path("build/role-check")
 out = Path("upload/captures")
@@ -44,6 +44,25 @@ def detail(image):
 
 def difference(a, b, limit=13):
     return sum(max(pixel) > limit for pixel in ImageChops.difference(a, b).getdata())
+
+
+def mean_upper(trial, shot):
+    image=panel(trial,shot)
+    return ImageStat.Stat(image.crop((91,11,101,18))).mean
+
+
+def streak_region(shot):
+    # Bare upper bricks, log and bookshelf around the stationary staged subjects.
+    return panel(new,shot).crop((13,45,179,65))
+
+
+def subject_x_delta(before,after):
+    size=before.width
+    delta=ImageChops.difference(before.convert("RGB"),after.convert("RGB"))
+    xs=[x+.5 for y in range(size//3,int(size*.81)) for x in range(size//2,int(size*.97))
+        if max(delta.getpixel((x,y)))>22]
+    assert len(xs)>size*.25,"No visible outdoor actor change"
+    return sum(xs)/len(xs)/size
 
 
 def collect(trial):
@@ -119,6 +138,41 @@ data["stock_reference_day_to_night"] = difference(references["day"], references[
 data["stock_reference_clear_to_rain"] = difference(references["day"], references["rain"], 7)
 assert data["stock_reference_day_to_night"] > 400 and data["stock_reference_clear_to_rain"] > 100, data
 contact("source-comparison.png", ["Installed monitor", "New monitor", "Stock renderer at lens"], rows)
+data["clear_sky_rgb"]=mean_upper(new,"day-open-atmosphere")
+data["denied_upper_rgb"]=mean_upper(new,"upper-foreground-denied")
+data["unloaded_upper_rgb"]=mean_upper(new,"unloaded-foreground")
+data["roof_rgb"]=mean_upper(new,"rain-under-roof")
+r,g,b=data["clear_sky_rgb"]
+assert b>80 and b>r+25 and b>g+6,("The open daytime monitor never showed blue sky",data)
+for key in ("denied_upper_rgb","unloaded_upper_rgb"):
+    assert max(data[key])<65,(key,data)
+assert max(abs(a-b) for a,b in zip(data["roof_rgb"],data["clear_sky_rgb"]))>40,data
+data["clear_temporal_pixels"]=difference(streak_region("large-player"),streak_region("clear-repeat"),8)
+whole_rain=[streak_region(k) for k in ("large-rain","rain-repeat","rain-third")]
+data["rain_temporal_pixels"]=max(difference(a,b,8) for i,a in enumerate(whole_rain) for b in whole_rain[i+1:])
+assert data["clear_temporal_pixels"]<25 and data["rain_temporal_pixels"]>data["clear_temporal_pixels"]+25,data
+contact("sky-and-precipitation.png",["Clear lens","Exposed to rain","Roof over lens"],[[
+    panel(new,"day-open-atmosphere"),panel(new,"large-rain"),panel(new,"rain-under-roof")]])
+contact("private-foreground.png",["Open sky","Air along ray denied","Foreground chunk unloaded"],[[
+    panel(new,"day-open-atmosphere"),panel(new,"upper-foreground-denied"),panel(new,"unloaded-foreground")]])
+native=original(new,"reference-day","RoomBuilder")
+data["stock_oblique_player_x"]=subject_x_delta(native,original(new,"reference-invisible","RoomBuilder"))
+data["inside_oblique_player_x"]=subject_x_delta(panel(new,"large-player"),panel(new,"large-invisible"))
+actor_names=["reference-day-RoomBuilder","large-player-CamOwner"]
+centers=[json.loads((base/new/"control"/(name+".png.actor.json")).read_text()) for name in actor_names]
+assert math.dist(*centers)<.03,("Observers disagree on the source player coordinates",centers)
+data["expected_oblique_player_uv"]=centers[0]
+for key in ("stock_oblique_player_x","inside_oblique_player_x"):
+    assert abs(data[key]-centers[0][0])<.15,(key,data)
+transferred=panel(new,"stock-lens-on-the-indoor-wall")
+stock=references["day"]
+def matched_center(image):
+    return image.filter(ImageFilter.GaussianBlur(3)).crop((10,15,182,171))
+transferred_error=ImageStat.Stat(ImageChops.difference(matched_center(transferred),matched_center(stock))).mean
+data["synthetic_stock_transfer_mean_rgb_error"]=transferred_error
+assert max(transferred_error)<29,("Wrong picture on the fixture's transferred monitor",data)
+contact("stock-transfer-experiment.png",["Playable wall feed","Test-only stock transfer","Stock lens source"],[[
+        displayed["day"],transferred,stock]])
 hardware, fallback = panel(new, "same-scene-world-renderer"), panel(new, "same-scene-software")
 contact("same-observation.png", ["World block renderer", "Software fallback"], [[hardware, fallback]])
 data["same_observation_renderer_difference"] = difference(hardware, fallback, 3)

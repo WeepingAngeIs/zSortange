@@ -34,7 +34,7 @@ import net.minecraft.world.phys.Vec3;
 
 /** Trace the first permitted surface from a physical lens. Nothing in this class acquires a chunk ticket. */
 final class CameraSceneCapture {
-    private static final int REACH=24, CLAIM_BUDGET=2048;
+    private static final int REACH=24, CLAIM_BUDGET=3072;
     private static final Set<EntityType<?>> MODELS=Set.of(EntityType.PLAYER,EntityType.COW,EntityType.CREEPER,
             EntityType.ZOMBIE,EntityType.SKELETON,EntityType.PIG);
     // Send only properties used to select visible geometry. Other state and all block entity data stay on the server.
@@ -61,7 +61,7 @@ final class CameraSceneCapture {
         this.viewer=player; this.level=level; this.camera=camera;
         blocks=new LoadedPocketBlocks(level);
         eye=CameraFeed.eye(camera); anchor=BlockPos.containing(eye); origin=Vec3.atLowerCornerOf(anchor);
-        skyClearance=new CameraSkyClearance(viewer,level,blocks,camera.getBlockPos(),eye);
+        skyClearance=new CameraSkyClearance(viewer,level,blocks,camera.getBlockPos(),eye,true);
     }
 
     static CameraScene capture(ServerPlayer player, CameraDevices.Device monitor, ServerLevel level,
@@ -80,7 +80,8 @@ final class CameraSceneCapture {
             right=right.scale(aperture); up=up.scale(aperture);
         }
         BlockPos outside=camera.getBlockPos().above();
-        boolean wet=level.isRaining() && allowed(outside) && skyClearance.open(new Vec3(0,1,0)) && level.isRainingAt(outside);
+        boolean outdoors=sky!=null && skyClearance.overhead();
+        boolean wet=outdoors && level.isRaining() && allowed(outside) && level.isRainingAt(outside);
         // Broad phase only inspects entities already present on the server. No entity identity is sent.
         var nearby=new ArrayList<LivingEntity>();
         level.getEntities(EntityTypeTest.forClass(LivingEntity.class),new AABB(eye,eye).inflate(REACH),
@@ -94,23 +95,39 @@ final class CameraSceneCapture {
 
         int side=CameraScene.SIDE;
         int[] cells=new int[side*side], backdrop=new int[side*side];
-        boolean any=false, observedSky=false;
-        // A busy frustum spends its claim allowance on the center before the peripheral samples.
-        for(int row=0;row<side;row++) for(int col=0;col<side;col++) {
+        boolean any=false, observedSky=false, observedAtmosphere=false;
+        // Prioritize the central vertical sightline from ground to sky, then fill out each row.
+        // A crowded middle band cannot spend the whole allowance before even sampling the horizon.
+        for(int i=0;i<cells.length;i++) {
+            int row=i<side?i:(i-side)/(side-1);
+            int col=i<side?0:1+(i-side)%(side-1);
             int x=centerFirst(col,side), y=centerFirst(row,side);
             Vec3 ray=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
-            int code=trace(ray,x,y,sky!=null,false);
+            int code=trace(ray,x,y,sky,false,nearestActor(ray,eye.add(ray.scale(REACH)),false));
             observedSky|=code==1;
+            observedAtmosphere|=code==CameraScene.ATMOSPHERE;
             cells[y*side+x]=code;
             any|=code!=0;
         }
         if(!any) return CameraScene.empty(monitor);
-        // Fill holes between limbs only from a surface already seen on another ordinary ray.
-        // This second pass cannot add world geometry behind an actor to the exported palette.
-        for(int i=0;i<cells.length;i++) if(cells[i]<0) {
+        // The native head/arms can extend beyond a standing collision box. Only actors already
+        // seen by an ordinary body ray can contribute limbs. Unavailable cells remain masked.
+        for(int i=0;!visibleActors.isEmpty() && i<cells.length;i++) {
+            if(cells[i]==0)continue;
             int x=i%side,y=i/side;
             Vec3 ray=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
-            backdrop[i]=trace(ray,x,y,observedSky,true);
+            if(cells[i]<0) {
+                // A hole between limbs may show only a surface or sky independently visible on another ray.
+                int back=trace(ray,x,y,(observedSky||observedAtmosphere)?sky:null,true,null);
+                if(back==1 && !observedSky)back=observedAtmosphere?CameraScene.ATMOSPHERE:0;
+                if(back==CameraScene.ATMOSPHERE && !observedAtmosphere && !observedSky)back=0;
+                backdrop[i]=back;
+            }else{
+                EntityHit extended=nearestActor(ray,eye.add(ray.scale(REACH)),true);
+                if(extended==null)continue;
+                int actor=trace(ray,x,y,null,true,extended);
+                if(actor<0){backdrop[i]=cells[i];cells[i]=actor;}
+            }
         }
         List<CameraScene.Actor> actors=new ArrayList<>(visibleActors.size());
         for(LivingEntity entity : visibleActors.keySet()) {
@@ -119,7 +136,7 @@ final class CameraSceneCapture {
                 return CameraScene.empty(monitor);
             actors.add(actor(entity));
         }
-        return new CameraScene(monitor,level.getDayTime(),sky,wet?level.getRainLevel(1):0,
+        return new CameraScene(monitor,level.getDayTime(),(int)(level.getGameTime()&0xffff),sky,wet?level.getRainLevel(1):0,
                 wet?level.getThunderLevel(1):0,eye.subtract(origin),forward,right,up,
                 List.copyOf(faces.keySet()),List.copyOf(actors),cells,backdrop);
     }
@@ -167,11 +184,17 @@ final class CameraSceneCapture {
     };
 
     private record EntityHit(LivingEntity entity, Vec3 point, BlockPos cell) {}
-    private EntityHit nearestActor(Vec3 ray,Vec3 end) {
+    private EntityHit nearestActor(Vec3 ray,Vec3 end,boolean limbs) {
         EntityHit nearest=null;
         double distance=Double.POSITIVE_INFINITY;
-        for(LivingEntity actor : candidates) {
-            var point=actor.getBoundingBox().clip(eye,end).orElse(null);
+        for(LivingEntity actor : limbs?visibleActors.keySet():candidates) {
+            AABB box=actor.getBoundingBox();
+            if(limbs){
+                boolean quadruped=actor.getType()==EntityType.COW || actor.getType()==EntityType.PIG;
+                double reach=quadruped?.72:.42;
+                box=box.inflate(reach,.2,reach);
+            }
+            var point=box.clip(eye,end).orElse(null);
             if(point==null)continue;
             double current=eye.distanceToSqr(point);
             if(current<distance) {
@@ -182,9 +205,8 @@ final class CameraSceneCapture {
         return nearest;
     }
 
-    private int trace(Vec3 ray,int x,int y,boolean hasSky,boolean background) {
+    private int trace(Vec3 ray,int x,int y,SourceSky sky,boolean background,EntityHit entity) {
         Vec3 end=eye.add(ray.scale(REACH));
-        EntityHit entity=background?null:nearestActor(ray,end);
         return BlockGetter.traverseBlocks(eye,end,ray,(direction,pos)->{
             if(!allowed(pos))return 0;
             BlockState state=blocks.getBlockState(pos);
@@ -200,7 +222,7 @@ final class CameraSceneCapture {
             if(hit==null)return null;
             if(state.getRenderShape()!=RenderShape.MODEL)return 0;
             return surface(pos,state,hit,background);
-        },direction->hasSky && skyClearance.sector(x,y,CameraScene.SIDE,direction)?1:0);
+        },direction->skyClearance.wall(x,y,CameraScene.SIDE,direction,sky));
     }
 
     private int surface(BlockPos pos,BlockState state,BlockHitResult hit,boolean background) {

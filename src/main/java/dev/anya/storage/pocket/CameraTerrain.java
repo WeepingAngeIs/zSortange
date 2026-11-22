@@ -150,12 +150,12 @@ final class CameraTerrain {
             int count = 0;
             if (cell < 0) {
                 // An actor silhouette can only reveal its specifically authorized background.
-                if (backing >= 2) neighbours[count++] = scene.surfaces().get(backing - 2);
-            } else {
+                if (backing >= 2 && backing != CameraScene.ATMOSPHERE) neighbours[count++] = scene.surfaces().get(backing - 2);
+            } else if (cell != CameraScene.ATMOSPHERE) {
                 for (int r = Math.max(0, row - 1); r <= Math.min(grid - 1, row + 1); r++)
                     for (int c = Math.max(0, col - 1); c <= Math.min(grid - 1, col + 1); c++) {
                         int code = samples[r * grid + c];
-                        if (code < 2) continue;
+                        if (code < 2 || code == CameraScene.ATMOSPHERE) continue;
                         var face = scene.surfaces().get(code - 2);
                         int n = 0;
                         while (n < count && neighbours[n] != face) n++;
@@ -179,8 +179,7 @@ final class CameraTerrain {
                         out.setPixelRGBA(x, y, sample | 0xff000000);
                     } else {
                         sceneDepth[y * size + x] = Float.POSITIVE_INFINITY;
-                        out.setPixelRGBA(x, y, backing == 1 && scene.sky() != null
-                                ? CameraPicture.sky(scene.sky(), dx, dy, dz) : CameraPicture.MASK);
+                        out.setPixelRGBA(x, y, CameraPicture.background(scene.sky(), backing, dx, dy, dz));
                     }
                 }
             }

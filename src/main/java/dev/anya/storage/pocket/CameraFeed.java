@@ -160,7 +160,7 @@ public final class CameraFeed {
         var face=direction(cam);
         var eye=eye(cam);
         var access=new HashMap<BlockPos,Boolean>();var pixels=new int[side*side];
-        var skyClearance=new CameraSkyClearance(p,level,loaded,cam.getBlockPos(),eye);
+        var skyClearance=new CameraSkyClearance(p,level,loaded,cam.getBlockPos(),eye,false);
         var flyers=new ArrayList<CameraFigure>();
         boolean upwardLens=cam.getBlockState().is(CameraDevices.SKY_CAMERA.get());
         double aperture=upwardLens?CameraOptics.skyAperture(level,eye):1;

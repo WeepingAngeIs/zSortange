@@ -9,6 +9,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import com.mojang.math.Axis;
 import dev.anya.storage.AnyaStorage;
+import java.nio.FloatBuffer;
 import java.util.HashMap;
 import java.util.Map;
 import net.minecraft.client.Camera;
@@ -28,6 +29,7 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.system.MemoryUtil;
 
 /** Rasterize Minecraft's own baked actor models without creating an entity in the viewer's world. */
 final class CameraActors {
@@ -43,6 +45,8 @@ final class CameraActors {
     private static TextureTarget target;
     private static ByteBufferBuilder storage;
     private static NativeImage readback;
+    private static FloatBuffer depth;
+    private static final float NEAR = .03f, FAR = 48f;
     private static boolean failed;
 
     static final class Lens extends Camera {
@@ -57,7 +61,7 @@ final class CameraActors {
         }
     }
 
-    static void draw(CameraScene scene, NativeImage frame) {
+    static void draw(CameraScene scene, NativeImage frame, float[] sceneDepth) {
         if (failed || scene.actors().isEmpty()) return;
         RenderSystem.assertOnRenderThread();
         var mc = Minecraft.getInstance();
@@ -77,10 +81,11 @@ final class CameraActors {
                 target.setClearColor(0, 0, 0, 0);
                 storage = new ByteBufferBuilder(65536);
                 readback = new NativeImage(size, size, false);
+                depth = MemoryUtil.memAllocFloat(size * size);
             }
             modelView.identity();
             RenderSystem.applyModelViewMatrix();
-            RenderSystem.setProjectionMatrix(new Matrix4f().perspective((float)(2 * Math.atan(scene.up().length())), 1, .03f, 48), VertexSorting.DISTANCE_TO_ORIGIN);
+            RenderSystem.setProjectionMatrix(new Matrix4f().perspective((float)(2 * Math.atan(scene.up().length())), 1, NEAR, FAR), VertexSorting.DISTANCE_TO_ORIGIN);
             RenderSystem.setShaderFogStart(64);
             RenderSystem.setShaderFogEnd(80);
             RenderSystem.setShaderColor(1, 1, 1, 1);
@@ -109,6 +114,9 @@ final class CameraActors {
                 model.render(pose, batch.getBuffer(RenderType.entityCutoutNoCull(texture)), LightTexture.FULL_BRIGHT,
                         OverlayTexture.NO_OVERLAY, 0xff000000 | shade * 0x010101);
                 batch.endBatch();
+                target.bindWrite(false);
+                depth.clear();
+                GL11.glReadPixels(0, 0, size, size, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, depth);
                 RenderSystem.bindTexture(target.getColorTextureId());
                 // Preserve the alpha silhouette; Screenshot.takeScreenshot deliberately forces opaque pixels.
                 readback.downloadTexture(0, false);
@@ -119,8 +127,16 @@ final class CameraActors {
                     int x0 = cell % side * size / side, y0 = cell / side * size / side;
                     int x1 = (cell % side + 1) * size / side, y1 = (cell / side + 1) * size / side;
                     for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) {
-                        int pixel = readback.getPixelRGBA(x, size - 1 - y);
-                        if ((pixel >>> 24) > 127) frame.setPixelRGBA(x, y, pixel);
+                        int glY = size - 1 - y;
+                        int pixel = readback.getPixelRGBA(x, glY);
+                        if ((pixel >>> 24) <= 127) continue;
+                        float z = depth.get(glY * size + x);
+                        float distance = NEAR * FAR / (FAR - z * (FAR - NEAR));
+                        int i = y * size + x;
+                        if (z < 1 && distance < sceneDepth[i]) {
+                            frame.setPixelRGBA(x, y, pixel);
+                            sceneDepth[i] = distance;
+                        }
                     }
                 }
             }
@@ -175,6 +191,7 @@ final class CameraActors {
         failed = false;
         meshes.clear();
         if (readback != null) { readback.close(); readback = null; }
+        if (depth != null) { MemoryUtil.memFree(depth); depth = null; }
         if (storage != null) { storage.close(); storage = null; }
         if (target != null) { target.destroyBuffers(); target = null; }
     }
