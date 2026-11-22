@@ -51,7 +51,13 @@ final class ChestLayout {
             Actors.place(visitor,pos(4,21),new ItemStack(Items.CHEST),false);
             Actors.place(owner,pos(16,24),new ItemStack(Items.CHEST),false);
             Actors.place(owner,anchor(),new ItemStack(Content.CRATE.get()),true);
-            mark(inside,anchor());stepTick=now;
+            mark(inside,anchor());
+            heldCrates(visitor);visitor.setShiftKeyDown(true);click(visitor,anchor(),Direction.NORTH,0);visitor.setShiftKeyDown(false);
+            require(inside.isEmptyBlock(anchor().north()) && visitor.getMainHandItem().getCount()==2 && visitor.containerMenu==visitor.inventoryMenu,
+                "Visit-only player opened the marked labelled chest or placed a new chest on its face");
+            checkPhysical(inside);
+            passed("A Visit-only guest could neither place a vanilla chest nor attach a labelled one to an occupied chest. Both held items and the original contents were conserved. The reserved landing rejected placement.");
+            stepTick=now;
             next(3,"Crouch-click both sides and then the top");
         } else if(stage>=3 && stage<=5 && now-stepTick>=8) {
             var face=List.of(Direction.EAST,Direction.WEST,Direction.UP).get(stage-3);
