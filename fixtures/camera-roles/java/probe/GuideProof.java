@@ -24,7 +24,7 @@ public final class GuideProof {
                 if(++heldTicks>=35)phase=1;
                 break;
             }
-        }else if(phase==2){phase=3;mc.gameMode.useItem(mc.player,InteractionHand.MAIN_HAND);}
+        }else if(phase==2 && ++heldTicks>=46){photo("held-second");phase=3;mc.gameMode.useItem(mc.player,InteractionHand.MAIN_HAND);}
     }
     private static void photo(String name)throws Exception{
         try(var shot=Screenshot.takeScreenshot(Minecraft.getInstance().getMainRenderTarget())){
