@@ -30,7 +30,7 @@ public final class SkyCeilingClient {
         return rel.getX()>=0&&rel.getX()<32&&rel.getZ()>=0&&rel.getZ()<32&&rel.getY()>=0&&rel.getY()<32;
     }
     @SubscribeEvent public static void status(RenderGuiEvent.Post e){
-        var mc=Minecraft.getInstance();if(!visible(mc)||current.pixels().length!=0||mc.player.getLookAngle().y<.4||mc.screen!=null||mc.options.hideGui)return;
+        var mc=Minecraft.getInstance();if(!visible(mc)||current.pixels().length!=0||mc.gameRenderer.getMainCamera().getLookVector().y()<.4||mc.screen!=null||mc.options.hideGui)return;
         var g=e.getGuiGraphics();g.drawCenteredString(mc.font,"Sky Camera unavailable",g.guiWidth()/2,g.guiHeight()-62,0xffeedcec);
     }
     @SubscribeEvent public static void draw(RenderLevelStageEvent e){

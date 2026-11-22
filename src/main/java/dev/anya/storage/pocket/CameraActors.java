@@ -21,10 +21,12 @@ import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -42,11 +44,12 @@ final class CameraActors {
             EntityType.ZOMBIE, new Body(ModelLayers.ZOMBIE, "zombie/zombie"),
             EntityType.SKELETON, new Body(ModelLayers.SKELETON, "skeleton/skeleton"));
     private static final Map<Body, ModelPart> meshes = new HashMap<>();
+    private static final Body SLIM = new Body(ModelLayers.PLAYER_SLIM, "player/slim/alex");
     private static TextureTarget target;
     private static ByteBufferBuilder storage;
     private static NativeImage readback;
     private static FloatBuffer depth;
-    private static final float NEAR = .03f, FAR = 48f;
+    private static final float NEAR = .03f, FAR = CameraScene.FAR_CLIP;
     private static boolean failed;
 
     static final class Lens extends Camera {
@@ -95,7 +98,10 @@ final class CameraActors {
             Lighting.setupLevel();
             for (int index = 0; index < scene.actors().size(); index++) {
                 var actor = scene.actors().get(index);
-                var body = BODIES.get(BuiltInRegistries.ENTITY_TYPE.byId(actor.typeId()));
+                var type = BuiltInRegistries.ENTITY_TYPE.byId(actor.typeId());
+                var profile = type == EntityType.PLAYER ? CameraPlayerAppearance.resolve(actor.appearance()) : null;
+                var skin = profile == null ? null : profile.getSkin();
+                var body = skin != null && skin.model() == PlayerSkin.Model.SLIM ? SLIM : BODIES.get(type);
                 if (body == null) continue;
                 target.clear(Minecraft.ON_OSX);
                 target.bindWrite(true);
@@ -108,9 +114,12 @@ final class CameraActors {
                 pose.translate(0, -1.501, 0);
                 var model = meshes.computeIfAbsent(body, b -> mc.getEntityModels().bakeLayer(b.layer()));
                 poseModel(model, actor);
-                var texture = ResourceLocation.withDefaultNamespace("textures/entity/" + body.texture() + ".png");
+                var texture = skin == null ? ResourceLocation.withDefaultNamespace("textures/entity/" + body.texture() + ".png") : skin.texture();
+                if (type == EntityType.PLAYER) setSkinParts(model, profile == null ? 127 : actor.skinParts());
                 var batch = MultiBufferSource.immediate(storage);
                 int shade = Math.clamp(Math.round(255 * CameraPicture.light(actor.skyLight(), actor.blockLight(), scene)), 0, 255);
+                if (profile != null && net.neoforged.fml.ModList.get().isLoaded("figura"))
+                    CameraFigura.draw(profile.getProfile().getId(), model, pose, batch, shade);
                 model.render(pose, batch.getBuffer(RenderType.entityCutoutNoCull(texture)), LightTexture.FULL_BRIGHT,
                         OverlayTexture.NO_OVERLAY, 0xff000000 | shade * 0x010101);
                 batch.endBatch();
@@ -186,6 +195,18 @@ final class CameraActors {
 
     private static void limb(ModelPart root, String name, float swing) {
         if (root.hasChild(name)) root.getChild(name).xRot = swing;
+    }
+
+    private static void setSkinParts(ModelPart model, int mask) {
+        // This mesh is shared by players of the same build. Undo any prior Figura visibility.
+        for (String name : new String[]{"head","body","left_arm","right_arm","left_leg","right_leg"})
+            model.getChild(name).visible = true;
+        model.getChild("hat").visible = (mask & PlayerModelPart.HAT.getMask()) != 0;
+        model.getChild("jacket").visible = (mask & PlayerModelPart.JACKET.getMask()) != 0;
+        model.getChild("left_sleeve").visible = (mask & PlayerModelPart.LEFT_SLEEVE.getMask()) != 0;
+        model.getChild("right_sleeve").visible = (mask & PlayerModelPart.RIGHT_SLEEVE.getMask()) != 0;
+        model.getChild("left_pants").visible = (mask & PlayerModelPart.LEFT_PANTS_LEG.getMask()) != 0;
+        model.getChild("right_pants").visible = (mask & PlayerModelPart.RIGHT_PANTS_LEG.getMask()) != 0;
     }
 
     static void clear() {

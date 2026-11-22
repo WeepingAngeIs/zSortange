@@ -25,7 +25,8 @@ import static probe.Orders.check;
 @EventBusSubscriber(modid="roomroles")
 public final class Scenario {
     private static final String FLAVOR=System.getProperty("roomroles.trial","");
-    private static final boolean SHARP=FLAVOR.startsWith("sharp-"), SOLO=FLAVOR.equals("sharp-solo");
+    private static final boolean SHARP=FLAVOR.startsWith("sharp-"), SOLO=FLAVOR.endsWith("-solo");
+    private static final boolean RANGE=FLAVOR.startsWith("sharp-range-"), RANGE_OLD=FLAVOR.equals("sharp-range-old");
     private static final boolean OLD_PICTURE=FLAVOR.equals("sharp-old");
     private static final String OWNER="CamOwner", BUILDER="RoomBuilder", GUEST="RoomVisitor";
     private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial"));
@@ -269,12 +270,17 @@ public final class Scenario {
         if(!SOLO){
             verify("grant-ordinary-storage-view-without-camera-ownership",()->hub.setMember(player(BUILDER).getUUID(),BasePermissions.VISIT|BasePermissions.BUILD|BasePermissions.VIEW));
             viewStudio("private-while-source-loaded",BUILDER,"sharp.private",-1);
+            if(RANGE && !RANGE_OLD){
+                perspective("guest-denied-back",BUILDER,"back","private",false);
+                perspective("guest-denied-front",BUILDER,"front","private",false);
+            }
             step("outside-observer-returns-to-the-real-source",()->PocketService.recover(player(BUILDER)),()->player(BUILDER).level()==home);
             verify("outside-player-naturally-tracks-source",()->{
                 player(BUILDER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0);
                 home.setDefaultSpawnPos(HUB,0);home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(2,server);
             });
         }
+        if(RANGE){rangeSteps();return;}
         sharpView("large-day","clear");
         if(!OLD_PICTURE){
             sharpView("day-open-atmosphere","open-sky");
@@ -365,6 +371,147 @@ public final class Scenario {
             check(home.getChunkSource().getChunkNow(SOURCE.getX()>>4,SOURCE.getZ()>>4)==null,"Watching forced the source back into memory");
             return server.getTickCount()-started>=50;
         });
+    }
+
+    private static void perspective(String name,String role,String view,String expectation,boolean offscreen){
+        step(name,()->{
+            BlockPos screen=studioWall();
+            Vec3 feet=new Vec3(screen.getX()+1.65,65,screen.getZ()-4);
+            Vec3 eye=feet.add(0,player(role).getEyeHeight(),0);
+            Vec3 direction=Vec3.atCenterOf(screen).add(0,0,.435).subtract(eye);
+            boolean backwards=view.equals("front")!=offscreen;
+            order(role,"sharp.range."+view+"."+expectation,screen,feet,
+                    eye.add(backwards?direction.scale(-1):direction),Items.AIR,false,null,0);
+        },()->true);
+    }
+    private static void marker(int distance,Block block){
+        BlockPos center=SOURCE.north(distance);
+        for(BlockPos cell:BlockPos.betweenClosed(center.offset(-4,-4,0),center.offset(4,4,0))){
+            check(home.getChunkSource().getChunkNow(cell.getX()>>4,cell.getZ()>>4)!=null,"Missing preloaded range marker chunk at "+distance);
+            home.setBlockAndUpdate(cell,block.defaultBlockState());
+        }
+    }
+    private static void skygridBlocker(boolean enabled){
+        BlockPos center=studioWall().north(2);
+        for(BlockPos pos:BlockPos.betweenClosed(center.offset(-3,-2,0),center.offset(3,3,0))){
+            if(enabled)check(inside().isEmptyBlock(pos),"Unexpected wall by fixture monitor: "+pos);
+            inside().setBlockAndUpdate(pos,(enabled?Blocks.STONE:Blocks.AIR).defaultBlockState());
+        }
+    }
+    private static void rangeSteps(){
+        perspective("perspective-first",OWNER,"first","visible",false);
+        perspective("perspective-back",OWNER,"back",RANGE_OLD?"inactive":"visible",false);
+        perspective("perspective-front",OWNER,"front",RANGE_OLD?"inactive":"visible",false);
+        if(!RANGE_OLD){
+            perspective("face-away-from-screen",OWNER,"back","inactive",true);
+            perspective("front-camera-facing-away",OWNER,"front","inactive",true);
+            verify("put-opaque-wall-between-player-and-monitor",()->skygridBlocker(true));
+            perspective("screen-behind-opaque-wall",OWNER,"front","inactive",false);
+            verify("remove-opaque-wall",()->skygridBlocker(false));
+            perspective("back-view-restored",OWNER,"back","visible",false);
+        }
+        if(!SOLO){
+            verify("outside-player-enters-camera-picture",()->{
+                var p=player(BUILDER);
+                p.connection.teleport(SOURCE.getX()+1.55,81,SOURCE.getZ()-3,-45,0);
+                p.setYHeadRot(-45);p.yBodyRot=-45;
+            });
+            perspective("visible-skin",OWNER,"first","actor",false);
+            sharpReference("stock-skin");
+            verify("veto-the-actor-location",()->StudioEvidence.denied=player(BUILDER).blockPosition());
+            perspective("denied-actor",OWNER,"first","noactor",false);
+            verify("restore-actor-location",()->StudioEvidence.denied=null);
+            verify("make-actor-invisible",()->player(BUILDER).addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                    net.minecraft.world.effect.MobEffects.INVISIBILITY,1200,0,false,false)));
+            perspective("invisible-skin",OWNER,"first","noactor",false);
+            sharpReference("stock-invisible");
+            verify("remove-invisibility",()->player(BUILDER).removeEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY));
+            verify("load-range-course-from-outdoor-player",()->player(BUILDER).connection.teleport(
+                    SOURCE.getX()+6.5,-59,SOURCE.getZ()-32.5,180,0));
+        }
+        step("all-range-course-chunks-naturally-loaded",()->{},()->{
+            for(int z=SOURCE.north(65).getZ()>>4;z<=SOURCE.getZ()>>4;z++)
+                if(!tracked(z))return false;
+            return true;
+        });
+        verify("open-unobstructed-view-of-distance-course",()->{
+            for(var pos:BlockPos.betweenClosed(SOURCE.north(5).offset(-6,-1,0),SOURCE.north(5).offset(6,2,0)))
+                home.setBlockAndUpdate(pos,Blocks.AIR.defaultBlockState());
+            // Give both versions the same bounded sightline. The aperture keeps the baseline
+            // from spending its independent claim budget on hundreds of empty peripheral rays.
+            var aperture=SOURCE.north(6);
+            for(int x=-7;x<=7;x++)for(int y=-7;y<=7;y++)if(Math.abs(x)>1||Math.abs(y)>1)
+                home.setBlockAndUpdate(aperture.offset(x,y,0),Blocks.SMOOTH_STONE.defaultBlockState());
+            home.setBlockAndUpdate(SOURCE.north(4).east(3),Blocks.BOOKSHELF.defaultBlockState());
+        });
+        int previous=0;
+        for(int distance:new int[]{24,25,32,48,64,65}){
+            final int last=previous;
+            verify("place-range-panel-at-"+distance,()->{
+                if(last!=0)marker(last,Blocks.AIR);
+                marker(distance,Blocks.GOLD_BLOCK);
+            });
+            perspective("range-"+distance,OWNER,"first",(distance<=(RANGE_OLD?24:64)?"seen-":"beyond-")+distance,false);
+            if(distance==48&&!RANGE_OLD){
+                verify("deny-only-the-intervening-volume",()->StudioEvidence.curtain=SOURCE.north(28));
+                perspective("range-48-hidden-by-claim",OWNER,"back","masked-48",false);
+                verify("clear-intervening-claim",()->StudioEvidence.curtain=null);
+            }
+            previous=distance;
+        }
+        verify("remove-final-range-panel",()->{
+            marker(65,Blocks.AIR);
+            var aperture=SOURCE.north(6);
+            for(int x=-7;x<=7;x++)for(int y=-7;y<=7;y++)if(Math.abs(x)>1||Math.abs(y)>1)
+                home.setBlockAndUpdate(aperture.offset(x,y,0),Blocks.AIR.defaultBlockState());
+            wallScene(Blocks.STONE_BRICKS);
+        });
+        if(!RANGE_OLD){
+            verify("veto-the-source-camera",()->StudioEvidence.denied=SOURCE);
+            perspective("source-revoked-in-back-view",OWNER,"back","denied",false);
+            verify("restore-the-source-camera",()->StudioEvidence.denied=null);
+            perspective("source-restored-in-front-view",OWNER,"front","visible",false);
+            if(!SOLO){
+                verify("return-outdoor-player-to-lens",()->player(BUILDER).connection.teleport(SOURCE.getX()+3.5,81,SOURCE.getZ()+2.5,180,0));
+                step("let-outdoor-tracking-settle",()->{},()->server.getTickCount()-started>=160);
+                step("find-a-naturally-unloaded-foreground-chunk",Scenario::moveToFrontier,()->{
+                    int elapsed=server.getTickCount()-started;
+                    if(elapsed<160)return false;
+                    if(tracked(0)&&!tracked(-1))return true;
+                    if(elapsed%160==0){frontierDistance+=tracked(0)?1:-1;
+                        check(frontierDistance>=2&&frontierDistance<=12,"No natural frontier");moveObserverSouth();}
+                    return false;
+                });
+                perspective("foreground-unloaded-in-third-person",OWNER,"back","edge",false);
+                verify("viewing-keeps-the-foreground-unloaded",()->check(tracked(0)&&!tracked(-1),"Watched chunk was loaded"));
+            }
+            step("remove-outdoor-load-cause",()->{
+                home.setDefaultSpawnPos(HUB,0);home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(2,server);
+                if(!SOLO)player(BUILDER).connection.teleport(HUB.getX()+3,81,HUB.getZ()+3,0,0);
+            },()->!tracked(0));
+            perspective("source-unloaded-in-front-view",OWNER,"front","denied",false);
+            step("viewing-does-not-reload-source",()->{},()->{
+                check(!tracked(0),"Watching pulled the source back into memory");
+                return server.getTickCount()-started>=50;
+            });
+        }
+        if(!SOLO){
+            var key=net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                    net.minecraft.resources.ResourceLocation.parse("roomroles:open_sky"));
+            step("load-custom-open-sky-with-outdoor-player",()->{
+                var level=Objects.requireNonNull(server.getLevel(key));
+                player(BUILDER).teleportTo(level,.5,-63,.5,0,0);
+            },()->server.getLevel(key).getChunkSource().getChunkNow(0,0)!=null);
+            verify("custom-dimension-atmosphere",()->{
+                var level=server.getLevel(key);
+                var method=SourceSky.class.getDeclaredMethod("observe",ServerLevel.class,BlockPos.class);
+                method.setAccessible(true);
+                var sky=(SourceSky)method.invoke(null,level,new BlockPos(0,80,0));
+                check((sky!=null)==!RANGE_OLD,"Incorrect support for custom dimension's Overworld sky");
+                Orders.write("custom-atmosphere.ok",level.dimension().location()+" effects="+level.dimensionType().effectsLocation()+
+                        " sampled="+(sky!=null)+(sky==null?"":" background="+sky.background()+" phase="+sky.phase()));
+            });
+        }
     }
 
     private static void studioOutside(){

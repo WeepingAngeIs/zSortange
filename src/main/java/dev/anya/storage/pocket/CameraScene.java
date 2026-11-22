@@ -18,14 +18,16 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
                           Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
                           List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop, int[] edgeBackdrop) implements CustomPacketPayload {
     public static final int SIDE = 32, ATMOSPHERE = Short.MAX_VALUE;
+    static final int RANGE = 64;
+    static final float FAR_CLIP = RANGE + 4;
     static final int MAX_SURFACES = 512, MAX_ACTORS = 6, MAX_EDGE_CELLS = 48;
-    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v3"));
+    public static final Type<CameraScene> TYPE = new Type<>(ExpansionPackets.id("camera_scene_v4"));
     public static BiConsumer<Connection, CameraScene> receiver = (connection, scene) -> {};
 
     public record Surface(int stateId, int x, int y, int z, Direction face, float plane,
                           int skyLight, int blockLight, int tint) {}
     public record Actor(int typeId, Vec3 feet, float yaw, float headYaw, float pitch, float phase, float speed,
-                        int skyLight, int blockLight) {}
+                        int skyLight, int blockLight, int appearance, int skinParts) {}
 
     static boolean adjacentOnPlane(Surface a, Surface b) {
         int dx=a.x-b.x, dy=a.y-b.y, dz=a.z-b.z;
@@ -57,7 +59,7 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
 
     static void register(RegisterPayloadHandlersEvent event) {
         StreamCodec<RegistryFriendlyByteBuf, CameraScene> codec = StreamCodec.ofMember(CameraScene::write, CameraScene::read);
-        event.registrar("sharpcamera3").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
+        event.registrar("sharpcamera4").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
     }
 
     private void write(RegistryFriendlyByteBuf out) {
@@ -84,6 +86,8 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
             out.writeVarInt(actor.typeId); vector(out,actor.feet);
             out.writeFloat(actor.yaw); out.writeFloat(actor.headYaw); out.writeFloat(actor.pitch); out.writeFloat(actor.phase); out.writeFloat(actor.speed);
             out.writeByte(actor.skyLight << 4 | actor.blockLight);
+            out.writeVarInt(actor.appearance);
+            if (actor.appearance != 0) out.writeByte(actor.skinParts);
         }
         for (int i=0;i<cells.length;i++) {
             out.writeShort(cells[i]);
@@ -117,20 +121,23 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
         for (int i=0;i<count;i++) {
             int id=bounded(in.readVarInt(),Integer.MAX_VALUE);
             int x=in.readByte(),y=in.readByte(),z=in.readByte();
-            if(Math.abs(x)>25 || Math.abs(y)>25 || Math.abs(z)>25) throw new IllegalArgumentException("Face outside camera range");
+            if(Math.abs(x)>RANGE+1 || Math.abs(y)>RANGE+1 || Math.abs(z)>RANGE+1) throw new IllegalArgumentException("Face outside camera range");
             Direction normal=Direction.from3DDataValue(bounded(in.readUnsignedByte(),5));
-            float plane=bounded(in.readFloat(),-26,26); int light=in.readUnsignedByte();
+            float plane=bounded(in.readFloat(),-RANGE-2,RANGE+2); int light=in.readUnsignedByte();
             surfaces.add(new Surface(id,x,y,z,normal,plane,light>>>4,light&15,in.readInt()&0xffffff));
         }
         count=bounded(in.readUnsignedByte(),MAX_ACTORS);
         List<Actor> actors=new ArrayList<>(count);
         for(int i=0;i<count;i++) {
             int id=bounded(in.readVarInt(),Integer.MAX_VALUE);
-            Vec3 feet=vector(in,-26,26);
+            Vec3 feet=vector(in,-RANGE-2,RANGE+2);
             float yaw=bounded(in.readFloat(),-180,180),head=bounded(in.readFloat(),-180,180);
             float pitch=bounded(in.readFloat(),-180,180),phase=bounded(in.readFloat(),0,256),speed=bounded(in.readFloat(),0,1);
             int light=in.readUnsignedByte();
-            actors.add(new Actor(id,feet,yaw,head,pitch,phase,speed,light>>>4,light&15));
+            int appearance = in.readVarInt();
+            if (appearance < CameraAppearanceHistory.SELF) throw new IllegalArgumentException("Unknown appearance handle");
+            int parts = appearance == 0 ? 0 : bounded(in.readUnsignedByte(), 127);
+            actors.add(new Actor(id,feet,yaw,head,pitch,phase,speed,light>>>4,light&15,appearance,parts));
         }
         int[] cells=new int[SIDE*SIDE], backdrop=new int[SIDE*SIDE];
         for(int i=0;i<cells.length;i++) {

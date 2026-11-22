@@ -3,14 +3,14 @@ package dev.anya.storage.pocket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
 /** The Overworld celestial plane in camera coordinates. No destination coordinates leave the server. */
 public record SourceSky(int background, float clarity, float angle, int phase) {
     static final int SUN=0x4000000, MOON=0x5000000;
     static SourceSky observe(ServerLevel level,BlockPos camera){
-        if(!level.dimension().equals(Level.OVERWORLD) || !level.dimensionType().effectsLocation().toString().equals("minecraft:overworld"))return null;
+        var type=level.dimensionType();
+        if(!type.hasSkyLight() || type.hasCeiling() || !type.effectsLocation().toString().equals("minecraft:overworld"))return null;
         var color=Vec3.fromRGB24(level.getBiome(camera).value().getSkyColor());
         float angle=level.getSunAngle(1),rain=level.getRainLevel(1),storm=level.getThunderLevel(1);
         color=color.scale(Mth.clamp(2*Mth.cos(angle)+.5f,0,1));

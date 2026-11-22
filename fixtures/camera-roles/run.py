@@ -11,7 +11,7 @@ root = Path("build/role-check") / sys.argv[1]
 control = root / "control"
 control.mkdir(parents=True, exist_ok=True)
 server = root / "Server"
-solo = sys.argv[1] == 'sharp-solo'
+solo = sys.argv[1].endswith('-solo')
 sharp = sys.argv[1].startswith('sharp-')
 server.mkdir(exist_ok=True)
 (server / "eula.txt").write_text("eula=true\n")

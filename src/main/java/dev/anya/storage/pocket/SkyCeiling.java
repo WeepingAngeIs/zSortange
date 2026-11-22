@@ -76,7 +76,7 @@ public final class SkyCeiling extends SavedData {
     private static final Map<ServerPlayer,UUID> showing=new WeakHashMap<>();
     static void visit(ServerPlayer p,PocketLedger.Pocket room,long tick){
         if(!p.connection.hasChannel(Frame.TYPE))return;
-        if(!room.owner().equals(p.getUUID())||p.isSpectator()||!p.isAlive()||p.getLookAngle().y<.12
+        if(!room.owner().equals(p.getUUID())||p.isSpectator()||!p.isAlive()||p.getCamera()!=p||CameraFeed.viewDirection(p).y<.12
                 ||!room.contains(p.getBlockX(),p.getBlockY(),p.getBlockZ())){
             if(showing.containsKey(p))end(p.getUUID(),p.getServer());return;
         }

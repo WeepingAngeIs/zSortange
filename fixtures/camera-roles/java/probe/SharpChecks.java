@@ -31,7 +31,7 @@ import static probe.Orders.check;
 final class SharpChecks {
     private static final String trial=System.getProperty("roomroles.trial","");
     static boolean sharp(){return trial.startsWith("sharp-");}
-    static boolean single(){return trial.equals("sharp-solo");}
+    static boolean single(){return trial.endsWith("-solo");}
     private static boolean creating, referenceInProgress;
     private static int scenes,blankScenes,startScenes,startBlank;
     private static Matrix4f projection;
@@ -40,7 +40,7 @@ final class SharpChecks {
         projection=new Matrix4f(frame.getProjectionMatrix()).mul(frame.getModelViewMatrix());
         eye=frame.getCamera().getPosition();
     }
-    private static void savePanel(Minecraft mc,CameraDevices.Device monitor,Path image)throws Exception{
+    static void savePanel(Minecraft mc,CameraDevices.Device monitor,Path image)throws Exception{
         var centerMethod=CameraFeed.class.getDeclaredMethod("screenCenter",CameraDevices.Device.class);
         centerMethod.setAccessible(true);
         var center=(Vec3)centerMethod.invoke(null,monitor);
@@ -137,7 +137,7 @@ final class SharpChecks {
     static void startSolo(Minecraft mc)throws Exception{
         mc.options.pauseOnLostFocus=false;
         if(creating || !(mc.screen instanceof TitleScreen) || mc.getOverlay()!=null)return;
-        check("true".equals(System.getenv("GITHUB_ACTIONS")) && mc.gameDirectory.toPath().toAbsolutePath().normalize().endsWith(Path.of("role-check","sharp-solo","CamOwner")) && !Files.exists(mc.gameDirectory.toPath().resolve("saves/CameraSolo")),"Expected a fresh hosted single-player client");
+        check("true".equals(System.getenv("GITHUB_ACTIONS")) && mc.gameDirectory.toPath().toAbsolutePath().normalize().endsWith(Path.of("role-check",trial,"CamOwner")) && !Files.exists(mc.gameDirectory.toPath().resolve("saves/CameraSolo")),"Expected a fresh hosted single-player client");
         creating=true;
         var settings=new LevelSettings("CameraSolo",GameType.SURVIVAL,false,Difficulty.NORMAL,false,new GameRules(),WorldDataConfiguration.DEFAULT);
         mc.createWorldOpenFlows().createFreshLevel("CameraSolo",settings,new WorldOptions(19211L,false,false),
@@ -151,6 +151,7 @@ final class SharpChecks {
         var action=order.action().substring(6);
         var mc=Minecraft.getInstance();
         var path=Orders.ROOT.resolve(order.step()+"-"+System.getProperty("roomroles.name")+".png");
+        if(action.startsWith("range."))return RangeChecks.capture(mc,order,path,age,scenes-startScenes,blankScenes-startBlank,legacyBlankDelta);
         if(action.equals("reference")){
             referenceInProgress=true;
             try{

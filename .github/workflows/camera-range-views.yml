@@ -1,0 +1,136 @@
+name: Camera range, player appearance and F5 views
+on:
+  push:
+    branches: [experiment/camera-range-views]
+permissions:
+  contents: read
+  actions: read
+env:
+  NEW: anya-storage-plus-0.3.0-beta.7-cameraview.1.jar
+  OLD: anya-storage-plus-0.3.0-beta.7-sharpcam.3.jar
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: Build the candidate and optional test support
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor 0b899cdeb1c440dac039afebec1f1c5ebe0b8a66 HEAD
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/appearance-check/fixture.gradle prepareAppearanceCheck
+          mkdir support
+          cp "build/libs/$NEW" build/appearance-check/private-camera-checks-1.jar support/
+          git rev-parse HEAD > support/SOURCE_COMMIT.txt
+          (cd support && sha256sum *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: camera-view-check-tools
+          path: support/
+          retention-days: 7
+  observe:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [old, new, solo]
+    env:
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+      TRIAL: sharp-range-${{ matrix.trial }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - uses: actions/download-artifact@v4
+        if: matrix.trial == 'old'
+        with:
+          name: anya-storage-plus-sharpcam.3
+          run-id: 44991463192
+          github-token: ${{ github.token }}
+          path: playable
+      - uses: actions/download-artifact@v4
+        if: matrix.trial != 'old'
+        with:
+          name: camera-view-check-tools
+          path: playable
+      - name: Verify real Minecraft perspectives, range and screen contents
+        run: |
+          set -euo pipefail
+          if [[ "$TRIAL" == sharp-range-old ]]; then
+            jar="$OLD"
+            test "$(cat playable/SOURCE_COMMIT.txt)" = 0b899cdeb1c440dac039afebec1f1c5ebe0b8a66
+            echo "8ef8d26343d30dc9ab2cda1fa7bdf93b71f7ec9ac1922ad89c16c908e87ae68a  playable/$OLD" | sha256sum -c -
+          else
+            jar="$NEW"
+            test "$(cat playable/SOURCE_COMMIT.txt)" = "$(git rev-parse HEAD)"
+          fi
+          (cd playable && sha256sum -c SHA256SUMS.txt)
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$PWD/playable/$jar" prepareRoleTrial
+          python3 -u -B fixtures/camera-roles/run.py "$TRIAL"
+      - name: Collect synthetic observations and exact failure step
+        if: always()
+        run: |
+          shopt -s nullglob
+          folder="build/role-check/$TRIAL"
+          if test -d "$folder/control"; then
+            for f in "$folder"/control/{step.txt,*status,FAIL-*}; do test ! -f "$f" || tail -10 "$f"; done
+            for f in "$folder"/*/console.log; do
+              tail -40 "$f" > "$folder/control/$(basename "$(dirname "$f")")-log-tail.txt"
+            done
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observed-${{ matrix.trial }}
+          path: build/role-check/${{ env.TRIAL }}/control/
+          retention-days: 7
+          if-no-files-found: ignore
+  compare:
+    needs: observe
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: observed-*
+          path: observations
+      - name: Compare the presented screens with the physical lens
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          mkdir -p comparison
+          /usr/bin/python3 -B fixtures/camera-roles/range_captures.py | tee comparison/CHECKS.txt
+          git rev-parse HEAD > comparison/SOURCE_COMMIT.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: camera-view-comparisons
+          path: comparison/
+          retention-days: 14

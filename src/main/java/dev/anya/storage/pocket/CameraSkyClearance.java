@@ -24,7 +24,7 @@ final class CameraSkyClearance {
     private final Sight[] horizon=new Sight[SECTORS*SECTORS];
     private Boolean overhead;
     private enum Sight { BLOCKED, EDGE, CLEAR }
-    // Geometry is observed at 24 blocks. Beyond it the wall feed can depict only atmosphere.
+    // Outside the observed terrain the wall feed can depict only atmosphere.
     private static final int HORIZON_DISTANCE=64;
 
     CameraSkyClearance(ServerPlayer viewer,ServerLevel level,LoadedPocketBlocks blocks,BlockPos lens,Vec3 eye,boolean wall) {

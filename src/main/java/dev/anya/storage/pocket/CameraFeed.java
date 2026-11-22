@@ -28,6 +28,15 @@ public final class CameraFeed {
     record Watch(BlockPos pos) implements CustomPacketPayload {
         static final Type<Watch> TYPE=new Type<>(ExpansionPackets.id("camera_watch"));public Type<Watch> type(){return TYPE;}
     }
+    record Perspective(boolean mirrored) implements CustomPacketPayload {
+        static final Type<Perspective> TYPE=new Type<>(ExpansionPackets.id("camera_perspective"));
+        public Type<Perspective> type(){return TYPE;}
+    }
+    private static final Set<ServerPlayer> mirroredViews=Collections.newSetFromMap(new WeakHashMap<>());
+    static Vec3 viewDirection(ServerPlayer player){
+        var look=player.getLookAngle();
+        return mirroredViews.contains(player)?look.reverse():look;
+    }
     record Frame(BlockPos pos,long time,int background,float clarity,int[] pixels) implements CustomPacketPayload {
         static final Type<Frame> TYPE=new Type<>(ExpansionPackets.id("camera_frame"));public Type<Frame> type(){return TYPE;}
     }
@@ -37,6 +46,13 @@ public final class CameraFeed {
     static BiConsumer<Connection,Frame> receiver=(c,f)->{};
     public static void register(RegisterPayloadHandlersEvent e){
         CameraConsole.register(e);SkyCeiling.register(e);CameraScene.register(e);
+        e.registrar("cameraperspective1").optional().playToServer(Perspective.TYPE,
+                StreamCodec.ofMember((msg,buf)->buf.writeBoolean(msg.mirrored()),buf->new Perspective(buf.readBoolean())),
+                (msg,ctx)->{
+                    if(ctx.player() instanceof ServerPlayer p){
+                        if(msg.mirrored())mirroredViews.add(p);else mirroredViews.remove(p);
+                    }
+                });
         var channel=e.registrar("skyglass2").optional();
         StreamCodec<RegistryFriendlyByteBuf,Watch> watch=StreamCodec.ofMember((w,b)->b.writeBlockPos(w.pos),b->new Watch(b.readBlockPos()));
         StreamCodec<RegistryFriendlyByteBuf,Frame> frame=StreamCodec.ofMember((f,b)->{b.writeBlockPos(f.pos);b.writeLong(f.time);b.writeInt(f.background);b.writeFloat(f.clarity);b.writeVarIntArray(f.pixels);},
@@ -91,8 +107,11 @@ public final class CameraFeed {
         sessions.put(p,new Session(d,p.serverLevel().getGameTime()));
     }
     static CameraDevices.Device source(ServerPlayer p,CameraDevices.Device d){
-        if(!d.owned(p) || p.isSpectator() || !p.isAlive() || d.getLevel()!=p.level() || d.isRemoved() || d.linked==null || d.owner==null)return null;
-        var eye=p.getEyePosition();var hit=visiblePoint(d,eye,p.getLookAngle());if(hit==null)return null;
+        return source(p,d,p.getLookAngle());
+    }
+    private static CameraDevices.Device source(ServerPlayer p,CameraDevices.Device d,Vec3 look){
+        if(!d.owned(p) || p.isSpectator() || !p.isAlive() || p.getCamera()!=p || d.getLevel()!=p.level() || d.isRemoved() || d.linked==null || d.owner==null)return null;
+        var eye=p.getEyePosition();var hit=visiblePoint(d,eye,look);if(hit==null)return null;
         var blocks=new LoadedPocketBlocks(p.serverLevel());
         if(blocks.getBlockEntity(d.getBlockPos())!=d || blocks.clip(new ClipContext(eye,hit,ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,p)).getType()!=HitResult.Type.MISS
                 || !blocks.complete() || !Safety.locationReason(p,p.serverLevel(),BlockPos.containing(hit.add(normal(d).scale(.004)))).isEmpty() || !Safety.locationReason(p,p.serverLevel(),d.getBlockPos()).isEmpty())return null;
@@ -109,7 +128,8 @@ public final class CameraFeed {
             if(p.getServer()!=e.getServer() || e.getServer().getPlayerList().getPlayer(p.getUUID())!=p){sessions.remove(p);continue;}
             var d=session.device;
             try{
-                var cam=source(p,d);
+                var look=viewDirection(p);
+                var cam=source(p,d,look);
                 if(cam==null || p.serverLevel().getGameTime()-session.renewed>18){sessions.remove(p);send(p,d,-1,null,new int[0]);continue;}
                 if(Math.floorMod(e.getServer().getTickCount()+p.getId(),12)!=0)continue;
                 var level=(ServerLevel)cam.getLevel();
@@ -119,14 +139,14 @@ public final class CameraFeed {
                 var target=subject(p,level,cam,sky);
                 if(sharpWall(p,d)) {
                     var scene=CameraSceneCapture.capture(p,d,level,cam,atmosphere,target);
-                    if(scene.time()<0 || source(p,d)!=cam){send(p,d,-1,null,new int[0]);continue;}
+                    if(scene.time()<0 || source(p,d,viewDirection(p))!=cam){send(p,d,-1,null,new int[0]);continue;}
                     PacketDistributor.sendToPlayer(p,scene);
                     if(p.connection.hasChannel(CameraConsole.Motion.TYPE))CameraConsole.signal(p,d,cam.tracking.mode==CameraTracking.Mode.MOTION?target:null);
                     continue;
                 }
                 int side=d.getBlockState().getBlock() instanceof WallMonitorBlock&&Math.max(d.panel.width(),d.panel.height())>3&&p.connection.hasChannel(WideFrame.TYPE)?32:16;
                 int[] pixels=capture(p,level,cam,atmosphere,target,side);
-                if(source(p,d)!=cam || Arrays.stream(pixels).allMatch(pixel->pixel==UNKNOWN)){send(p,d,-1,null,new int[0]);continue;}
+                if(source(p,d,viewDirection(p))!=cam || Arrays.stream(pixels).allMatch(pixel->pixel==UNKNOWN)){send(p,d,-1,null,new int[0]);continue;}
                 send(p,d,level.getDayTime(),atmosphere,pixels);
                 if(p.connection.hasChannel(CameraConsole.Motion.TYPE))CameraConsole.signal(p,d,cam.tracking.mode==CameraTracking.Mode.MOTION?target:null);
             }catch(RuntimeException unavailable){sessions.remove(p);send(p,d,-1,null,new int[0]);}

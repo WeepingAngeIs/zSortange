@@ -83,6 +83,7 @@ tasks.register('sharedBaseTest', JavaExec) {
 tasks.named('check') { dependsOn tasks.named('sharedBaseTest') }
 
 repositories {
+    maven { url = 'https://api.modrinth.com/maven'; content { includeModule 'maven.modrinth', 'figura' } }
     mavenCentral()
     maven { url = 'https://maven.terraformersmc.com/releases'; content { includeGroup 'dev.emi' } }
     maven { url = 'https://maven.wispforest.io/releases' }
@@ -90,6 +91,7 @@ repositories {
     maven { url = 'https://maven.su5ed.dev/releases'; content { includeGroup 'org.sinytra.forgified-fabric-api' } }
 }
 dependencies {
+    compileOnly('maven.modrinth:figura:AvgeQoZm') { transitive = false }
     compileOnly('dev.emi:emi-neoforge:1.1.24+1.21.1:api') { transitive = false }
     compileOnly('io.wispforest:accessories-neoforge:1.1.0-beta.53+1.21.1') { transitive = false }
     if(project.hasProperty('accessoriesTest')) {

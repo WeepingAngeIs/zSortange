@@ -1,0 +1,13 @@
+// Standalone test support: never part of the gameplay JAR.
+gradle.beforeProject { project -> project.afterEvaluate {
+    def fixture = project.sourceSets.create('appearanceCheck')
+    fixture.java.srcDir 'fixtures/appearance-check/java'
+    fixture.resources.srcDir 'fixtures/appearance-check/resources'
+    project.neoForge.addModdingDependenciesTo(fixture)
+    project.tasks.register('prepareAppearanceCheck', Jar) {
+        dependsOn fixture.classesTaskName
+        from fixture.output
+        archiveFileName = 'private-camera-checks-1.jar'
+        destinationDirectory = project.layout.buildDirectory.dir('appearance-check')
+    }
+}}

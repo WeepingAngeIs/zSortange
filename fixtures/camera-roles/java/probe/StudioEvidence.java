@@ -19,9 +19,13 @@ import static probe.Orders.check;
 public final class StudioEvidence {
     static final BlockPos CAMERA=new BlockPos(0,82,0);
     static Mob creeper,cow,skeleton;
-    static BlockPos screen,denied;
+    static BlockPos screen,denied,curtain;
     static UUID cameraId;
-    @SubscribeEvent public static void claim(StorageAccessEvent e){if(denied!=null&&e.position.equals(denied))e.setCanceled(true);}
+    @SubscribeEvent public static void claim(StorageAccessEvent e){
+        if(denied!=null&&e.position.equals(denied))e.setCanceled(true);
+        if(curtain!=null&&e.position.getZ()==curtain.getZ()
+                &&Math.abs(e.position.getX()-curtain.getX())<=5&&Math.abs(e.position.getY()-curtain.getY())<=5)e.setCanceled(true);
+    }
     static CameraDevices.Device device(ServerLevel level,BlockPos pos){return (CameraDevices.Device)level.getBlockEntity(pos);}
     static CompoundTag tag(ServerLevel level,BlockPos pos){return device(level,pos).saveWithoutMetadata(level.registryAccess());}
     static int property(ServerLevel level,BlockPos pos,String key){

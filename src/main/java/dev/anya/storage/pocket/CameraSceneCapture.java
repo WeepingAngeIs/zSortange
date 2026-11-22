@@ -34,7 +34,11 @@ import net.minecraft.world.phys.Vec3;
 
 /** Trace the first permitted surface from a physical lens. Nothing in this class acquires a chunk ticket. */
 final class CameraSceneCapture {
-    private static final int REACH=24, CLAIM_BUDGET=3072;
+    private static final int REACH=CameraScene.RANGE;
+    private static final int[] RANGES={12,24,REACH};
+    private static final int NEAR_CHECKS=3072, ALL_CHECKS=7168;
+    // Internal results only; neither value is a picture cell or an actor reference.
+    private static final int TRACE_CLEAR=0x10000, OUT_OF_CHECKS=0x10001;
     private static final Direction[] FACE_DIRECTIONS=Direction.values();
     private static final Set<EntityType<?>> MODELS=Set.of(EntityType.PLAYER,EntityType.COW,EntityType.CREEPER,
             EntityType.ZOMBIE,EntityType.SKELETON,EntityType.PIG);
@@ -57,6 +61,7 @@ final class CameraSceneCapture {
     private final Map<CameraScene.Surface,Integer> faces=new LinkedHashMap<>();
     private final Map<LivingEntity,Integer> visibleActors=new LinkedHashMap<>();
     private final List<LivingEntity> candidates=new ArrayList<>();
+    private int claimLimit=NEAR_CHECKS;
 
     private CameraSceneCapture(ServerPlayer player,ServerLevel level,CameraDevices.Device camera) {
         this.viewer=player; this.level=level; this.camera=camera;
@@ -83,32 +88,46 @@ final class CameraSceneCapture {
         BlockPos outside=camera.getBlockPos().above();
         boolean outdoors=sky!=null && skyClearance.overhead();
         boolean wet=outdoors && level.isRaining() && allowed(outside) && level.isRainingAt(outside);
-        // Broad phase only inspects entities already present on the server. No entity identity is sent.
+        // Broad phase only inspects entities already present on the server.
         var nearby=new ArrayList<LivingEntity>();
         level.getEntities(EntityTypeTest.forClass(LivingEntity.class),new AABB(eye,eye).inflate(REACH),
-                e->true,nearby,32);
+                e->MODELS.contains(e.getType()) && e.isAlive() && !e.isInvisible()
+                        && e.distanceToSqr(eye)<REACH*REACH
+                        && forward.dot(e.getBoundingBox().getCenter().subtract(eye))>0,nearby,32);
         nearby.sort(java.util.Comparator.comparingDouble(e->e.distanceToSqr(eye)));
         for(var e:nearby) {
-            if(e.distanceToSqr(eye)<REACH*REACH && forward.dot(e.getBoundingBox().getCenter().subtract(eye))>0
-                    && eligible(e))candidates.add(e);
+            if(eligible(e))candidates.add(e);
             if(candidates.size()==CameraScene.MAX_ACTORS)break;
         }
 
         int side=CameraScene.SIDE;
         int[] cells=new int[side*side], backdrop=new int[side*side];
+        Vec3[] rays=new Vec3[cells.length];
+        for(int i=0;i<cells.length;i++){
+            int x=i%side,y=i/side;
+            rays[i]=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
+            cells[i]=TRACE_CLEAR;
+        }
+        int[] atmosphereAtNearLimit=new int[cells.length];
+        for(int range:RANGES){
+            claimLimit=range==REACH?ALL_CHECKS:NEAR_CHECKS;
+            for(int sequence=0;sequence<cells.length;sequence++){
+                int index=sampleOrder(sequence,side);
+                if(cells[index]!=TRACE_CLEAR)continue;
+                int x=index%side,y=index/side;
+                Vec3 ray=rays[index], end=eye.add(ray.scale(range));
+                int result=trace(ray,end,x,y,sky,false,nearestActor(ray,end,false),range==REACH);
+                if(result==TRACE_CLEAR && range==24)atmosphereAtNearLimit[index]=skyClearance.wall(x,y,side,ray,sky);
+                if(result==OUT_OF_CHECKS){
+                    // Only retain atmosphere already observed across the original 24 blocks.
+                    // An actual denial or missing foreground chunk always yields a masked cell.
+                    cells[index]=range==REACH?atmosphereAtNearLimit[index]:TRACE_CLEAR;
+                }else cells[index]=result;
+            }
+        }
         boolean any=false, observedSky=false, observedAtmosphere=false;
-        // Prioritize the central vertical sightline from ground to sky, then fill out each row.
-        // A crowded middle band cannot spend the whole allowance before even sampling the horizon.
-        for(int i=0;i<cells.length;i++) {
-            int row=i<side?i:(i-side)/(side-1);
-            int col=i<side?0:1+(i-side)%(side-1);
-            int x=centerFirst(col,side), y=centerFirst(row,side);
-            Vec3 ray=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
-            int code=trace(ray,x,y,sky,false,nearestActor(ray,eye.add(ray.scale(REACH)),false));
-            observedSky|=code==1;
-            observedAtmosphere|=code==CameraScene.ATMOSPHERE;
-            cells[y*side+x]=code;
-            any|=code!=0;
+        for(int code:cells){
+            any|=code!=0; observedSky|=code==1; observedAtmosphere|=code==CameraScene.ATMOSPHERE;
         }
         if(!any) return CameraScene.empty(monitor);
         // The native head/arms can extend beyond a standing collision box. Only actors already
@@ -195,6 +214,14 @@ final class CameraSceneCapture {
 
     private static int centerFirst(int i,int side) {return side/2+((i&1)==0?i/2:-(i+1)/2);}
 
+    // The central four rays include the aimed distant object. Then sample the vertical
+    // sightline from horizon to ground/sky, ahead of the remaining near-to-center rows.
+    private static int sampleOrder(int i,int side){
+        int col=i<2*side?i%2:2+(i-2*side)%(side-2);
+        int row=i<2*side?i/2:(i-2*side)/(side-2);
+        return centerFirst(row,side)*side+centerFirst(col,side);
+    }
+
     private boolean eligible(LivingEntity e) {
         if(e.level()!=level || !MODELS.contains(e.getType()) || e.isRemoved() || !e.isAlive()
                 || e.isSpectator() || e.isInvisible() || e.isInvisibleTo(viewer) || !e.broadcastToPlayer(viewer)
@@ -204,9 +231,16 @@ final class CameraSceneCapture {
 
     private CameraScene.Actor actor(LivingEntity entity) {
         BlockPos pos=entity.blockPosition();
+        int appearance = 0, parts = 0;
+        if (entity instanceof ServerPlayer player) {
+            appearance = CameraAppearanceHistory.appearance(viewer, player);
+            if (appearance != 0) for (var part : net.minecraft.world.entity.player.PlayerModelPart.values())
+                if (player.isModelPartShown(part)) parts |= part.getMask();
+        }
         return new CameraScene.Actor(BuiltInRegistries.ENTITY_TYPE.getId(entity.getType()),entity.position().subtract(origin),
                 Mth.wrapDegrees(entity.yBodyRot),Mth.wrapDegrees(entity.getYHeadRot()),Mth.wrapDegrees(entity.getXRot()),
-                Mth.positiveModulo(entity.walkAnimation.position(),256f),Mth.clamp(entity.walkAnimation.speed(),0,1),skyLight(pos),level.getBrightness(LightLayer.BLOCK,pos));
+                Mth.positiveModulo(entity.walkAnimation.position(),256f),Mth.clamp(entity.walkAnimation.speed(),0,1),
+                skyLight(pos),level.getBrightness(LightLayer.BLOCK,pos),appearance,parts);
     }
 
     private int skyLight(BlockPos pos) {
@@ -215,7 +249,7 @@ final class CameraSceneCapture {
 
     private boolean allowed(BlockPos pos) {
         Boolean previous=access.get(pos); if(previous!=null)return previous;
-        if(access.size()>=CLAIM_BUDGET || blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null) return false;
+        if(access.size()>=claimLimit || blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null) return false;
         boolean ok=Safety.locationReason(viewer,level,pos).isEmpty();
         access.put(pos.immutable(),ok);
         return ok;
@@ -259,7 +293,15 @@ final class CameraSceneCapture {
 
     private int trace(Vec3 ray,int x,int y,SourceSky sky,boolean background,EntityHit entity) {
         Vec3 end=eye.add(ray.scale(REACH));
+        int code=trace(ray,end,x,y,sky,background,entity,true);
+        return code==OUT_OF_CHECKS?0:code;
+    }
+
+    private int trace(Vec3 ray,Vec3 end,int x,int y,SourceSky sky,boolean background,EntityHit entity,boolean finalRange) {
         return BlockGetter.traverseBlocks(eye,end,ray,(direction,pos)->{
+            if(access.size()>=claimLimit && !access.containsKey(pos)){
+                return blocks.chunk(pos.getX()>>4,pos.getZ()>>4)==null?0:OUT_OF_CHECKS;
+            }
             if(!allowed(pos))return 0;
             BlockState state=blocks.getBlockState(pos);
             if(pos.equals(camera.getBlockPos()))return null;
@@ -279,7 +321,7 @@ final class CameraSceneCapture {
             if(hit==null)return null;
             if(state.getRenderShape()!=RenderShape.MODEL)return 0;
             return surface(pos,state,hit,background);
-        },direction->skyClearance.wall(x,y,CameraScene.SIDE,direction,sky));
+        },direction->finalRange?skyClearance.wall(x,y,CameraScene.SIDE,direction,sky):TRACE_CLEAR);
     }
 
     // At the exact edge shared by two cubes AABB.clip can pick the internal X face

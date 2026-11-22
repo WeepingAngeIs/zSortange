@@ -25,7 +25,7 @@ import org.lwjgl.system.MemoryUtil;
 
 /** A private, depth-tested view of the approved outdoor faces using the player's baked meshes and block atlas. */
 final class CameraTerrain {
-    private static final float NEAR = .03f, FAR = 48f;
+    private static final float NEAR = .03f, FAR = CameraScene.FAR_CLIP;
     private static TextureTarget target;
     private static ByteBufferBuilder storage;
     private static NativeImage color;

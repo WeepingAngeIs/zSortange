@@ -19,6 +19,8 @@ public final class CameraScreen {
     private static CameraFeed.Frame current;
     private static CameraScene scene;
     private static long tick,expiry,request;
+    private static net.minecraft.client.player.LocalPlayer perspectivePlayer;
+    private static net.minecraft.client.CameraType perspective;
     private static String motion="";
     static {
         CameraConsole.receiver=(connection,view)->{
@@ -48,8 +50,14 @@ public final class CameraScreen {
     }
     private static CameraDevices.Device pick(Minecraft mc){
         if(mc.player==null || !mc.player.isAlive() || mc.player.isSpectator() || mc.screen!=null || mc.level==null
-                || mc.getCameraEntity()!=mc.player || !mc.options.getCameraType().isFirstPerson())return null;
+                || mc.getCameraEntity()!=mc.player)return null;
         Vec3 eye=mc.player.getEyePosition(),look=mc.player.getLookAngle();
+        if(!mc.options.getCameraType().isFirstPerson()){
+            var camera=mc.gameRenderer.getMainCamera();
+            if(!camera.isInitialized() || !camera.isDetached() || camera.getEntity()!=mc.player)return null;
+            eye=camera.getPosition();
+            look=new Vec3(camera.getLookVector());
+        }
         var end=eye.add(look.scale(48));
         var hit=mc.level.clip(new net.minecraft.world.level.ClipContext(eye,end,net.minecraft.world.level.ClipContext.Block.COLLIDER,
                 net.minecraft.world.level.ClipContext.Fluid.NONE,mc.player));
@@ -68,6 +76,9 @@ public final class CameraScreen {
     }
     private static boolean visible(Minecraft mc,CameraDevices.Device d,Vec3 eye,Vec3 look){
         if(d==null||d.isRemoved()||d.getLevel()!=mc.level||!(d.getBlockState().getBlock() instanceof WallMonitorBlock))return false;
+        return hasSight(mc,d,eye,look);
+    }
+    private static boolean hasSight(Minecraft mc,CameraDevices.Device d,Vec3 eye,Vec3 look){
         var point=CameraFeed.visiblePoint(d,eye,look);
         return point!=null&&mc.level.clip(new net.minecraft.world.level.ClipContext(eye,point,net.minecraft.world.level.ClipContext.Block.COLLIDER,
                 net.minecraft.world.level.ClipContext.Fluid.NONE,mc.player)).getType()==HitResult.Type.MISS;
@@ -84,10 +95,22 @@ public final class CameraScreen {
         }
         return null;
     }
-    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;scene=null;motion="";SkyglassPixels.clear();CameraPicture.clear();}
+    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;scene=null;perspectivePlayer=null;perspective=null;motion="";SkyglassPixels.clear();CameraPicture.clear();}
     @SubscribeEvent public static void update(ClientTickEvent.Post event){
         tick++;
-        var mc=Minecraft.getInstance();var d=pick(mc);
+        var mc=Minecraft.getInstance();
+        var mode=mc.options.getCameraType();
+        if(perspectivePlayer!=mc.player || perspective!=mode){
+            perspectivePlayer=mc.player;perspective=mode;
+            target=null;current=null;scene=null;motion="";request=0;
+            if(mc.player!=null && mc.getConnection()!=null && mc.getConnection().hasChannel(CameraFeed.Perspective.TYPE))
+                PacketDistributor.sendToServer(new CameraFeed.Perspective(mode.isMirrored()));
+        }
+        var d=pick(mc);
+        if(d!=null && !mode.isFirstPerson()){
+            var look=mc.player.getLookAngle();
+            if(!hasSight(mc,d,mc.player.getEyePosition(),mode.isMirrored()?look.reverse():look))d=null;
+        }
         if(target!=d){motion="";current=null;scene=null;target=d;request=0;}
         if(tick>expiry){current=null;scene=null;}
         if(scene==null && CameraPicture.rendered()!=null)CameraPicture.clear();

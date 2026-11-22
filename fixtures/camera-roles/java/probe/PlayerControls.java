@@ -76,6 +76,7 @@ public final class PlayerControls {
         var next=Orders.JSON.fromJson(Files.readString(file),Orders.Order.class);
         if(order==null || !order.step().equals(next.step())){
             order=next;SharpChecks.next();done=false;age=0;stable=0;atPositive=positive;atEmpty=empty;initialCeiling=ceilingPackets;initialBlank=blankCeiling;clicked=false;diagnostic="";
+            if(System.getProperty("roomroles.trial","").startsWith("sharp-range-"))RangeChecks.perspective(mc,order);
             if(!order.action().equals("use"))mc.gui.getChat().clearMessages(false);
         }
         if(done)return;

@@ -19,7 +19,7 @@ gradle.beforeProject { p -> p.afterEvaluate {
     p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(playable,fixture))
     def roles = ['Server','CamOwner','RoomBuilder']
     if(flavor=='candidate') roles += 'RoomVisitor'
-    if(flavor=='sharp-solo') roles = ['CamOwner']
+    if(flavor.endsWith('-solo')) roles = ['CamOwner']
     def tasks = []
     roles.each { role ->
         def dir = new File(root,role)
@@ -28,7 +28,7 @@ gradle.beforeProject { p -> p.afterEvaluate {
             else {
                 client()
                 programArguments.addAll '--username',role,'--width','720','--height','480'
-                if(flavor!='sharp-solo') programArguments.addAll '--quickPlayMultiplayer','127.0.0.1:25574'
+                if(!flavor.endsWith('-solo')) programArguments.addAll '--quickPlayMultiplayer','127.0.0.1:25574'
             }
             sourceSet=runtime
             loadedMods=[]
