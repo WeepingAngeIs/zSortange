@@ -166,6 +166,7 @@ public final class Config {
         if (!saved) return new SettingResult("rejected", feedback[0], revision);
         if (revision == before) return new SettingResult("unchanged", "Already set.", revision);
         if (reloading) return serverSettingsStatus(actor);
+        if (revision != before + 1) return new SettingResult("rejected", lastStatus, revision);
         return new SettingResult("applied", feedback[0], revision);
     }
 

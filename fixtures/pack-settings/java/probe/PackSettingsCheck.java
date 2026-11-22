@@ -34,6 +34,9 @@ public final class PackSettingsCheck {
     static ServerPlayer operator, colleague, guest;
     static int step,started;
     static long afterReload;
+    static final java.util.concurrent.atomic.AtomicInteger globalSyncs=new java.util.concurrent.atomic.AtomicInteger();
+    static int syncsBeforeApply;
+    static String applyOutcome;
     static Map<String,Object> expectedSettings;
     static void check(boolean ok,String why){if(!ok)throw new AssertionError(why);}
     static void pass(String detail){evidence.add("PASS "+detail);}
@@ -153,6 +156,9 @@ public final class PackSettingsCheck {
         deniedCommand(guest,COMMAND);deniedCommand(guest,COMMAND+" list");deniedCommand(guest,COMMAND+" get "+CHANCE);deniedCommand(guest,COMMAND+" set "+CHANCE+" 0");
         pass("The actual command dispatcher accepted operator list/get and both bare operator entries. A non-operator could open personal preferences and could not run the pack settings commands.");
     }
+    @SubscribeEvent public static void reloaded(net.neoforged.neoforge.event.OnDatapackSyncEvent event){
+        if(event.getPlayer()==null)globalSyncs.incrementAndGet();
+    }
     static void operations(MinecraftServer server)throws Exception{
         var initial=rev();var original=onDisk();expectedSettings=new HashMap<>(values());
         check(api.snapshot(guest)==null && ReflectiveSettings.revision(api.status(guest))==-1,"Guest obtained settings/status");
@@ -183,10 +189,16 @@ public final class PackSettingsCheck {
         write(operator,before,SHARING,"true",true,"confirmation_required");
         write(colleague,before,SHARING,"true",true,"confirmation_required");
         check(onDisk().equals(untouched)&&!((Boolean)values().get(SHARING)),"A forged first confirmation or another operator enabled sharing");
-        var applied=write(operator,before,SHARING,"true",true,"pending_reload");afterReload=ReflectiveSettings.revision(applied);
-        check(afterReload==before+1 && field(api.status(operator),"status").equals("pending_reload"),"Confirmed change did not advance revision once and report its pending reload");
+        syncsBeforeApply=globalSyncs.get();
+        var applied=api.set(operator,before,SHARING,"true",true);
+        afterReload=ReflectiveSettings.revision(applied);applyOutcome=(String)field(applied,"status");
+        String observed=(String)field(api.status(operator),"status");
+        check(afterReload==before+1 && !field(applied,"message").toString().isBlank(),"Confirmed change did not advance the revision once");
+        check(applyOutcome.equals("applied") && observed.equals("ready") ||
+              applyOutcome.equals("pending_reload") && Set.of("pending_reload","ready").contains(observed),
+              "Unexpected apply result and reload status: "+applyOutcome+", "+observed);
         expectedSettings.put(SHARING,true);
-        pass("Turning on sharing required a matching second confirmation by the same operator and reported its resource reload.");
+        pass("Turning on sharing required a matching second confirmation by the same operator.");
     }
     @SubscribeEvent public static void tick(ServerTickEvent.Post event)throws Exception{
         if(step==99)return;
@@ -207,9 +219,13 @@ public final class PackSettingsCheck {
                 guest=actor(server,"SettingsGuest",false);colleague=actor(server,"SettingsSecondOp",true);
                 catalogue();commands();operations(server);started=server.getTickCount();step=1;
             }else if(step==1){
-                if(!field(api.status(operator),"status").equals("ready")){
-                    check(server.getTickCount()-started<500,"Resource reload did not complete: "+Config.lastStatus);return;
+                String status=(String)field(api.status(operator),"status");
+                check(Set.of("ready","pending_reload").contains(status),"Resource reload failed: "+status);
+                if(!status.equals("ready") || globalSyncs.get()==syncsBeforeApply){
+                    check(server.getTickCount()-started<500,"Missing completed global data pack synchronization: "+Config.lastStatus);return;
                 }
+                check(globalSyncs.get()==syncsBeforeApply+1,"Expected one server-wide data pack synchronization after this edit");
+                pass("The confirmed edit returned "+applyOutcome+"; NeoForge synchronized reloaded data to all players once and the settings API reported ready.");
                 disk(CONFIG,afterReload,100,true);disk(BACKUP,afterReload-1,100,false);
                 check(rev()==afterReload && values().equals(expectedSettings) && ReflectiveSettings.revision(api.status(operator))==afterReload,"Unexpected revision or setting after resource reload");
                 Files.writeString(Path.of("expected.txt"),Long.toString(afterReload));
