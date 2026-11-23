@@ -10,14 +10,15 @@ import java.util.BitSet;
 import javax.imageio.ImageIO;
 import javax.imageio.stream.MemoryCacheImageInputStream;
 import org.jcodec.api.FrameGrab;
-import org.jcodec.codecs.aac.AACDecoder;
+import net.sourceforge.jaad.SampleBuffer;
+import net.sourceforge.jaad.aac.Decoder;
 import org.jcodec.common.Codec;
-import org.jcodec.common.DemuxerTrack;
 import org.jcodec.common.io.ByteBufferSeekableByteChannel;
 import org.jcodec.common.model.ColorSpace;
 import org.jcodec.common.model.Packet;
 import org.jcodec.common.model.Picture;
 import org.jcodec.containers.mp4.demuxer.MP4Demuxer;
+import org.jcodec.containers.mp4.demuxer.AbstractMP4DemuxerTrack;
 import org.jcodec.scale.ColorUtil;
 import org.w3c.dom.Node;
 
@@ -64,7 +65,7 @@ public final class ScreenCodec {
     }
 
     private int mp4(byte[] data) throws Exception {
-        try (var demux = MP4Demuxer.createMP4Demuxer(channel(data)); var source = channel(data)) {
+        try (var demux = MP4Demuxer.createRawMP4Demuxer(channel(data)); var source = channel(data)) {
             var tracks = demux.getVideoTracks();
             require(tracks.size() == 1 && demux.getAudioTracks().size() <= 1);
             var meta = tracks.get(0).getMeta();
@@ -107,7 +108,8 @@ public final class ScreenCodec {
                 }
                 frame(time, small);
             }
-            if (!demux.getAudioTracks().isEmpty()) audio(demux.getAudioTracks().get(0), duration);
+            if (!demux.getAudioTracks().isEmpty())
+                audio(demux.getAudioTracks().get(0), duration, demux.getMovie().getTimescale());
             return duration;
         }
     }
@@ -116,25 +118,51 @@ public final class ScreenCodec {
         return ByteBufferSeekableByteChannel.readFromByteBuffer(ByteBuffer.wrap(data));
     }
 
-    private void audio(DemuxerTrack track, int duration) throws Exception {
+    private void audio(AbstractMP4DemuxerTrack track, int duration, int movieTimescale) throws Exception {
         var meta = track.getMeta();
         require(meta.getCodec() == Codec.AAC && meta.getCodecPrivate() != null);
-        var decoder = new AACDecoder(meta.getCodecPrivate().duplicate());
+        var config = meta.getCodecPrivate().duplicate();
+        require(config.remaining() > 0 && config.remaining() <= 128);
+        byte[] asc = new byte[config.remaining()];
+        config.get(asc);
+        var decoder = Decoder.create(asc);
+        var audio = new SampleBuffer();
+        audio.setBigEndian(false);
+        require(decoder != null && track.getTimescale() > 0 && movieTimescale > 0);
+        double trimSeconds = 0, delaySeconds = 0;
+        var edits = track.getBox().getEdits();
+        if (edits != null && !edits.isEmpty()) {
+            require(edits.size() == 1 || edits.size() == 2 && edits.get(0).getMediaTime() == -1);
+            if (edits.size() == 2) delaySeconds = edits.get(0).getDuration() / (double)movieTimescale;
+            var edit = edits.get(edits.size()-1);
+            require(edit.getRate()==1 && edit.getMediaTime() >= 0);
+            trimSeconds = edit.getMediaTime() / (double)track.getTimescale();
+            require(trimSeconds <= 60 && delaySeconds >= 0 && delaySeconds <= 60);
+        }
         var pcm = new ByteArrayOutputStream();
-        int rate = 0, packets = 0;
+        int rate = 0, packets = 0, trim = 0;
         for (Packet packet; (packet = track.nextFrame()) != null;) {
             require(++packets <= 6500);
-            var audio = decoder.decodeFrame(packet.getData(), null);
-            var format = audio.getFormat();
-            if (format.getChannels() == 0 || audio.getData().remaining() == 0) continue;
-            require(format.getChannels() <= 2 && format.getSampleSizeInBits() == 16 && format.isSigned()
-                    && format.getSampleRate() >= 8000 && format.getSampleRate() <= 48000
-                    && (rate == 0 || rate == format.getSampleRate()));
-            rate = format.getSampleRate();
-            var data = audio.getData().order(format.isBigEndian() ? ByteOrder.BIG_ENDIAN : ByteOrder.LITTLE_ENDIAN);
-            while (data.remaining() >= format.getFrameSize()) {
+            var raw = packet.getData();
+            require(raw.remaining() > 0 && raw.remaining() <= 65536);
+            byte[] encoded = new byte[raw.remaining()]; raw.get(encoded);
+            decoder.decodeFrame(encoded, audio);
+            if (audio.getData().length == 0) continue;
+            int channels = audio.getChannels();
+            require(channels >= 1 && channels <= 2 && audio.getBitsPerSample() == 16 && !audio.isBigEndian()
+                    && audio.getSampleRate() >= 8000 && audio.getSampleRate() <= 48000
+                    && (rate == 0 || rate == audio.getSampleRate()));
+            if (rate == 0) {
+                rate = audio.getSampleRate();
+                trim = (int)Math.round(trimSeconds*rate);
+                pcm.write(new byte[2*(int)Math.round(delaySeconds*rate)]);
+            }
+            var data = ByteBuffer.wrap(audio.getData()).order(ByteOrder.LITTLE_ENDIAN);
+            require(data.remaining() % (2*channels) == 0);
+            while (data.hasRemaining()) {
                 int sample = data.getShort();
-                if (format.getChannels() == 2) sample = (sample + data.getShort()) / 2;
+                if (channels == 2) sample = (sample + data.getShort()) / 2;
+                if (trim > 0) { trim--; continue; }
                 pcm.write(sample); pcm.write(sample >>> 8);
             }
             require(pcm.size() <= 6_000_000);

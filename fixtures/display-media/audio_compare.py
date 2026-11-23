@@ -32,6 +32,8 @@ def metrics(pcm,label):
         cc=float(np.dot(aligned,segment)/(np.linalg.norm(aligned)*np.linalg.norm(segment)))
         peaks=np.abs(np.fft.rfft(a[w:w+w]*np.hanning(w)))
         print(f"{label} {endian}: median {np.median(shares):.5f}, best {max(shares):.5f}, ffmpeg correlation {cc:.5f}, periodic lag {lag} samples, RMS {np.sqrt(np.mean(a*a)):.1f}, peaks Hz {4*np.argsort(peaks)[-5:][::-1]}, length {len(a)}, reference {len(r)}",flush=True)
+        if label=="revised exact production" and endian=="<i2":
+            assert np.median(shares)>.98 and cc>.99 and abs(lag)<=1
 
 with tempfile.TemporaryDirectory() as directory:
     tmp=pathlib.Path(directory)
@@ -45,13 +47,14 @@ with tempfile.TemporaryDirectory() as directory:
         out=subprocess.run(["java","-Xmx160m","-cp",str(tmp)+os.pathsep+str(jar),"SourceAac",name],input=adts,stdout=subprocess.PIPE)
         if out.returncode==0: metrics(out.stdout,name+" raw AAC")
         else: print(name,"decode error",out.returncode)
-        if name=="jcodec":
+        if name=="jaad094":
             worker=root/"src/screenCodec/java/dev/anya/codec/ScreenCodec.java"
-            subprocess.run(["javac","-cp",str(jar),"-d",str(tmp),str(worker)],check=True)
-            payload=subprocess.check_output(["java","-Xmx160m","-cp",str(tmp)+os.pathsep+str(jar),"dev.anya.codec.ScreenCodec"],input=movie.read_bytes())
+            libs=os.pathsep.join([str(tmp/"jaad094.jar"),str(tmp/"jcodec.jar")])
+            subprocess.run(["javac","-cp",libs,"-d",str(tmp),str(worker)],check=True)
+            payload=subprocess.check_output(["java","-Xmx160m","-cp",str(tmp)+os.pathsep+libs,"dev.anya.codec.ScreenCodec"],input=movie.read_bytes())
             stream=io.BytesIO(payload)
             magic,w,h=struct.unpack(">iii",stream.read(12)); assert magic==0x41535031
             while (tag:=stream.read(1))==b"\1":stream.seek(4+w*h*4,1)
             assert tag==b"\2"
             rate,n=struct.unpack(">ii",stream.read(8)); assert rate==44100
-            metrics(stream.read(n),"exact production")
+            metrics(stream.read(n),"revised exact production")
