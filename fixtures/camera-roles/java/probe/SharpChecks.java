@@ -243,6 +243,21 @@ final class SharpChecks {
         if(action.equals("roof") && (rain>.01 || upper<2 || upper==atmosphere || upper-2>=surfaces.size()
                 || !net.minecraft.world.level.block.Block.stateById(((Number)prop(surfaces.get(upper-2),"stateId")).intValue()).is(Blocks.SPRUCE_PLANKS)))return null;
         if(visible<cells.length/12)return null;
+        if(action.startsWith("wallroom.")) {
+            boolean gold=action.endsWith("gold");
+            if(!blockTypes.contains(gold?Blocks.GOLD_BLOCK:Blocks.LAPIS_BLOCK)
+                    || blockTypes.contains(gold?Blocks.LAPIS_BLOCK:Blocks.GOLD_BLOCK))return null;
+            check(!mc.hasSingleplayerServer() && mc.level.dimension().location().toString().equals("anyastorage:pockets")
+                    && !(boolean)prop(scene,"localLighting"),"Require remote server and outdoor-source lighting in Skygrid");
+            savePanel(mc,target,path);
+            var picture=Class.forName("dev.anya.storage.pocket.CameraPicture");
+            var tex=(DynamicTexture)field(picture,"texture").get(null);
+            tex.getPixels().writeToFile(path.resolveSibling(path.getFileName()+".texture.png"));
+            Files.writeString(path.resolveSibling(path.getFileName()+".scene.json"),Orders.JSON.toJson(java.util.Map.of(
+                    "observations",scenes-startScenes,"surfaces",surfaces.size(),"material",gold?"gold":"lapis",
+                    "viewerDimension",mc.level.dimension().location().toString(),"localLighting",false)));
+            return "Real production cross-dimension scene packet displayed with independent outdoor light";
+        }
         if(action.startsWith("wallnight.")){
             boolean masked=action.endsWith("masked"),blue=action.endsWith("blue");
             if(masked){
@@ -251,12 +266,13 @@ final class SharpChecks {
             if(!blockTypes.contains(Blocks.CHERRY_PLANKS))return null;
             long expectedTime=order.step().startsWith("day-")?6000:14990;
             if(Math.floorMod(((Number)prop(scene,"time")).longValue(),24000)!=expectedTime)return null;
-            check(mc.hasSingleplayerServer() && mc.player.level()==target.getLevel(),"Expected one player in the same dimension as the lens");
+            boolean dedicated=trial.equals("sharp-wall-night-dedicated");
+            check(mc.hasSingleplayerServer()!=dedicated && mc.player.level()==target.getLevel(),"Unexpected camera client or dimension");
             savePanel(mc,target,path);
             var picture=Class.forName("dev.anya.storage.pocket.CameraPicture");
             var method=picture.getDeclaredMethod("hardware");method.setAccessible(true);
             boolean gpu=(boolean)method.invoke(null);
-            boolean nightCandidate=trial.equals("sharp-wall-night-candidate-solo");
+            boolean nightCandidate=trial.equals("sharp-wall-night-candidate-solo") || dedicated;
             boolean localLight=nightCandidate && (boolean)prop(scene,"localLighting");
             if(nightCandidate)check(gpu && localLight,"Candidate must use the authorized surface mesh with its own dimension lighting");
             var tex=(DynamicTexture)field(picture,"texture").get(null);

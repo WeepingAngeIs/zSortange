@@ -36,6 +36,7 @@ public final class PlayerControls {
     }
     @SuppressWarnings("unchecked")
     private static void observeWire()throws Exception{
+        Orders.recordFrozenRuntime(ROLE);
         Class.forName(CameraScreen.class.getName(),true,CameraScreen.class.getClassLoader());
         var receiver=field(CameraFeed.class,"receiver");
         var display=(BiConsumer<Connection,Object>)receiver.get(null);
@@ -205,6 +206,18 @@ public final class PlayerControls {
         var screen=mc.screen;
         if(action.equals("photo"))return;
         if(action.equals("close")){screen.onClose();acknowledge("Closed the player screen");return;}
+        if(action.equals("display-controls")){
+            if(clicked && screen.getClass().getSimpleName().equals("CameraControlsScreen")){
+                acknowledge("Opened the live-camera controls through the display source selector");return;
+            }
+            var controls=net.minecraft.network.chat.Component.translatable("screen.anyastorage.media.controls");
+            if(!clicked && screen.getClass().getSimpleName().equals("DisplaySourceScreen"))
+                for(var child:screen.children())if(child instanceof net.minecraft.client.gui.components.Button b
+                        && b.active && b.getMessage().getString().equals(controls.getString())){
+                    screen.mouseClicked(b.getX()+b.getWidth()/2.,b.getY()+b.getHeight()/2.,0);clicked=true;break;
+                }
+            return;
+        }
         if(screen instanceof dev.anya.storage.Client.Screen store){
             var menu=store.getMenu();
             if(action.equals("cosmetics")&&clicked&&menu.getSlot(49).getItem().getHoverName().getString().startsWith("Live ceiling")

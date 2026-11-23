@@ -1,0 +1,116 @@
+name: Frozen playable backpack recovery and worn fit
+on:
+  workflow_call:
+permissions:
+  contents: read
+  actions: read
+env:
+  CANDIDATE: anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar
+  FROZEN_PLAYABLE_COMMIT: 6a2b110e9f2c8e969999d4e0d3777b9c835c5fe1
+  FROZEN_PLAYABLE_SHA256: a46c6666190c57feeb016a40c78e4f3112959591d6e41909880800542e992497
+  BASE_SHA: cee168e14de1fcfa3415748a2e5e72759cdd01d8
+  BASE_RUN: '45114857255'
+jobs:
+  backpack:
+    if: github.repository == 'WeepingAngeIs/zSortange' && !github.event.repository.private
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [history, synthetic, absent]
+    env:
+      TRIAL: ${{ matrix.trial }}
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      LP_NUM_THREADS: '2'
+      ALSOFT_DRIVERS: 'null'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Fetch the exact previously built screenmedia.1 artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '14841672358'
+          repository: WeepingAngeIs/zSortange
+          run-id: 45220752346
+          github-token: ${{ github.token }}
+          path: frozen
+          merge-multiple: true
+      - name: Pin binary identity before launching any fixture
+        run: |
+          set -euo pipefail
+          test "$(cat frozen/SOURCE_COMMIT.txt)" = "$FROZEN_PLAYABLE_COMMIT"
+          printf '%s  %s\n' "$FROZEN_PLAYABLE_SHA256" "frozen/$CANDIDATE" | sha256sum --check -
+          printf 'ANYA_FROZEN_BACKPACK=%s\n' "$PWD/frozen/$CANDIDATE" >> "$GITHUB_ENV"
+      - name: Fetch original Rosecourt beta.3 journal writer
+        if: matrix.trial == 'history'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '14427069538'
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44305765452
+          github-token: ${{ github.token }}
+          path: jail-build
+          merge-multiple: true
+      - name: Exercise nine recovery phases and verify JVM receipts
+        if: matrix.trial == 'history'
+        run: |
+          set -euo pipefail
+          jail="jail-build/dist/migration-build/Minecraft-Jail-1.3.0-beta.3.jar"
+          printf '%s  %s\n' d7cd43db7d6c4ea88372a1a7e09faee843d51d566a03c398dc999505a8053243 "$jail" | sha256sum --check -
+          python3 -u -B fixtures/backpack-history/run.py "$ANYA_FROZEN_BACKPACK" "$jail"
+          evidence=build/bag-history/CHECKS.txt
+          for phase in seed queue deliver replay receipts source-loss source-replay custody-format custody-restart; do
+            grep -Fxq "$phase $FROZEN_PLAYABLE_SHA256" "$evidence"
+          done
+          test "$(grep '^JVM ' "$evidence" | sort -u | wc -l)" -eq 9
+          printf '%s  %s\n' "$FROZEN_PLAYABLE_SHA256" "$ANYA_FROZEN_BACKPACK" | sha256sum --check -
+      - name: Fetch the matching archived shutdown comparison
+        if: matrix.trial != 'history'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: back-fit-${{ matrix.trial }}-evidence
+          repository: WeepingAngeIs/zSortange
+          run-id: 45114857255
+          github-token: ${{ github.token }}
+          path: prior-fit
+      - name: Refit while walking, check vanilla fallback and close textures
+        if: matrix.trial != 'history'
+        run: |
+          set -euo pipefail
+          if ! command -v xvfb-run >/dev/null || ! command -v xauth >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          fi
+          if [[ "$TRIAL" = synthetic ]]; then
+            curl -fsSL --retry 3 'https://cdn.modrinth.com/data/s9gIPDom/versions/AvgeQoZm/figura-0.1.6%2B1.21.1-neoforge-mc.jar' -o figura.jar
+            echo 'c1e74ce833887f40af0939a373a77a7ed865ad0dfcbf17441f55f0e77ba0b2bd662f4ab7821a740ba883ce2a650ab5eb70311d1aad5233b2a0f07e6ac41c7691  figura.jar' | sha512sum --check -
+          fi
+          python3 -B fixtures/back-fit/prepare.py "$TRIAL"
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/back-fit/fixture.gradle -PfitTrial="$TRIAL" -PfitPlayable="$ANYA_FROZEN_BACKPACK" -PfitFigura="$PWD/figura.jar" prepareBackFit
+          base="$PWD/build/back-fit-$TRIAL"
+          mkdir -p "$base/evidence-logs"
+          code=0
+          (cd "$base/game" && timeout -k 15s 12m xvfb-run -a bash "$(cat "$base/launch.txt")") >"$base/evidence-logs/client.log" 2>&1 || code=$?
+          printf '%s\n' "$code" >"$base/evidence-logs/exit-code.txt"
+          test "$code" -eq 0
+          grep -Fxq "$FROZEN_PLAYABLE_SHA256" "$base/loaded-jar.sha256"
+          cp "$base/loaded-jar.sha256" "$base/evidence/"
+          python3 -B fixtures/back-fit/check_shutdown.py
+          printf '%s  %s\n' "$FROZEN_PLAYABLE_SHA256" "$ANYA_FROZEN_BACKPACK" | sha256sum --check -
+      - name: Save backpack receipts and disposable diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frozen-backpack-${{ matrix.trial }}
+          path: |
+            build/bag-history/CHECKS.txt
+            build/bag-history/*.console.log
+            build/back-fit-${{ matrix.trial }}/evidence/
+            build/back-fit-${{ matrix.trial }}/evidence-logs/client.log
+          if-no-files-found: warn
+          retention-days: 7

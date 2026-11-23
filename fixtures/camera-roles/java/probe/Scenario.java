@@ -29,6 +29,7 @@ public final class Scenario {
     private static final boolean RANGE=FLAVOR.startsWith("sharp-range-"), RANGE_OLD=FLAVOR.equals("sharp-range-old");
     private static final boolean HORIZON=FLAVOR.startsWith("sharp-horizon-"), HORIZON_OLD=FLAVOR.equals("sharp-horizon-old");
     private static final boolean OLD_PICTURE=FLAVOR.equals("sharp-old");
+    private static final boolean DEDICATED_WALL=FLAVOR.equals("sharp-wall-night-dedicated");
     private static final String OWNER="CamOwner", BUILDER="RoomBuilder", GUEST="RoomVisitor";
     private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial"));
     private static final boolean BASELINE="baseline".equals(System.getProperty("roomroles.trial"));
@@ -101,6 +102,7 @@ public final class Scenario {
         writeLog("PASS "+current);index++;current=null;
     }
     private static void prepare()throws Exception{
+        Orders.recordFrozenRuntime("Server");
         home=server.overworld();
         var options=ExpansionRules.get();
         if ("true".equals(System.getenv("VERIFY_POCKET_DEFAULT"))) {
@@ -135,8 +137,13 @@ public final class Scenario {
         }
         owner.getInventory().setItem(1,new ItemStack(Content.CUPID_TABLET.get()));
         frontUse("bind-tablet-to-hub",HUB,Content.CUPID_TABLET.get(),true);
-        if(FLAVOR.startsWith("sharp-wall-night-")){wallNightSteps();return;}
+        if(FLAVOR.startsWith("sharp-wall-night-")){
+            if(DEDICATED_WALL)frontUse("bind-room-cube",DOOR,Content.CUPID_TABLET.get(),true);
+            wallNightSteps();
+            return;
+        }
         frontUse("bind-room-cube",DOOR,Content.CUPID_TABLET.get(),true);
+        if(FLAVOR.equals("sharp-wall-isolated-lens")){isolatedCameraUnload();return;}
         if(SHARP){sharpSteps();return;}
         if(STUDIO)studioOutside();else if(!BASELINE)outsideCameraSteps();
         for(String role:ROLES){
@@ -268,6 +275,11 @@ public final class Scenario {
     }
     private static void wallNightSteps(){
         BlockPos backing=CAMERA.south(),panel=backing.south(),sign=CAMERA.north(12).above();
+        if(DEDICATED_WALL)verify("second-player-is-outside-the-lens",()->{
+            check(server.isDedicatedServer() && server.getPlayerCount()==2,"Expected two real connections");
+            home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0,server);
+            player(BUILDER).connection.teleport(-4.5,81,-1.5,90,0);
+        });
         verify("same-wall-cherry-lane-at-2059",()->{
             home.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);
             home.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false,server);
@@ -302,6 +314,7 @@ public final class Scenario {
         frontUse("mount-indoor-monitor",backing,CameraDevices.WALL.get().asItem(),false);
         frontUse("link-indoor-monitor",panel,Content.CUPID_TABLET.get(),true);
         frontUse("open-monitor-size",panel,Items.AIR,false);
+        if ("true".equals(System.getenv("CUMULATIVE_FROZEN"))) uiStep("open-monitor-camera-controls","display-controls");
         uiStep("expand-width-to-two","width");uiStep("expand-width-to-three","width");
         uiStep("expand-height-to-two","height");uiStep("expand-height-to-three","height");uiStep("close-monitor-settings","close");
         for(String state:List.of("gold","blue")){
@@ -322,6 +335,66 @@ public final class Scenario {
             wallNightView("day-stock-blue",panel,CAMERA,"sharp.reference");
             wallPlayerReference("day",panel);
         }
+        if(DEDICATED_WALL)dedicatedSkygrid(panel,sign);
+    }
+    private static void dedicatedSkygrid(BlockPos wall,BlockPos sign) {
+        verify("give-guest-storage-view-without-camera-ownership",()->hub.setMember(player(BUILDER).getUUID(),
+                BasePermissions.VISIT|BasePermissions.BUILD|BasePermissions.VIEW));
+        step("other-player-cannot-watch-same-wall-screen",()->{
+            var feet=new Vec3(wall.getX()-.45,81,wall.getZ()+3.25);
+            order(BUILDER,"sharp.private",wall,feet,Vec3.atCenterOf(wall),Items.AIR,false,null,0);
+        },()->true);
+        verify("keeper-remains-outdoors",()->player(BUILDER).connection.teleport(-4.5,81,-1.5,90,0));
+        enterAndMountSkygrid(CAMERA);
+        viewStudio("skygrid-blue",OWNER,"sharp.wallroom.blue",-1);
+        verify("outside-sign-turns-gold",()->wallNightSign(sign,Blocks.GOLD_BLOCK));
+        viewStudio("skygrid-gold",OWNER,"sharp.wallroom.gold",-1);
+        // This camera is beside the active hub. Its chunk cannot isolate the effect of a viewer
+        // leaving. The independent sharp-wall-isolated-lens trial uses an outdoor camera far away.
+    }
+    private static void enterAndMountSkygrid(BlockPos lens) {
+        step("owner-enters-skygrid",()->front(OWNER,DOOR,Items.AIR,false),()->{
+            if(!PocketService.inPocket(player(OWNER).level()))return false;
+            room=PocketService.ledger(server).get(((PocketContent.EntranceEntity)home.getBlockEntity(DOOR)).pocket);
+            return room!=null;
+        });
+        verify("skygrid-monitor-backing",()->{
+            check(player(BUILDER).level()==home && home.getChunkSource().getChunkNow(lens.getX()>>4,lens.getZ()>>4)!=null,
+                    "Source keeper and loaded source required");
+            for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)
+                inside().setBlockAndUpdate(studioWall().south().offset(x,y,0),PocketContent.PANEL.get().defaultBlockState());
+        });
+        studioHit("place-skygrid-screen",OWNER,0,1,CameraDevices.WALL.get().asItem(),false);
+        studioHit("link-skygrid-screen",OWNER,0,0,Content.CUPID_TABLET.get(),true);
+        studioHit("size-skygrid-screen",OWNER,0,0,Items.AIR,false);
+        if ("true".equals(System.getenv("CUMULATIVE_FROZEN"))) uiStep("open-skygrid-camera-controls","display-controls");
+        uiStep("skygrid-width-two","width");uiStep("skygrid-width-three","width");
+        uiStep("skygrid-height-two","height");uiStep("skygrid-height-three","height");uiStep("close-skygrid-settings","close");
+    }
+    private static void isolatedCameraUnload() {
+        verify("outdoor-camera-ten-chunks-from-active-hub",()->{
+            check(server.isDedicatedServer() && server.getPlayerCount()==2,"Expected two real clients");
+            sharpStage();
+            home.setDefaultSpawnPos(HUB,0);
+            home.getGameRules().getRule(GameRules.RULE_SPAWN_CHUNK_RADIUS).set(0,server);
+            player(BUILDER).connection.teleport(SOURCE.getX()+4.5,81,SOURCE.getZ()+4.5,180,0);
+            wallScene(Blocks.GOLD_BLOCK);
+        });
+        step("mount-distant-outdoor-lens",()->northUse(SOURCE.south(),CameraDevices.CAMERA.get().asItem(),false),()->{
+            var cam=StudioEvidence.device(home,SOURCE);return cam!=null && cam.owned(player(OWNER));
+        });
+        step("select-distant-outdoor-lens",()->northUse(SOURCE,Content.CUPID_TABLET.get(),true),()->true);
+        enterAndMountSkygrid(SOURCE);
+        viewStudio("distant-skygrid-gold",OWNER,"sharp.wallroom.gold",-1);
+        step("remove-outdoor-load-cause",()->{
+            player(BUILDER).connection.teleport(-495.5,-59,-495.5,0,0);
+        },()->!tracked(SOURCE.getZ()>>4));
+        viewStudio("skygrid-source-unloaded",OWNER,"sharp.unavailable",-1);
+        step("watching-does-not-reload-outdoor-source",()->{},()->{
+            check(!tracked(SOURCE.getZ()>>4) && home.getChunkSource().getChunkNow(HUB.getX()>>4,HUB.getZ()>>4)!=null,
+                    "The isolated source must stay unloaded while the active home anchor remains loaded");
+            return server.getTickCount()-started>=60;
+        });
     }
     private static void wallPlayerReference(String period, BlockPos panel) {
         step(period+"-player-view",()->{

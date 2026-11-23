@@ -1,0 +1,78 @@
+name: Verify frozen cumulative Storage Plus JAR
+on:
+  push:
+    branches: [experiment/cumulative-acceptance]
+permissions: {contents: read, actions: read}
+jobs:
+  backpacks:
+    if: github.event.repository.private == false
+    uses: ./.github/workflows/cumulative-backpack-checks.yml
+  camera:
+    if: github.event.repository.private == false
+    strategy:
+      fail-fast: false
+      matrix: {trial: [sharp-wall-night-dedicated, sharp-wall-isolated-lens]}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      TRIAL: ${{ matrix.trial }}
+      CUMULATIVE_FROZEN: 'true'
+      WALL_FOLLOWUP: 'true'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        with: {artifact-ids: '14841672358', run-id: 45220752346, github-token: "${{ github.token }}", path: frozen, merge-multiple: true}
+      - name: Run two clients and a dedicated server with the selected JAR
+        run: |
+          set -euo pipefail
+          jar="$PWD/frozen/anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar"
+          sha=a46c6666190c57feeb016a40c78e4f3112959591d6e41909880800542e992497
+          echo "$sha  $jar" | sha256sum -c -
+          test "$(cat frozen/SOURCE_COMMIT.txt)" = 6a2b110e9f2c8e969999d4e0d3777b9c835c5fe1
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$jar" prepareRoleTrial
+          folder="build/role-check/$TRIAL/control"
+          mkdir -p "$folder"
+          cp frozen/SOURCE_COMMIT.txt "$folder/SOURCE_COMMIT.txt"
+          echo "$sha  $(basename "$jar")" > "$folder/SHA256SUMS.txt"
+          python3 -Bu fixtures/camera-roles/run.py "$TRIAL"
+          for role in Server CamOwner RoomBuilder; do grep -F "$sha" "$folder/$role-runtime.txt"; done
+      - name: Preserve diagnostics and captures
+        if: always()
+        run: |
+          folder="build/role-check/$TRIAL"; mkdir -p "$folder/control"
+          for role in Server CamOwner RoomBuilder; do
+            if test -f "$folder/$role/console.log"; then tail -65 "$folder/$role/console.log" > "$folder/control/$role-log-tail.txt"; fi
+          done
+          for p in "$folder"/control/{FAIL-*,step.txt}; do if test -f "$p"; then cat "$p"; fi; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "cumulative-${{ matrix.trial }}", path: "build/role-check/${{ env.TRIAL }}/control", retention-days: 14, if-no-files-found: ignore}
+  compare:
+    needs: camera
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env: {CUMULATIVE_FROZEN: 'true'}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with: {name: cumulative-sharp-wall-night-dedicated, path: build/role-check/sharp-wall-night-dedicated/control}
+      - uses: actions/download-artifact@v4
+        with: {name: cumulative-sharp-wall-isolated-lens, path: build/role-check/sharp-wall-isolated-lens/control}
+      - uses: actions/download-artifact@v4
+        with: {artifact-ids: '14835974029', run-id: 45212887020, github-token: "${{ github.token }}", path: solo, merge-multiple: true}
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          /usr/bin/python3 -B fixtures/camera-roles/wall_dedicated_captures.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: cumulative-camera-comparison, path: comparison, retention-days: 14, if-no-files-found: ignore}
