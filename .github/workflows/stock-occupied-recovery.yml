@@ -1,0 +1,130 @@
+name: Stock Rosecourt admission and frozen backpack recovery
+on:
+  push:
+    branches: [experiment/rosecourt-stock-check]
+permissions:
+  actions: read
+  contents: read
+env:
+  PLAYABLE: anya-storage-plus-0.3.0-beta.7-baghistory.2.jar
+  JAIL: Minecraft-Jail-1.3.0-beta.3.jar
+  JAIL_HASH: d7cd43db7d6c4ea88372a1a7e09faee843d51d566a03c398dc999505a8053243
+  PLAYABLE_COMMIT: bed0e0848220785ef4f271ad22590a03ecdec356
+  PLAYABLE_HASH: 7785c90d1831ea82d7b41b990a413c0b267cd94c355275422d6b8c6c81130697
+jobs:
+  pack-custody:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    env:
+      UQ_ACCESSORY_INTEGRATION: '1'
+    steps:
+      - name: Check out the exact upstream jail and full-pack fixture
+        uses: actions/checkout@v4
+        with:
+          repository: WeepingAngeIs/Server-Jars
+          ref: 411857009b8e05f606bb0b5b70648dcce8a9623b
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with: {path: storage, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: jail-249-build-411857009b8e05f606bb0b5b70648dcce8a9623b
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44305765452
+          github-token: ${{ github.token }}
+          path: jail-build
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: jail-production-build-7b2f6b34412403b0839f1be9b82e136d1d893b20
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44099299150
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Retrieve exact Storage executable and the nine prior check receipts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: 14834844176
+          run-id: 45210455021
+          github-token: ${{ github.token }}
+          path: verified-storage
+          merge-multiple: true
+      - name: Retrieve matching frozen Storage test helper
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: 14834779113
+          run-id: 45210455021
+          github-token: ${{ github.token }}
+          path: test-only
+          merge-multiple: true
+      - name: Retrieve the first original full-pack native census
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: pack249-server-a-411857009b8e05f606bb0b5b70648dcce8a9623b
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44305765452
+          github-token: ${{ github.token }}
+          path: stock-census-a
+      - name: Retrieve the second original full-pack native census
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: pack249-server-b-411857009b8e05f606bb0b5b70648dcce8a9623b
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44305765452
+          github-token: ${{ github.token }}
+          path: stock-census-b
+      - name: Prepare the original sealed pack and upstream stimulus
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 411857009b8e05f606bb0b5b70648dcce8a9623b
+          test "$(git -C storage rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(cat verified-storage/SOURCE_COMMIT.txt)" = "$PLAYABLE_COMMIT"
+          printf '%s  %s\n' "$PLAYABLE_HASH" "verified-storage/$PLAYABLE" | sha256sum -c -
+          (cd verified-storage && sha256sum -c SHA256SUMS.txt)
+          printf '%s  %s\n' "$JAIL_HASH" "jail-build/dist/migration-build/$JAIL" | sha256sum -c -
+          mkdir -p dist/120-release minecraft-jail/build/libs
+          cp baseline/dist/production-candidate/Unyielding-1.2.0.jar dist/120-release/
+          cp "jail-build/dist/migration-build/$JAIL" minecraft-jail/build/libs/Minecraft-Jail-1.2.0.jar
+          python3 .github/scripts/fetch-build-dependencies.py
+          python3 .github/native249/full_prepare.py
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libopenal1 libxrandr2 libxcursor1 libxinerama1
+          python3 -m pip install --disable-pip-version-check minecraft-launcher-lib==8.0 nbtlib==2.0.4
+          bash .github/client249/memory.sh
+      - name: Provision the published dedicated subset and all 365 client mods
+        run: |
+          PACK249_INSTALL_ONLY=1 bash .github/pack249/server.sh
+          python3 .github/pack249/provision.py --side client --dest "$RUNNER_TEMP/pack249-client-native"
+          python3 .github/client249/launch.py "$RUNNER_TEMP/pack249-client-native" --install-only
+      - name: Admit a real player to stock Rosecourt with zero server helpers and validate the cleanly saved custody
+        timeout-minutes: 35
+        run: python3 -u storage/fixtures/backpack-history/stock_admission.py "jail-build/dist/migration-build/$JAIL"
+      - name: Verify recovery and restart in the newly occupied full-pack world
+        timeout-minutes: 57
+        run: python3 -u storage/fixtures/backpack-history/stock_recovery.py "verified-storage/$PLAYABLE" test-only/hosted-bag-history-fixture*.jar
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: occupied-pack-diagnostics
+          path: |
+            dist/stock-admission/*.json
+            dist/stock-admission/*.log
+            dist/packaged-smoke/center-phase1.json
+            dist/packaged-smoke/full249-first-session-saved.json
+            dist/packaged-smoke/full249-phase1-logs/*.log
+            dist/packaged-smoke/full249-scope-logs/*.log
+            dist/storage-proof/*.log
+          retention-days: 3
+      - name: Package both verification receipts with the exact playable
+        run: |
+          cp dist/storage-proof/VERIFIED.txt verified-storage/OCCUPIED_ROSECOURT.txt
+          cp dist/stock-admission/occupied.json verified-storage/STOCK_NATIVE_ADMISSION.json
+          (cd verified-storage && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-baghistory.2-occupied-rosecourt-verified
+          path: verified-storage
+          retention-days: 14
+          if-no-files-found: error
