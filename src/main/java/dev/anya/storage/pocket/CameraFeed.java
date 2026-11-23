@@ -77,7 +77,7 @@ public final class CameraFeed {
         var c=screenCenter(d);double t=c.subtract(eye).dot(n)/dot;if(t<0 || t>(d.getBlockState().getBlock() instanceof WallMonitorBlock?48:10))return null;
         var hit=eye.add(look.scale(t));var delta=hit.subtract(c);
         if(d.getBlockState().getBlock() instanceof WallMonitorBlock){
-            int w=d.panel.width(),h=d.panel.height();
+            int w=d.panel.width();double h=d.getBlockState().getBlock() instanceof FlatScreenTvBlock ? .625 : d.panel.height();
             return Math.max(Math.abs(delta.x),Math.abs(delta.z))<w*.5 && Math.abs(delta.y)<h*.5?hit:null;
         }
         double radius=d.getBlockState().is(CameraDevices.SKY.get())?2:.5;
@@ -93,7 +93,8 @@ public final class CameraFeed {
         var projected=eye.add(look.scale(depth/dot)).subtract(c);
         var across=Vec3.atLowerCornerOf(WallPanel.right(WallPanel.face(d)).getNormal());
         double x=Math.clamp(projected.dot(across),.03-d.panel.width()*.5,d.panel.width()*.5-.03);
-        double y=Math.clamp(projected.y,.03-d.panel.height()*.5,d.panel.height()*.5-.03);
+        double halfHeight=d.getBlockState().getBlock() instanceof FlatScreenTvBlock ? .3125 : d.panel.height()*.5;
+        double y=Math.clamp(projected.y,.03-halfHeight,halfHeight-.03);
         var hit=c.add(across.scale(x)).add(0,y,0);var ray=hit.subtract(eye);
         return ray.lengthSqr()<=48*48&&ray.normalize().dot(look)>.89?hit:null;
     }

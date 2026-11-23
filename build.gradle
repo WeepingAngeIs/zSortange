@@ -7,6 +7,27 @@ group = 'dev.anya.storage'
 base { archivesName = 'anya-storage-plus' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 java.withSourcesJar()
+sourceSets { screenCodec }
+dependencies { screenCodecImplementation 'org.jcodec:jcodec:0.2.5' }
+def screenCodecJar = tasks.register('screenCodecJar', Jar) {
+    archiveFileName = 'screen-codec.jar'
+    destinationDirectory = layout.buildDirectory.dir('screen-codec')
+    manifest { attributes('Main-Class': 'dev.anya.codec.ScreenCodec') }
+    from sourceSets.screenCodec.output
+    from {
+        def decoder = configurations.screenCodecRuntimeClasspath.singleFile
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(decoder.bytes).encodeHex().toString()
+        if (digest != '890329dad124e8b739c1d6602a59a53c8a474daddff265c2561e21c498496c81') {
+            throw new GradleException('Unexpected screen codec dependency digest')
+        }
+        zipTree(decoder)
+    }
+    exclude 'META-INF/MANIFEST.MF'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+tasks.named('processResources') {
+    from(screenCodecJar) { into 'META-INF/anya-media' }
+}
 neoForge {
     version = project.neo_version
     runs {

@@ -80,8 +80,16 @@ for source in ('item_help_parts.json', 'item_help_devices.json'):
     if lang.keys() & help_lines.keys():
         raise ValueError(f'Duplicate language keys in {source}')
     lang.update(help_lines)
-for name,title in [('outdoor_camera','Outdoor Camera'),('wall_monitor','Wall Monitor'),('wide_wall_monitor','Wide Wall Monitor'),('cinema_wall_monitor','Cinema Wall Monitor'),('sky_camera','Sky Camera'),('skyglass','Skyglass')]:
+for name,title in [('outdoor_camera','Outdoor Camera'),('wall_monitor','Wall Monitor'),('wide_wall_monitor','Wide Wall Monitor'),('cinema_wall_monitor','Cinema Wall Monitor'),('sky_camera','Sky Camera'),('skyglass','Skyglass'),('flat_screen_tv','Flat-screen TV')]:
     lang[f'block.{MOD}.{name}']=title
+for key,label in {
+    'source':'Screen source', 'camera':'Watch linked camera', 'link':'Link selected camera',
+    'url':'Paste a direct HTTPS media link', 'play':'Play on my screen', 'stop':'Stop media',
+    'controls':'Device settings', 'done':'Done', 'drop':'Drop a GIF here to play it on your screen.',
+    'empty':'Paste a media link first.', 'stopped':'Playback stopped.',
+    'one_gif':'Drop a single GIF file here.', 'idle':'Right-click the TV to choose a source.'
+}.items():
+    lang[f'screen.{MOD}.media.{key}']=label
 js(f'assets/{MOD}/lang/en_us.json',lang)
 def shaped(name,group,pattern,key,count=1):
     js(f'data/{MOD}/recipe/{name}.json',{'type':'minecraft:crafting_shaped','category':'misc','neoforge:conditions':[{'type':f'{MOD}:recipe_group','group':group}],'pattern':pattern,'key':{k:({'tag':v[1:]} if v.startswith('#') else {'item':v}) for k,v in key.items()},'result':{'id':f'{MOD}:{name}','count':count}})
@@ -162,13 +170,14 @@ for device,pattern,parts in [
     ('outdoor_camera',[' CI','GRA',' II'],{'C':'copper_ingot','I':'iron_nugget','G':'glass_pane','R':'redstone','A':'amethyst_shard'}),
     ('sky_camera',[' G ','ACA',' R '],{'G':'tinted_glass','A':'amethyst_shard','C':f'{MOD}:outdoor_camera','R':'redstone'}),
     ('wall_monitor',['IGI','CRC'],{'I':'iron_ingot','G':'glass_pane','C':'copper_ingot','R':'redstone'}),
+    ('flat_screen_tv',['GMG',' I ',' S '],{'G':'glass_pane','M':f'{MOD}:wall_monitor','I':'iron_ingot','S':'smooth_stone_slab'}),
     ('wide_wall_monitor',['CGC','AMA','CGC'],{'C':'copper_ingot','G':'tinted_glass','A':'amethyst_shard','M':f'{MOD}:wall_monitor'}),
     ('cinema_wall_monitor',['DGD','AMA','CRC'],{'D':'diamond','G':'tinted_glass','A':'amethyst_shard','M':f'{MOD}:wide_wall_monitor','C':'copper_ingot','R':'redstone_block'})]:
     js(f'data/{MOD}/recipe/{device}.json',{'type':'minecraft:crafting_shaped','category':'redstone','pattern':pattern,
         'key':{k:{'item':v if ':' in v else 'minecraft:'+v} for k,v in parts.items()},'result':{'id':f'{MOD}:{device}','count':1}})
 
 # The sensor and screens share the Skygrid casing. North is the active face before blockstate rotation.
-for device in ('outdoor_camera','sky_camera','wall_monitor','wide_wall_monitor','cinema_wall_monitor','skyglass'):
+for device in ('outdoor_camera','sky_camera','wall_monitor','wide_wall_monitor','cinema_wall_monitor','skyglass','flat_screen_tv'):
     pixels=[]
     for y in range(16):
         for x in range(16):
@@ -192,6 +201,9 @@ for device in ('outdoor_camera','sky_camera','wall_monitor','wide_wall_monitor',
     elif 'wall_monitor' in device:
         import camera_model
         camera_model.wall_monitor(js,MOD,device)
+    elif device=='flat_screen_tv':
+        import camera_model
+        camera_model.tabletop_tv(js,MOD)
     else:
         casing=f'{MOD}:block/skygrid_panel'
         js(f'assets/{MOD}/models/block/{device}.json',{'parent':'minecraft:block/cube','textures':{

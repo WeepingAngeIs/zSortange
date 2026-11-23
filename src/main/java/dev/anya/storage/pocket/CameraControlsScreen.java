@@ -52,7 +52,7 @@ final class CameraControlsScreen extends Screen {
     }
     @Override protected void init(){
         rows.clear();search=null;panel=Math.min(width-16,336);left=(width-panel)/2;int y=25;
-        if(v.width()>0){
+        if(v.width()>0&&v.maxW()>1){
             int half=(panel-68)/2;
             button(left,y,half,"Width: "+v.width()+" blocks",()->change("width",v.width()%v.maxW()+1,""));
             button(left+half+4,y,half,"Height: "+v.height()+" blocks",()->change("height",v.height()%v.maxH()+1,""));

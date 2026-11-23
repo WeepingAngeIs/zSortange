@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.shapes.*;
 
 /** A painted surface occupies one physical anchor. Expansion never writes to adjoining blocks. */
-final class WallMonitorBlock extends CameraDevices.DeviceBlock {
+class WallMonitorBlock extends CameraDevices.DeviceBlock {
     final int maxW,maxH;
     WallMonitorBlock(int w,int h){maxW=w;maxH=h;}
     @Override public BlockState getStateForPlacement(BlockPlaceContext ctx){

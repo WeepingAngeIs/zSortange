@@ -82,6 +82,21 @@ def wall_monitor(js, mod, device):
     js(f"{base}/blockstates/{device}.json",{"variants":variants})
     js(f"{base}/models/item/{device}.json",{"parent":model})
 
+def tabletop_tv(js,mod):
+    base=f"assets/{mod}"
+    model=f"{mod}:block/flat_screen_tv"
+    case={side:{"texture":"#case"} for side in FACES}
+    face={**case,"north":{"texture":"#glass","uv":[0,0,16,16]}}
+    js(f"{base}/models/block/flat_screen_tv.json",{"parent":"minecraft:block/block",
+       "textures":{"case":f"{mod}:block/cctv_mount","glass":model,"particle":f"{mod}:block/cctv_mount"},
+       "elements":[{"from":[3,0,5],"to":[13,1,11],"faces":case},
+                   {"from":[7,1,7],"to":[9,4,9],"faces":case},
+                   {"from":[0,4,7],"to":[16,14,9],"faces":face}]})
+    js(f"{base}/blockstates/flat_screen_tv.json",{"variants":{
+       f"facing={face}":{"model":model,**rotation} for face,rotation in
+       (("north",{}),("east",{"y":90}),("south",{"y":180}),("west",{"y":270}),("up",{"x":270}),("down",{"x":90}))}})
+    js(f"{base}/models/item/flat_screen_tv.json",{"parent":model})
+
 def sky_camera(js,mod):
     base=f"assets/{mod}";model=f"{mod}:block/sky_camera"
     faces={s:{"texture":"#case","uv":[0,0,16,16]} for s in FACES}

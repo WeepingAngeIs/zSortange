@@ -1,0 +1,59 @@
+name: Display camera, animated GIF, video and audio
+on:
+  push:
+    branches: [experiment/storage-media]
+permissions:
+  contents: read
+jobs:
+  screen-playback:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 36
+    env:
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Prepare the hosted framebuffer and isolated audio sink
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg xvfb pulseaudio pulseaudio-utils libgl1-mesa-dri libopenal1
+          python3 -m pip install --disable-pip-version-check numpy Pillow
+      - name: Freeze the cumulative playable and verify its embedded codec
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor bed0e0848220785ef4f271ad22590a03ecdec356 HEAD
+          gradle --no-daemon --console=plain --max-workers=2 jar
+          mkdir upload
+          cp "build/libs/$PLAYABLE" upload/
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+          unzip -t "upload/$PLAYABLE" 'META-INF/anya-media/screen-codec.jar'
+          ffprobe -v error -show_entries stream=codec_name,profile,width,height,r_frame_rate,sample_rate,channels -of json fixtures/display-media/inputs/color-tone.mp4
+      - name: Play source from real menus in a hosted client and measure game pixels and mixer output
+        run: |
+          python3 -u -B fixtures/display-media/run.py "upload/$PLAYABLE"
+          mkdir -p upload/proof
+          cp build/display-media/proof/*.png build/display-media/proof/*.wav build/display-media/proof/CHECKS.txt upload/proof/
+          (cd upload && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: display-media-diagnostics
+          path: |
+            build/display-media/*.log
+            build/display-media/proof/FAILED
+            build/display-media/proof/*.png
+            build/display-media/Server/crash-reports/*.txt
+            build/display-media/Client/crash-reports/*.txt
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-screenmedia.1
+          path: upload
+          if-no-files-found: error
+          retention-days: 14

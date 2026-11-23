@@ -26,9 +26,13 @@ record WallPanel(int width,int height,int left,int below) {
     }
     Vec3 center(CameraDevices.Device d){
         var f=face(d);
+        if(d.getBlockState().getBlock() instanceof FlatScreenTvBlock)
+            return Vec3.atCenterOf(d.getBlockPos()).add(Vec3.atLowerCornerOf(f.getNormal()).scale(1.0/16+.003)).add(0,1.0/16,0);
         return Vec3.atCenterOf(d.getBlockPos()).add(Vec3.atLowerCornerOf(f.getNormal()).scale(-.4375+.003))
                 .add(Vec3.atLowerCornerOf(right(f).getNormal()).scale((width-1)*.5-left)).add(0,(height-1)*.5-below,0);
     }
+    float innerWidth(){return width-.075f;}
+    float innerHeight(CameraDevices.Device d){return d.getBlockState().getBlock() instanceof FlatScreenTvBlock ? .55f : height-.075f;}
     AABB bounds(CameraDevices.Device d){
         var a=cell(d,-left,-below);var b=cell(d,width-left-1,height-below-1);
         return new AABB(a).minmax(new AABB(b));

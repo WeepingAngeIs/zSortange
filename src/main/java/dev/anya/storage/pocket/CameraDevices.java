@@ -22,13 +22,14 @@ import net.neoforged.neoforge.registries.*;
 public final class CameraDevices {
     public static final DeferredBlock<DeviceBlock> CAMERA=device("outdoor_camera",OutdoorCameraBlock::new), WALL=device("wall_monitor",()->new WallMonitorBlock(3,3)),
             WIDE=device("wide_wall_monitor",()->new WallMonitorBlock(9,5)),CINEMA=device("cinema_wall_monitor",()->new WallMonitorBlock(32,32)),
-            SKY_CAMERA=device("sky_camera",SkyCameraBlock::new), SKY=device("skyglass",DeviceBlock::new);
+            SKY_CAMERA=device("sky_camera",SkyCameraBlock::new), SKY=device("skyglass",DeviceBlock::new),
+            TV=device("flat_screen_tv",FlatScreenTvBlock::new);
     private static DeferredBlock<DeviceBlock> device(String id,java.util.function.Supplier<DeviceBlock> factory){
         var block=Content.BLOCKS.register(id,factory);
         Content.ITEMS.registerSimpleBlockItem(block);return block;
     }
     private static final DeferredRegister<BlockEntityType<?>> TYPES=DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE,AnyaStorage.ID);
-    public static final java.util.function.Supplier<BlockEntityType<Device>> TYPE=TYPES.register("camera_device",()->BlockEntityType.Builder.of(Device::new,CAMERA.get(),WALL.get(),WIDE.get(),CINEMA.get(),SKY_CAMERA.get(),SKY.get()).build(null));
+    public static final java.util.function.Supplier<BlockEntityType<Device>> TYPE=TYPES.register("camera_device",()->BlockEntityType.Builder.of(Device::new,CAMERA.get(),WALL.get(),WIDE.get(),CINEMA.get(),SKY_CAMERA.get(),SKY.get(),TV.get()).build(null));
     public static void register(IEventBus bus){TYPES.register(bus);}
     public static class DeviceBlock extends Block implements EntityBlock{
         DeviceBlock(){super(BlockBehaviour.Properties.of().strength(2).noOcclusion());registerDefaultState(defaultBlockState().setValue(BlockStateProperties.FACING,Direction.NORTH));}
@@ -129,7 +130,8 @@ public final class CameraDevices {
                 }
                 else msg="The camera could not turn.";
             }
-        }else if(d.getBlockState().getBlock() instanceof WallMonitorBlock&&p.getItemInHand(hand).isEmpty()){
+        }else if(d.getBlockState().getBlock() instanceof WallMonitorBlock
+                && (p.getItemInHand(hand).isEmpty() || StorageItem.isTablet(p.getItemInHand(hand)))){
             CameraConsole.open(p,d);return true;
         }else if(d.getBlockState().is(SKY_CAMERA.get())){
             msg="Sneak-use your tablet on this Sky Camera to select it.";

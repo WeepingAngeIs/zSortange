@@ -29,6 +29,10 @@ final class CameraConsole {
         static final Type<LensView> TYPE=new Type<>(ExpansionPackets.id("camera_lens_settings"));
         public Type<LensView> type(){return TYPE;}
     }
+    record DisplayView(View state, BlockPos pos) implements CustomPacketPayload {
+        static final Type<DisplayView> TYPE=new Type<>(ExpansionPackets.id("display_source_menu"));
+        public Type<DisplayView> type(){return TYPE;}
+    }
     record Edit(UUID token,UUID source,String control,int value,String kind) implements CustomPacketPayload {
         static final Type<Edit> TYPE=new Type<>(ExpansionPackets.id("camera_settings_edit"));
         public Type<Edit> type(){return TYPE;}
@@ -38,6 +42,7 @@ final class CameraConsole {
         public Type<Motion> type(){return TYPE;}
     }
     static BiConsumer<Connection,View> receiver=(connection,view)->{};
+    static BiConsumer<Connection,DisplayView> displayReceiver=(connection,view)->{};
     static BiConsumer<Connection,Motion> motionReceiver=(connection,motion)->{};
     private record Session(CameraDevices.Device device,UUID token,long until){}
     private static final Map<ServerPlayer,Session> sessions=new WeakHashMap<>();
@@ -52,6 +57,10 @@ final class CameraConsole {
             view.encode(b,v.state);b.writeBoolean(v.state.lens()==1);
         },b->new LensView(view.decode(b).withLens(b.readBoolean()?1:0)));
         e.registrar("cameraoptics1").optional().playToClient(LensView.TYPE,optics,(v,c)->receiver.accept(c.connection(),v.state));
+        StreamCodec<RegistryFriendlyByteBuf,DisplayView> display=StreamCodec.ofMember((v,b)->{
+            optics.encode(b,new LensView(v.state));b.writeBlockPos(v.pos);
+        },b->new DisplayView(optics.decode(b).state,b.readBlockPos()));
+        e.registrar("displaymedia1").optional().playToClient(DisplayView.TYPE,display,(v,c)->displayReceiver.accept(c.connection(),v));
         StreamCodec<RegistryFriendlyByteBuf,Edit> edit=StreamCodec.ofMember((v,b)->{
             b.writeUUID(v.token);b.writeUUID(v.source);b.writeUtf(v.control,12);b.writeByte(v.value);b.writeUtf(v.kind,128);
         },b->new Edit(b.readUUID(),b.readUUID(),b.readUtf(12),b.readByte(),b.readUtf(128)));
@@ -94,7 +103,8 @@ final class CameraConsole {
                 wall?d.panel.width():0,wall?d.panel.height():0,wall?tier.maxW:0,wall?tier.maxH:0,
                 t==null?-1:t.mode.ordinal(),t==null?-1:t.group.ordinal(),
                 t==null?"":String.join(",",t.watch),t==null?"":String.join(",",t.ignore),message,t!=null&&t.wideLens?1:0);
-        if(p.connection.hasChannel(LensView.TYPE))PacketDistributor.sendToPlayer(p,new LensView(displayed));
+        if(wall && p.connection.hasChannel(DisplayView.TYPE))PacketDistributor.sendToPlayer(p,new DisplayView(displayed,d.getBlockPos()));
+        else if(p.connection.hasChannel(LensView.TYPE))PacketDistributor.sendToPlayer(p,new LensView(displayed));
         else PacketDistributor.sendToPlayer(p,displayed);
     }
     private static void edit(ServerPlayer p,Edit e){
@@ -105,7 +115,9 @@ final class CameraConsole {
         }
         sessions.put(p,new Session(session.device,session.token,p.serverLevel().getGameTime()+2400));
         var d=session.device;var state=d.getBlockState();String message;
-        if(e.control.equals("width")||e.control.equals("height")||e.control.equals("fit")){
+        if(e.control.equals("link") && state.getBlock() instanceof WallMonitorBlock){
+            message=CameraDevices.linkSelected(p,d);
+        }else if(e.control.equals("width")||e.control.equals("height")||e.control.equals("fit")){
             if(!(state.getBlock() instanceof WallMonitorBlock))return;
             message=WallMonitorBlock.resize(p,d,e.control.equals("width")?e.value:d.panel.width(),
                     e.control.equals("height")?e.value:d.panel.height(),e.control.equals("fit"));
