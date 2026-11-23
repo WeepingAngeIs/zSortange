@@ -1,0 +1,53 @@
+name: Frozen wall camera on a two-player dedicated server
+on:
+  push:
+    branches: [experiment/wall-camera-dedicated]
+permissions: {contents: read, actions: read}
+jobs:
+  observe:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    env:
+      TRIAL: sharp-wall-night-dedicated
+      WALL_FOLLOWUP: 'true'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 2}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        with: {name: wallfaces-candidate, path: frozen, run-id: 45212887020, github-token: "${{ github.token }}"}
+      - uses: actions/download-artifact@v4
+        with: {name: wallfaces-candidate-captures, path: solo, run-id: 45212887020, github-token: "${{ github.token }}"}
+      - name: Run the frozen mod on both clients and the dedicated server
+        run: |
+          set -euo pipefail
+          jar="$PWD/frozen/anya-storage-plus-0.3.0-beta.7-wallfaces.1.jar"
+          echo "69214171246c3f9e0deb80b73e310480cdc009d2117b08f4e8ddc3a9fabe5d7a  $jar" | sha256sum -c -
+          test "$(cat frozen/SOURCE_COMMIT.txt)" = d3b25e71ab98e851777d6a7a00fbd91dc9ebc53b
+          test "$(cut -d' ' -f1 solo/runtime-jar.txt)" = 69214171246c3f9e0deb80b73e310480cdc009d2117b08f4e8ddc3a9fabe5d7a
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri python3-pil
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$jar" prepareRoleTrial
+          python3 -Bu fixtures/camera-roles/run.py "$TRIAL"
+      - name: Compare captured monitor and ordinary player views with the previous solo run
+        run: /usr/bin/python3 -B fixtures/camera-roles/wall_dedicated_captures.py
+      - name: Preserve each process's last status
+        if: always()
+        run: |
+          folder="build/role-check/$TRIAL"; mkdir -p "$folder/control"
+          for role in Server CamOwner RoomBuilder; do
+            if [[ -f "$folder/$role/console.log" ]]; then tail -65 "$folder/$role/console.log" > "$folder/control/$role-log-tail.txt"; fi
+          done
+          for p in "$folder"/control/{FAIL-*,step.txt}; do if test -f "$p"; then cat "$p"; fi; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: wallfaces-two-client-evidence, path: "build/role-check/${{ env.TRIAL }}/control", retention-days: 14}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: wallfaces-two-client-comparison, path: comparison, retention-days: 14, if-no-files-found: ignore}

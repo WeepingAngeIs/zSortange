@@ -22,7 +22,8 @@ final class NightRasterProof {
         RenderSystem.assertOnRenderThread();
         var sceneType=scene.getClass();
         Orders.check("true".equals(System.getenv("GITHUB_ACTIONS"))
-                && System.getProperty("roomroles.trial","").equals("sharp-wall-night-candidate-solo")
+                && java.util.Set.of("sharp-wall-night-candidate-solo","sharp-wall-night-dedicated")
+                    .contains(System.getProperty("roomroles.trial",""))
                 && (boolean)sceneType.getMethod("localLighting").invoke(scene),"Pixel proof requires the hosted local-light candidate");
         var terrain=Class.forName("dev.anya.storage.pocket.CameraTerrain");
         var picture=Class.forName("dev.anya.storage.pocket.CameraPicture");
