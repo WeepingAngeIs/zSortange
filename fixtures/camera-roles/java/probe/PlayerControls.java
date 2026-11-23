@@ -115,11 +115,17 @@ public final class PlayerControls {
     }
     @SubscribeEvent public static void frame(RenderGuiEvent.Post event)throws Exception{
         if(done || order==null || stable<7 || order.action().equals("use"))return;
+        if(order.action().equals("sharp.player-reference"))return;
         try{capture();}catch(Exception|AssertionError failure){Orders.write("FAIL-"+ROLE,order.step()+": "+failure);throw failure;}
     }
-    @SubscribeEvent public static void projection(RenderLevelStageEvent event){
-        if(SharpChecks.sharp() && event.getStage()==RenderLevelStageEvent.Stage.AFTER_LEVEL)
+    @SubscribeEvent public static void projection(RenderLevelStageEvent event)throws Exception{
+        if(SharpChecks.sharp() && event.getStage()==RenderLevelStageEvent.Stage.AFTER_LEVEL){
             SharpChecks.rememberProjection(event);
+            if(!done && order!=null && stable>=7 && order.action().equals("sharp.player-reference"))
+                try { capture(); } catch(Exception | AssertionError failure) {
+                    Orders.write("FAIL-"+ROLE,order.step()+": "+failure);throw failure;
+                }
+        }
     }
     private static void capture()throws Exception{
         if(order.action().startsWith("ui.")||order.action().equals("tablet"))return;

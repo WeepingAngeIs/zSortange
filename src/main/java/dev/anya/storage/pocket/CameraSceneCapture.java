@@ -192,7 +192,7 @@ final class CameraSceneCapture {
         int[] edge=cornerBackdrops(cells,backdrop,List.copyOf(faces.keySet()),forward,right,up);
         claimLimit=DETAIL_CHECKS;
         permissionTimeLimit=DETAIL_TIME;
-        int[] detail=distantSurfaces(cells,forward,right,up,sky);
+        int[] detail=distantSurfaces(cells,edge,forward,right,up,sky);
         List<CameraScene.Surface> palette=List.copyOf(faces.keySet());
         List<CameraScene.Actor> actors=new ArrayList<>(visibleActors.size());
         for(LivingEntity entity : visibleActors.keySet()) {
@@ -288,12 +288,15 @@ final class CameraSceneCapture {
     // A coarse sensor cell subtends about six whole blocks at the horizon. Recover their
     // actual geometry by tracing independent rays from the lens, including every intervening
     // permission check. The renderer receives no material inferred from neighbouring blocks.
-    private int[] distantSurfaces(int[] cells,Vec3 forward,Vec3 right,Vec3 up,SourceSky sky){
+    private int[] distantSurfaces(int[] cells,int[] edge,Vec3 forward,Vec3 right,Vec3 up,SourceSky sky){
         int size=CameraScene.DETAIL_SIDE, side=CameraScene.SIDE, tiles=0;
         int[] detail=new int[0];
         var coarse=List.copyOf(faces.keySet());
         Vec3 offset=eye.subtract(origin);
         int[] order=localWall?streetDetailOrder(cells,coarse,offset,forward,right,up):SAMPLE_ORDER;
+        // Cover the next ranked openings after the fine-tile budget. Each quadrant gets an
+        // independent first-hit ray; neither the stock client world nor adjacent colors prove a face.
+        if(localWall && visibleActors.isEmpty()) refineStreetEdges(edge,cells,order,coarse,offset,forward,right,up,sky);
         for(int cell:order){
             if(cells[cell]<2 || cells[cell]==CameraScene.ATMOSPHERE)continue;
             var face=coarse.get(cells[cell]-2);
@@ -325,6 +328,40 @@ final class CameraSceneCapture {
         return detail;
     }
 
+    private void refineStreetEdges(int[] edge,int[] cells,int[] order,List<CameraScene.Surface> coarse,Vec3 offset,
+                                   Vec3 forward,Vec3 right,Vec3 up,SourceSky sky) {
+        int side=CameraScene.SIDE, refined=0;
+        for(int i=CameraScene.MAX_DETAIL_CELLS;i<order.length && refined<CameraScene.MAX_EDGE_CELLS;i++) {
+            int cell=order[i];
+            if(spent() || faces.size()>=CameraScene.MAX_SURFACES)break;
+            int cx=cell%side,cy=cell/side;
+            if(cells[cell]<2 || cells[cell]==CameraScene.ATMOSPHERE)continue;
+            boolean sampled=false;
+            for(int q=0;q<4;q++) {
+                double x=cx+((q&1)==0?.25:.75),y=cy+(q<2?.25:.75);
+                Vec3 ray=forward.add(right.scale(2*x/side-1)).add(up.scale(1-2*y/side)).normalize();
+                if(hasObservedFace(cells,coarse,offset,ray,cx,cy))continue;
+                Vec3 end=eye.add(ray.scale(REACH));
+                int hit=trace(eye,ray,end,sky,nearestActor(ray,end,false),Pass.DETAIL);
+                if(hit==OUT_OF_CHECKS)return;
+                countMask(hit);
+                // An unavailable, occluded or denied ray cannot supply geometry to its quadrant.
+                edge[cell*4+q]=hit>=2 && hit<TRACE_CLEAR?hit:-1;
+                sampled=true;
+            }
+            if(sampled)refined++;
+        }
+    }
+
+    private static boolean hasObservedFace(int[] cells,List<CameraScene.Surface> coarse,Vec3 origin,Vec3 ray,int col,int row) {
+        int side=CameraScene.SIDE;
+        for(int r=Math.max(0,row-1);r<=Math.min(side-1,row+1);r++)for(int c=Math.max(0,col-1);c<=Math.min(side-1,col+1);c++) {
+            int ref=cells[r*side+c];
+            if(ref>=2 && ref!=CameraScene.ATMOSPHERE && intersectsObservedFace(coarse.get(ref-2),origin,ray))return true;
+        }
+        return false;
+    }
+
     // Spend independent rays where an ordinary observation actually lacks foreground geometry.
     // Ranking consults only the existing coarse picture. It never supplies a material or grants a ray.
     private static int[] streetDetailOrder(int[] cells,List<CameraScene.Surface> coarse,Vec3 origin,
@@ -354,15 +391,7 @@ final class CameraSceneCapture {
                 if(x==1 && y==1)continue;
                 double u=2*(col+(x+.5)/3)/side-1,v=1-2*(row+(y+.5)/3)/side;
                 Vec3 ray=forward.add(right.scale(u)).add(up.scale(v));
-                boolean covered=false;
-                for(int r=nearRow;r<=farRow && !covered;r++)for(int c=nearCol;c<=farCol;c++) {
-                    int ref=cells[r*side+c];
-                    if(ref>=2 && ref!=CameraScene.ATMOSPHERE && intersectsObservedFace(coarse.get(ref-2),origin,ray)) {
-                        covered=true;
-                        break;
-                    }
-                }
-                if(!covered)gaps++;
+                if(!hasObservedFace(cells,coarse,origin,ray,col,row))gaps++;
             }
             if(gaps==0)continue;
             scores[cell]=gaps*8+Math.min(depthEdges,4)*4;
