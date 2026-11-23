@@ -1,0 +1,78 @@
+name: Worn backpack on animated Figura torsos
+on:
+  push:
+    branches: [experiment/figura-back-fit]
+permissions: {contents: read}
+env:
+  JAR: anya-storage-plus-0.3.0-beta.7-backfit.1.jar
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Build the playable and separate observation tool
+        run: |
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/back-fit/fixture.gradle jar backFitProbe
+          mkdir candidate
+          cp "build/libs/$JAR" build/back-fit-tools/back-fit-check-1.jar candidate/
+          git rev-parse HEAD > candidate/SOURCE_COMMIT.txt
+          (cd candidate && sha256sum *.jar > SHA256SUMS.txt)
+          if jar tf "candidate/$JAR" | grep -q '^fit/'; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with: {name: back-fit-candidate, path: candidate, retention-days: 14}
+  observe:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    strategy:
+      fail-fast: false
+      matrix: {trial: [synthetic, absent]}
+    env:
+      TRIAL: ${{ matrix.trial }}
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        with: {name: back-fit-candidate, path: candidate}
+      - name: Run third-person walking and in-session changes
+        run: |
+          set -euo pipefail
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          test "$(cat candidate/SOURCE_COMMIT.txt)" = "$GITHUB_SHA"
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          if [[ "$TRIAL" = synthetic ]]; then
+            curl -fsSL --retry 3 'https://cdn.modrinth.com/data/s9gIPDom/versions/AvgeQoZm/figura-0.1.6%2B1.21.1-neoforge-mc.jar' -o figura.jar
+            echo 'c1e74ce833887f40af0939a373a77a7ed865ad0dfcbf17441f55f0e77ba0b2bd662f4ab7821a740ba883ce2a650ab5eb70311d1aad5233b2a0f07e6ac41c7691  figura.jar' | sha512sum -c -
+          fi
+          python3 -B fixtures/back-fit/prepare.py "$TRIAL"
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/back-fit/fixture.gradle -PfitTrial="$TRIAL" -PfitPlayable="$PWD/candidate/$JAR" -PfitFigura="$PWD/figura.jar" prepareBackFit
+          base="$PWD/build/back-fit-$TRIAL"
+          cd "$base/game"
+          mkdir -p "$base/evidence-logs"
+          timeout -k 15s 12m xvfb-run -a bash "$(cat "$base/launch.txt")" > "$base/evidence-logs/client.log" 2>&1
+          test -f "$base/evidence/PASS.txt"
+          cat "$base/evidence/PASS.txt"
+      - name: Capture diagnostics from the synthetic runner
+        if: always()
+        run: |
+          base="build/back-fit-$TRIAL"
+          mkdir -p "$base/evidence"
+          if [[ -f "$base/evidence-logs/client.log" ]]; then tail -100 "$base/evidence-logs/client.log" > "$base/evidence/client-tail.txt"; fi
+          if [[ -f "$base/evidence/failure.txt" ]]; then cat "$base/evidence/failure.txt"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "back-fit-${{ matrix.trial }}-evidence", path: "build/back-fit-${{ matrix.trial }}/evidence", retention-days: 14}

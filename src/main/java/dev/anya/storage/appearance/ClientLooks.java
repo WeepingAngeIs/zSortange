@@ -25,6 +25,7 @@ import java.util.*;
 
 @EventBusSubscriber(modid=AnyaStorage.ID,bus=EventBusSubscriber.Bus.MOD,value=Dist.CLIENT)
 public final class ClientLooks {
+    private static final boolean FIGURA = net.neoforged.fml.ModList.get().isLoaded("figura");
     public static final List<String> TEXTURES;
     static{List<String> t=new ArrayList<>(List.of("plain","stone","diamond","magma","water"));Looks.LEAVES.forEach(s->t.add("leaf_"+s));Looks.SKINS.stream().filter(s->!s.equals("elemental")).forEach(t::add);TEXTURES=List.copyOf(t);}
     public static final class Options {public boolean particles=true,images=true,models=true;public int particleBudget=4;}
@@ -71,13 +72,34 @@ public final class ClientLooks {
             if(!options.models||entity.isInvisible()||look==null||!look.uuid().equals(entity.getUUID())||look.texture().isEmpty()||!(getParentModel() instanceof HumanoidModel<?> humanoid))return;
             if(Minecraft.getInstance().getCameraEntity()!=null&&entity.distanceToSqr(Minecraft.getInstance().getCameraEntity())>48*48)return;
             // Humanoid +Y points down and +Z points behind the torso. Preserve +Z so the pocket faces away from the body.
-            pose.pushPose();humanoid.body.translateAndRotate(pose);pose.translate(0,.29,.29);pose.mulPose(Axis.ZP.rotationDegrees(180));pose.scale(.72f,.72f,.72f);
-            Minecraft.getInstance().getItemRenderer().renderStatic(shell(look.texture()),ItemDisplayContext.NONE,light,OverlayTexture.NO_OVERLAY,pose,buffers,entity.level(),entity.getId());pose.popPose();
+            pose.pushPose();
+            try {
+                if (!(FIGURA && entity instanceof AbstractClientPlayer player && FiguraBackFit.apply(player, pose))) {
+                    humanoid.body.translateAndRotate(pose);
+                    pose.translate(0, .29, .29);
+                    pose.mulPose(Axis.ZP.rotationDegrees(180));
+                    pose.scale(.72f, .72f, .72f);
+                }
+                Minecraft.getInstance().getItemRenderer().renderStatic(shell(look.texture()),ItemDisplayContext.NONE,light,OverlayTexture.NO_OVERLAY,pose,buffers,entity.level(),entity.getId());
+            } finally {
+                pose.popPose();
+            }
         }
     }
     @EventBusSubscriber(modid=AnyaStorage.ID,value=Dist.CLIENT)
     public static final class Events {
-        @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){worn.clear();previousLevel=null;ClientInteriors.clear();}
+        @SubscribeEvent public static void beforePlayer(RenderPlayerEvent.Pre event) {
+            if (!FIGURA) return;
+            FiguraBackFit.end();
+            if (!(event.getEntity() instanceof AbstractClientPlayer player) || !options.models || player.isInvisible()) return;
+            var look = worn.get(player.getId());
+            if (look != null && look.uuid().equals(player.getUUID()) && !look.texture().isEmpty())
+                FiguraBackFit.begin(player, event.getPoseStack(), event.getMultiBufferSource());
+        }
+        @SubscribeEvent public static void afterPlayer(RenderPlayerEvent.Post event) {
+            if (FIGURA) FiguraBackFit.end();
+        }
+        @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){worn.clear();previousLevel=null;ClientInteriors.clear();if(FIGURA)FiguraBackFit.clear();}
         @SubscribeEvent public static void tick(ClientTickEvent.Post event){
             var mc=Minecraft.getInstance();if(mc.level!=previousLevel){previousLevel=mc.level;worn.clear();ClientInteriors.clear();TabletThreat.clear();}
             if(mc.level==null||mc.player==null)return;

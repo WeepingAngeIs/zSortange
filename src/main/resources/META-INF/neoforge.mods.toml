@@ -1,6 +1,8 @@
 modLoader="javafml"
 loaderVersion="[4,)"
 license="All Rights Reserved"
+[[mixins]]
+config="anyastorage.figura.mixins.json"
 [[mods]]
 modId="anyastorage"
 version="${mod_version}"

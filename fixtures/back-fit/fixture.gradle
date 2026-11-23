@@ -1,0 +1,35 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def test = p.sourceSets.create('backFitCheck')
+    test.java.srcDir 'fixtures/back-fit/java'
+    test.resources.srcDir 'fixtures/back-fit/resources'
+    p.neoForge.addModdingDependenciesTo(test)
+    p.tasks.named(test.compileJavaTaskName).configure { options.compilerArgs.add('-proc:none') }
+    def probe = p.tasks.register('backFitProbe', Jar) {
+        dependsOn test.classesTaskName
+        from test.output
+        archiveFileName='back-fit-check-1.jar'
+        destinationDirectory=p.layout.buildDirectory.dir('back-fit-tools')
+    }
+    if(!p.hasProperty('fitTrial'))return
+    def trial=p.property('fitTrial')
+    def root=p.file('build/back-fit-'+trial)
+    def runtime=p.sourceSets.create('backFitRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(p.property('fitPlayable'),probe))
+    if(trial=='synthetic')p.dependencies.add(runtime.runtimeOnlyConfigurationName,p.files(p.property('fitFigura')))
+    p.neoForge.runs.create('backFitClient') {
+        client()
+        sourceSet=runtime
+        loadedMods=[]
+        gameDirectory=new File(root,'game')
+        programArguments.addAll '--username','BackFitQA','--width','854','--height','480','--disableMultiplayer','--disableChat'
+        systemProperty 'anyastorage.fitRoot',root.absolutePath
+        systemProperty 'anyastorage.fitMode',trial
+        jvmArguments.addAll '-XX:ActiveProcessorCount=2','-Xmx1900m','-Xms180m'
+    }
+    def script=p.tasks.named('createBackFitClientLaunchScript')
+    p.tasks.register('prepareBackFit') {
+        dependsOn probe,script
+        doLast{ root.mkdirs(); new File(root,'launch.txt').text=script.get().launchScript.get().asFile.absolutePath }
+    }
+}}
