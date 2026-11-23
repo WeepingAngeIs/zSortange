@@ -75,7 +75,15 @@ public final class RoomMediaClient {
         var mc=Minecraft.getInstance();
         var pos=t.begin.pos();
         return mc.player!=null && mc.player.isAlive() && mc.level==t.level && t.level.hasChunkAt(pos)
+                && withinRoomExtent(mc.player.blockPosition(),pos)
                 && !t.display.isRemoved() && t.level.getBlockEntity(pos)==t.display;
+    }
+
+    // A Skygrid room is 32 blocks per side. After a same-dimension teleport the old chunk
+    // can still be in the client cache until its unload packet arrives.
+    private static boolean withinRoomExtent(BlockPos player,BlockPos screen) {
+        return Math.abs(player.getX()-screen.getX())<32 && Math.abs(player.getY()-screen.getY())<32
+                && Math.abs(player.getZ()-screen.getZ())<32;
     }
 
     private static void receive(Connection sender, RoomMediaNet.View message) {
@@ -115,7 +123,8 @@ public final class RoomMediaClient {
         UUID lastStopped=stopped.get(begin.roomId());
         if(begin.id().equals(lastStopped) || (lastStopped==null && stopped.size()>=PocketLedger.MAX_POCKETS)) return;
         var pos=begin.pos();
-        if(!mc.level.hasChunkAt(pos) || !(mc.level.getBlockEntity(pos) instanceof CameraDevices.Device screen)
+        if(!withinRoomExtent(mc.player.blockPosition(),pos) || !mc.level.hasChunkAt(pos)
+                || !(mc.level.getBlockEntity(pos) instanceof CameraDevices.Device screen)
                 || !(screen.getBlockState().getBlock() instanceof WallMonitorBlock)) return;
         stopped.remove(begin.roomId());
         if(current!=null && current.begin.id().equals(begin.id())) {
