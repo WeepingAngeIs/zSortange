@@ -5,9 +5,6 @@ permissions:
   contents: read
   actions: read
 env:
-  CANDIDATE: anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar
-  FROZEN_PLAYABLE_COMMIT: 6a2b110e9f2c8e969999d4e0d3777b9c835c5fe1
-  FROZEN_PLAYABLE_SHA256: a46c6666190c57feeb016a40c78e4f3112959591d6e41909880800542e992497
   BASE_SHA: cee168e14de1fcfa3415748a2e5e72759cdd01d8
   BASE_RUN: '45114857255'
 jobs:
@@ -27,16 +24,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
+      - name: Read the selected JAR identity
+        run: jq -er 'to_entries[] | "\(.key)=\(.value)"' fixtures/camera-roles/roommedia-acceptance.json >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '21'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
-      - name: Fetch the exact previously built screenmedia.1 artifact
+      - name: Fetch the selected playable artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '14841672358'
+          artifact-ids: ${{ env.FROZEN_PLAYABLE_ARTIFACT }}
           repository: WeepingAngeIs/zSortange
-          run-id: 45220752346
+          run-id: ${{ env.FROZEN_PLAYABLE_RUN }}
           github-token: ${{ github.token }}
           path: frozen
           merge-multiple: true

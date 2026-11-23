@@ -19,8 +19,8 @@ for step in ("wall-gold","stock-gold","wall-blue","stock-blue","private-sign","p
 if cumulative:
     assert (pair/"PASS.txt").is_file()
     for directory in (pair,distant):
-        assert (directory/"SOURCE_COMMIT.txt").read_text().strip()=="6a2b110e9f2c8e969999d4e0d3777b9c835c5fe1"
-        assert (directory/"SHA256SUMS.txt").read_text().split()[0]=="a46c6666190c57feeb016a40c78e4f3112959591d6e41909880800542e992497"
+        assert (directory/"SOURCE_COMMIT.txt").read_text().strip()==os.environ["FROZEN_PLAYABLE_COMMIT"]
+        assert (directory/"SHA256SUMS.txt").read_text().split()[0]==os.environ["FROZEN_PLAYABLE_SHA256"]
     results = {"revision":(pair/"SOURCE_COMMIT.txt").read_text().strip(),
                "jarSha256":(pair/"SHA256SUMS.txt").read_text().split()[0],
                "sameWallRun":os.environ["GITHUB_RUN_ID"]}

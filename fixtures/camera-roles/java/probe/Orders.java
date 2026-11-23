@@ -27,7 +27,7 @@ final class Orders {
             try(var hashed=new java.security.DigestInputStream(file,sha)){hashed.transferTo(java.io.OutputStream.nullOutputStream());}
         }
         String hash=java.util.HexFormat.of().formatHex(sha.digest());
-        check(hash.equals("a46c6666190c57feeb016a40c78e4f3112959591d6e41909880800542e992497"),
+        check(hash.equals(System.getenv("FROZEN_PLAYABLE_SHA256")),
                 "Different Anya Storage JAR loaded on "+role);
         write(role+"-runtime.txt",mod.getVersion()+" "+hash+" "+jar.getFileName());
     }

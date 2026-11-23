@@ -1,7 +1,7 @@
 name: Verify frozen cumulative Storage Plus JAR
 on:
   push:
-    branches: [experiment/cumulative-acceptance]
+    branches: [experiment/roommedia-acceptance]
 permissions: {contents: read, actions: read}
 jobs:
   backpacks:
@@ -24,19 +24,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
+      - name: Read the selected JAR identity
+        run: jq -er 'to_entries[] | "\(.key)=\(.value)"' fixtures/camera-roles/roommedia-acceptance.json >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '21'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
       - uses: actions/download-artifact@v4
-        with: {artifact-ids: '14841672358', run-id: 45220752346, github-token: "${{ github.token }}", path: frozen, merge-multiple: true}
+        with: {artifact-ids: "${{ env.FROZEN_PLAYABLE_ARTIFACT }}", run-id: "${{ env.FROZEN_PLAYABLE_RUN }}", github-token: "${{ github.token }}", path: frozen, merge-multiple: true}
       - name: Run two clients and a dedicated server with the selected JAR
         run: |
           set -euo pipefail
-          jar="$PWD/frozen/anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar"
-          sha=a46c6666190c57feeb016a40c78e4f3112959591d6e41909880800542e992497
+          jar="$PWD/frozen/$CANDIDATE"
+          sha="$FROZEN_PLAYABLE_SHA256"
           echo "$sha  $jar" | sha256sum -c -
-          test "$(cat frozen/SOURCE_COMMIT.txt)" = 6a2b110e9f2c8e969999d4e0d3777b9c835c5fe1
+          test "$(cat frozen/SOURCE_COMMIT.txt)" = "$FROZEN_PLAYABLE_COMMIT"
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
           gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$jar" prepareRoleTrial
           folder="build/role-check/$TRIAL/control"
@@ -64,6 +66,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
+      - name: Read the selected JAR identity
+        run: jq -er 'to_entries[] | "\(.key)=\(.value)"' fixtures/camera-roles/roommedia-acceptance.json >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with: {name: cumulative-sharp-wall-night-dedicated, path: build/role-check/sharp-wall-night-dedicated/control}
       - uses: actions/download-artifact@v4
