@@ -3,5 +3,5 @@
   "minVersion": "0.8",
   "package": "dev.anya.storage.compat.figuramixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["FiguraBackLayerMixin"]
+  "client": ["FiguraBackLayerMixin", "TextureManagerCloseMixin"]
 }

@@ -1,10 +1,12 @@
-name: Worn backpack on animated Figura torsos
+name: Worn backpack fit and clean client shutdown
 on:
   push:
-    branches: [experiment/figura-back-fit]
-permissions: {contents: read}
+    branches: [experiment/backfit-clean-exit]
+permissions: {contents: read, actions: read}
 env:
-  JAR: anya-storage-plus-0.3.0-beta.7-backfit.1.jar
+  JAR: anya-storage-plus-0.3.0-beta.7-backfit.2.jar
+  BASE_SHA: cee168e14de1fcfa3415748a2e5e72759cdd01d8
+  BASE_RUN: '45114857255'
 jobs:
   build:
     if: github.event.repository.private == false
@@ -12,7 +14,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with: {persist-credentials: false, fetch-depth: 16}
+      - name: Check descent from the verified fit build and its original observations
+        run: |
+          git merge-base --is-ancestor "$BASE_SHA" HEAD
+          git diff --exit-code "$BASE_SHA" HEAD -- fixtures/back-fit/java/fit/FitCheck.java fixtures/back-fit/java/fit/mixin/LayerCapture.java fixtures/back-fit/prepare.py
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '21'}
       - uses: gradle/actions/setup-gradle@v4
@@ -48,6 +54,13 @@ jobs:
         with: {gradle-version: '8.14.3'}
       - uses: actions/download-artifact@v4
         with: {name: back-fit-candidate, path: candidate}
+      - name: Read this trial's archived pre-fix fit and shutdown result
+        uses: actions/download-artifact@v4
+        with:
+          name: back-fit-${{ matrix.trial }}-evidence
+          path: prior-fit
+          run-id: ${{ env.BASE_RUN }}
+          github-token: ${{ github.token }}
       - name: Run third-person walking and in-session changes
         run: |
           set -euo pipefail
@@ -63,9 +76,15 @@ jobs:
           base="$PWD/build/back-fit-$TRIAL"
           cd "$base/game"
           mkdir -p "$base/evidence-logs"
-          timeout -k 15s 12m xvfb-run -a bash "$(cat "$base/launch.txt")" > "$base/evidence-logs/client.log" 2>&1
+          code=0
+          timeout -k 15s 12m xvfb-run -a bash "$(cat "$base/launch.txt")" > "$base/evidence-logs/client.log" 2>&1 || code=$?
+          printf '%s\n' "$code" > "$base/evidence-logs/exit-code.txt"
+          test "$code" -eq 0
           test -f "$base/evidence/PASS.txt"
           cat "$base/evidence/PASS.txt"
+      - name: Compare actual shutdown after the client process exits
+        if: always()
+        run: python3 -B fixtures/back-fit/check_shutdown.py
       - name: Capture diagnostics from the synthetic runner
         if: always()
         run: |
