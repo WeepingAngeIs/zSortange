@@ -1,5 +1,6 @@
 package dev.anya.storage.pocket;
 
+import dev.anya.storage.appearance.ClientLooks;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -7,13 +8,15 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import javax.sound.sampled.AudioFormat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.client.resources.sounds.AbstractSoundInstance;
+import net.minecraft.client.resources.sounds.AbstractTickableSoundInstance;
 import net.minecraft.client.resources.sounds.Sound;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.client.sounds.AudioStream;
@@ -24,7 +27,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
-/** A deliberate local choice on one physical screen. No source information goes on the network or into saves. */
+/** One bounded decoder, texture and positional audio stream for a physical display. */
 public final class ScreenMedia {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("anyastorage","dynamic/screen_media");
     private static final ResourceLocation SOUND = ResourceLocation.fromNamespaceAndPath("anyastorage","screen_media");
@@ -33,10 +36,14 @@ public final class ScreenMedia {
             new ThreadPoolExecutor.DiscardOldestPolicy());
     private static Session current;
 
-    public static void play(BlockPos pos, String address) { start(pos, () -> MediaDownload.fetch(address)); }
+    public static void play(BlockPos pos, String address) {
+        RoomMediaClient.stopForMe(pos);
+        start(pos, null, () -> MediaDownload.fetch(address), null);
+    }
 
     public static void playFile(BlockPos pos, Path file) {
-        start(pos, () -> {
+        RoomMediaClient.stopForMe(pos);
+        start(pos, null, () -> {
             if (file == null || !file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".gif"))
                 throw new MediaDownload.Failure("Choose one local GIF file.");
             if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || Files.size(file) > MediaDownload.MAX_BYTES)
@@ -47,16 +54,30 @@ public final class ScreenMedia {
                     throw new MediaDownload.Failure("Choose a GIF up to 16 MiB.");
                 return bytes;
             }
-        });
+        }, null);
     }
 
-    private static void start(BlockPos pos, Callable<byte[]> source) {
+    static void prepareRoom(BlockPos pos, UUID id, byte[] bytes, Consumer<ScreenClip> ready) {
+        start(pos, id, () -> bytes, ready);
+    }
+
+    static void startRoomClock(UUID id, long startGameTime) {
+        Session session=current;
+        if(session==null || !id.equals(session.room) || session.clip==null || session.roomStart>=0) return;
+        session.roomStart=startGameTime;
+        if(session.level.getGameTime()>=startGameTime) startPresentation(session);
+    }
+
+    static void stopRoom(UUID id) { if(current!=null && id.equals(current.room)) clear(); }
+
+    private static void start(BlockPos pos, UUID room, Callable<byte[]> source, Consumer<ScreenClip> ready) {
         clear();
         Minecraft mc=Minecraft.getInstance();
         if (mc.level==null || mc.player==null || !mc.level.hasChunkAt(pos)) return;
         var block=mc.level.getBlockEntity(pos);
-        if (block==null || mc.player.distanceToSqr(Vec3.atCenterOf(pos)) > 32*32) return;
-        var session=new Session(mc.level,pos.immutable(),block);
+        if (block==null || !(block.getBlockState().getBlock() instanceof WallMonitorBlock)
+                || (room==null && mc.player.distanceToSqr(Vec3.atCenterOf(pos)) > 32*32)) return;
+        var session=new Session(mc.level,pos.immutable(),block,room);
         current=session;
         session.task=WORK.submit(() -> {
             try {
@@ -66,16 +87,8 @@ public final class ScreenMedia {
                 mc.execute(() -> {
                     if (current!=session || !present(session)) return;
                     session.clip=clip;
-                    session.texture=new DynamicTexture(clip.width(),clip.height(),true);
-                    mc.getTextureManager().register(TEXTURE,session.texture);
-                    session.lastNanos=System.nanoTime();
-                    session.wasPaused=mc.isPaused();
-                    session.message=clip.duration()==0 ? "Showing image" : "Playing";
-                    draw(session,0);
-                    if (clip.audio().length>0) {
-                        session.sound=new MediaSound(session.pos,clip);
-                        if(!mc.isPaused()) startSound(session);
-                    }
+                    if(ready!=null) ready.accept(clip);
+                    else startPresentation(session);
                 });
             } catch (Exception error) {
                 String safe = error instanceof MediaDownload.Failure ? error.getMessage()
@@ -89,6 +102,7 @@ public final class ScreenMedia {
     }
 
     public static boolean active(BlockPos pos) { return current!=null && current.pos.equals(pos); }
+    public static BlockPos activePosition() { return current!=null && present(current) ? current.pos : null; }
     public static String status(BlockPos pos) { return active(pos) ? current.message : ""; }
     public static ResourceLocation texture(BlockPos pos) { return active(pos) && current.texture!=null ? TEXTURE : null; }
     public static float aspectRatio(BlockPos pos) {
@@ -111,27 +125,78 @@ public final class ScreenMedia {
         var mc=Minecraft.getInstance();
         return mc.level==s.level && mc.player!=null && s.level.hasChunkAt(s.pos)
                 && !s.block.isRemoved() && s.level.getBlockEntity(s.pos)==s.block
-                && mc.player.distanceToSqr(Vec3.atCenterOf(s.pos)) <= 32*32;
+                && (s.room!=null || mc.player.distanceToSqr(Vec3.atCenterOf(s.pos)) <= 32*32);
     }
+
+    public static float volume() {
+        float value=ClientLooks.options.screenVolume;
+        return Float.isFinite(value) ? Math.clamp(value,0f,1f) : 1f;
+    }
+
+    public static void volume(float value) {
+        if(!Float.isFinite(value)) return;
+        float bounded=Math.clamp(value,0f,1f);
+        if(bounded==ClientLooks.options.screenVolume) return;
+        ClientLooks.options.screenVolume=bounded;
+        ClientLooks.saveOptions();
+    }
+
+    private static void startPresentation(Session s) {
+        var mc=Minecraft.getInstance();
+        s.texture=new DynamicTexture(s.clip.width(),s.clip.height(),true);
+        mc.getTextureManager().register(TEXTURE,s.texture);
+        s.lastNanos=System.nanoTime();
+        s.wasPaused=mc.isPaused();
+        s.message=s.clip.duration()==0 ? "Showing image" : "Playing";
+        displayAt(s,elapsedMillis(s));
+    }
+
+    private static long elapsedMillis(Session s) {
+        return s.room==null ? s.elapsed/1_000_000L : 50L*Math.max(0L,s.level.getGameTime()-s.roomStart);
+    }
+
     public static void tick() {
         var s=current;
         if(s==null) return;
         if(!present(s)) { clear(); return; }
-        if(s.clip==null || s.clip.duration()==0) return;
+        if(s.clip==null) return;
+        if(s.texture==null) {
+            if(s.roomStart>=0 && s.level.getGameTime()>=s.roomStart) startPresentation(s);
+            return;
+        }
+        if(s.clip.duration()==0) return;
         long now=System.nanoTime();
         boolean paused=Minecraft.getInstance().isPaused();
         if(!paused && !s.wasPaused) s.elapsed+=Math.max(0,now-s.lastNanos);
-        if(!paused && s.sound!=null && !s.soundStarted) startSound(s);
         s.wasPaused=paused;
         s.lastNanos=now;
-        long elapsedMillis=s.elapsed/1_000_000L;
-        if(!s.clip.loop() && elapsedMillis>=s.clip.duration()) s.message="Finished";
-        draw(s, (int)(s.clip.loop() ? elapsedMillis % s.clip.duration() : Math.min(s.clip.duration(),elapsedMillis)));
+        displayAt(s,elapsedMillis(s));
     }
 
-    private static void startSound(Session s) {
-        Minecraft.getInstance().getSoundManager().play(s.sound);
-        s.soundStarted=true;
+    private static void displayAt(Session s,long elapsed) {
+        var mc=Minecraft.getInstance();
+        int duration=s.clip.duration();
+        int position=(int)(s.clip.loop() && duration>0 ? elapsed%duration : Math.min(duration,elapsed));
+        draw(s,position);
+        boolean finished=duration>0 && !s.clip.loop() && elapsed>=duration;
+        if(finished) s.message="Finished";
+        if(s.clip.audio().length==0) return;
+        boolean audible=volume()>0 && mc.options.getSoundSourceVolume(SoundSource.BLOCKS)>0
+                && mc.options.getSoundSourceVolume(SoundSource.MASTER)>0;
+        int offset=s.clip.audioOffset(position);
+        // When the server lags or corrects its clock, reseek the audio to the shared picture.
+        long soundMillis=s.soundAtMillis+(s.elapsed-s.soundAtNanos)/1_000_000L;
+        boolean drifted=s.room!=null && Math.abs(position-soundMillis)>350;
+        if(s.sound!=null && (!audible || finished || drifted || offset>=s.clip.audio().length)) {
+            mc.getSoundManager().stop(s.sound);
+            s.sound=null;
+        }
+        if(s.sound==null && audible && !finished && offset<s.clip.audio().length && !mc.isPaused()) {
+            s.soundAtMillis=position;
+            s.soundAtNanos=s.elapsed;
+            s.sound=new MediaSound(s.pos,s.clip,offset,s.room!=null);
+            mc.getSoundManager().play(s.sound);
+        }
     }
 
     private static void draw(Session s,int time) {
@@ -155,6 +220,8 @@ public final class ScreenMedia {
         final ClientLevel level;
         final BlockPos pos;
         final BlockEntity block;
+        final UUID room;
+        long roomStart=-1;
         final AtomicReference<Process> process=new AtomicReference<>();
         String message="Loading media…";
         Future<?> task;
@@ -162,20 +229,26 @@ public final class ScreenMedia {
         DynamicTexture texture;
         MediaSound sound;
         int frame=-1;
-        boolean wasPaused, soundStarted;
-        long elapsed,lastNanos;
-        Session(ClientLevel level,BlockPos pos,BlockEntity block) { this.level=level; this.pos=pos; this.block=block; }
+        boolean wasPaused;
+        long elapsed,lastNanos,soundAtNanos,soundAtMillis;
+        Session(ClientLevel level,BlockPos pos,BlockEntity block,UUID room) {
+            this.level=level; this.pos=pos; this.block=block; this.room=room;
+        }
     }
 
-    private static final class MediaSound extends AbstractSoundInstance {
+    private static final class MediaSound extends AbstractTickableSoundInstance {
         private final ScreenClip clip;
-        MediaSound(BlockPos pos,ScreenClip clip) {
+        private final int offset;
+        MediaSound(BlockPos pos,ScreenClip clip,int offset,boolean room) {
             super(SOUND, SoundSource.BLOCKS, SoundInstance.createUnseededRandom());
-            this.clip=clip; x=pos.getX()+.5; y=pos.getY()+.5; z=pos.getZ()+.5;
+            this.clip=clip; this.offset=offset; this.volume=ScreenMedia.volume();
+            if(room) attenuation=SoundInstance.Attenuation.NONE;
+            x=pos.getX()+.5; y=pos.getY()+.5; z=pos.getZ()+.5;
         }
+        @Override public void tick() { this.volume=ScreenMedia.volume(); }
         @Override public CompletableFuture<AudioStream> getStream(SoundBufferLibrary buffers,Sound sound,boolean looping) {
             return CompletableFuture.completedFuture(new AudioStream() {
-                private int offset;
+                private int offset=MediaSound.this.offset;
                 @Override public AudioFormat getFormat() { return new AudioFormat(clip.rate(),16,1,true,false); }
                 @Override public ByteBuffer read(int requested) {
                     if(offset>=clip.audio().length) return null;

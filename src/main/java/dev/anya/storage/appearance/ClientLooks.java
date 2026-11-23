@@ -28,7 +28,11 @@ public final class ClientLooks {
     private static final boolean FIGURA = net.neoforged.fml.ModList.get().isLoaded("figura");
     public static final List<String> TEXTURES;
     static{List<String> t=new ArrayList<>(List.of("plain","stone","diamond","magma","water"));Looks.LEAVES.forEach(s->t.add("leaf_"+s));Looks.SKINS.stream().filter(s->!s.equals("elemental")).forEach(t::add);TEXTURES=List.copyOf(t);}
-    public static final class Options {public boolean particles=true,images=true,models=true;public int particleBudget=4;}
+    public static final class Options {
+        public boolean particles=true,images=true,models=true;
+        public int particleBudget=4;
+        public float screenVolume=1f;
+    }
     public static Options options=new Options();
     private static final Map<Integer,ExpansionPackets.Look> worn=new HashMap<>();
     private static Object previousLevel;

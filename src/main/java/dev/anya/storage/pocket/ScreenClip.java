@@ -13,6 +13,10 @@ import java.util.concurrent.atomic.AtomicReference;
 
 record ScreenClip(int width, int height, List<Frame> frames, int duration, byte[] audio, int rate, boolean loop) {
     record Frame(int millis, int[] abgr) {}
+
+    int audioOffset(int millis) {
+        return (int)Math.min(audio.length,(long)Math.max(0,millis)*rate/1000*2);
+    }
     private static final ScheduledExecutorService WATCH = Executors.newSingleThreadScheduledExecutor(
             Thread.ofPlatform().daemon().name("Storage screen decoder timeout").factory());
 

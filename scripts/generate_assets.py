@@ -83,10 +83,11 @@ for source in ('item_help_parts.json', 'item_help_devices.json'):
 for name,title in [('outdoor_camera','Outdoor Camera'),('wall_monitor','Wall Monitor'),('wide_wall_monitor','Wide Wall Monitor'),('cinema_wall_monitor','Cinema Wall Monitor'),('sky_camera','Sky Camera'),('skyglass','Skyglass'),('flat_screen_tv','Flat-screen TV')]:
     lang[f'block.{MOD}.{name}']=title
 for key,label in {
-    'source':'Screen source', 'camera':'Watch linked camera', 'link':'Link selected camera',
-    'url':'Paste a direct HTTPS media link', 'play':'Play on my screen', 'stop':'Stop media',
+    'source':'Screen source', 'camera':'Use linked camera', 'link':'Link selected camera',
+    'url':'Paste a direct HTTPS media link', 'play':'Play on my screen', 'play_room':'Play for room', 'stop':'Stop for me',
+    'volume':'My volume: %s%%',
     'controls':'Device settings', 'done':'Done', 'drop':'Drop a GIF here to play it on your screen.',
-    'empty':'Paste a media link first.', 'stopped':'Playback stopped.',
+    'empty':'Paste a media link first.', 'too_long':'Use a link of 2,048 characters or fewer.', 'stopped':'Stopped on your screen.',
     'one_gif':'Drop a single GIF file here.', 'idle':'Right-click the TV to choose a source.'
 }.items():
     lang[f'screen.{MOD}.media.{key}']=label

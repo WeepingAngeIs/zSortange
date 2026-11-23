@@ -33,6 +33,10 @@ final class CameraConsole {
         static final Type<DisplayView> TYPE=new Type<>(ExpansionPackets.id("display_source_menu"));
         public Type<DisplayView> type(){return TYPE;}
     }
+    record RoomDisplayView(DisplayView display, boolean manageCamera) implements CustomPacketPayload {
+        static final Type<RoomDisplayView> TYPE=new Type<>(ExpansionPackets.id("room_display_menu"));
+        public Type<RoomDisplayView> type(){return TYPE;}
+    }
     record Edit(UUID token,UUID source,String control,int value,String kind) implements CustomPacketPayload {
         static final Type<Edit> TYPE=new Type<>(ExpansionPackets.id("camera_settings_edit"));
         public Type<Edit> type(){return TYPE;}
@@ -43,6 +47,7 @@ final class CameraConsole {
     }
     static BiConsumer<Connection,View> receiver=(connection,view)->{};
     static BiConsumer<Connection,DisplayView> displayReceiver=(connection,view)->{};
+    static BiConsumer<Connection,RoomDisplayView> roomDisplayReceiver=(connection,view)->{};
     static BiConsumer<Connection,Motion> motionReceiver=(connection,motion)->{};
     private record Session(CameraDevices.Device device,UUID token,long until){}
     private static final Map<ServerPlayer,Session> sessions=new WeakHashMap<>();
@@ -61,6 +66,10 @@ final class CameraConsole {
             optics.encode(b,new LensView(v.state));b.writeBlockPos(v.pos);
         },b->new DisplayView(optics.decode(b).state,b.readBlockPos()));
         e.registrar("displaymedia1").optional().playToClient(DisplayView.TYPE,display,(v,c)->displayReceiver.accept(c.connection(),v));
+        StreamCodec<RegistryFriendlyByteBuf,RoomDisplayView> roomDisplay=StreamCodec.ofMember((v,b)->{
+            display.encode(b,v.display());b.writeBoolean(v.manageCamera());
+        },b->new RoomDisplayView(display.decode(b),b.readBoolean()));
+        e.registrar("roommedia1").optional().playToClient(RoomDisplayView.TYPE,roomDisplay,(v,c)->roomDisplayReceiver.accept(c.connection(),v));
         StreamCodec<RegistryFriendlyByteBuf,Edit> edit=StreamCodec.ofMember((v,b)->{
             b.writeUUID(v.token);b.writeUUID(v.source);b.writeUtf(v.control,12);b.writeByte(v.value);b.writeUtf(v.kind,128);
         },b->new Edit(b.readUUID(),b.readUUID(),b.readUtf(12),b.readByte(),b.readUtf(128)));
@@ -86,6 +95,17 @@ final class CameraConsole {
         return hit.getBlockPos().equals(d.getBlockPos())||d.getBlockState().getBlock() instanceof WallMonitorBlock
                 &&WallPanel.atHit(p.level(),hit,p.getEyePosition(),p.getLookAngle())==d;
     }
+    static boolean openRoomDisplay(ServerPlayer p,CameraDevices.Device d){
+        if(!p.connection.hasChannel(RoomDisplayView.TYPE) || !RoomMediaNet.canControl(p,d))return false;
+        if(nearbyOwner(p,d)){
+            open(p,d);
+        }else{
+            // Visitors receive just the display position and size. No camera identity or edit session.
+            var state=new View(NONE,NONE,true,d.panel.width(),d.panel.height(),0,0,-1,-1,"","","",-1);
+            PacketDistributor.sendToPlayer(p,new RoomDisplayView(new DisplayView(state,d.getBlockPos()),false));
+        }
+        return true;
+    }
     static void open(ServerPlayer p,CameraDevices.Device d){
         if(!nearbyOwner(p,d))return;
         if(!p.connection.hasChannel(View.TYPE)){p.displayClientMessage(Component.literal("Update your client to open camera settings."),true);return;}
@@ -103,7 +123,10 @@ final class CameraConsole {
                 wall?d.panel.width():0,wall?d.panel.height():0,wall?tier.maxW:0,wall?tier.maxH:0,
                 t==null?-1:t.mode.ordinal(),t==null?-1:t.group.ordinal(),
                 t==null?"":String.join(",",t.watch),t==null?"":String.join(",",t.ignore),message,t!=null&&t.wideLens?1:0);
-        if(wall && p.connection.hasChannel(DisplayView.TYPE))PacketDistributor.sendToPlayer(p,new DisplayView(displayed,d.getBlockPos()));
+        if(wall && PocketService.inPocket(p.level()) && p.connection.hasChannel(RoomDisplayView.TYPE)
+                && RoomMediaNet.canControl(p,d))
+            PacketDistributor.sendToPlayer(p,new RoomDisplayView(new DisplayView(displayed,d.getBlockPos()),true));
+        else if(wall && p.connection.hasChannel(DisplayView.TYPE))PacketDistributor.sendToPlayer(p,new DisplayView(displayed,d.getBlockPos()));
         else if(p.connection.hasChannel(LensView.TYPE))PacketDistributor.sendToPlayer(p,new LensView(displayed));
         else PacketDistributor.sendToPlayer(p,displayed);
     }

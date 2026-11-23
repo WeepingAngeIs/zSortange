@@ -91,6 +91,9 @@ public final class CameraDevices {
     }
     static boolean isCamera(BlockState s){return s.is(CAMERA.get())||s.is(SKY_CAMERA.get());}
     static boolean use(ServerPlayer p,Device d,InteractionHand hand){
+        if(PocketService.inPocket(p.level()) && d.getBlockState().getBlock() instanceof WallMonitorBlock
+                && !p.isShiftKeyDown() && (p.getItemInHand(hand).isEmpty() || StorageItem.isTablet(p.getItemInHand(hand)))
+                && CameraConsole.openRoomDisplay(p,d))return true;
         if(!d.owned(p) || !Safety.locationReason(p,p.serverLevel(),d.getBlockPos()).isEmpty())return false;
         if(PocketService.inPocket(p.level())){
             var l=PocketService.lease(p.getUUID());if(l==null || !PocketService.visitingOwner(p,l.pocket()))return false;
