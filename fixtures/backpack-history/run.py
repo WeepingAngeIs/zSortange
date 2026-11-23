@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import region_rollback
 
 
 def main():
@@ -27,7 +28,7 @@ def main():
     script = (base / "launch.txt").read_text().strip()
     receipts = []
     pids = set()
-    for phase in ("seed", "queue", "deliver", "replay", "receipts"):
+    for phase in ("seed", "queue", "deliver", "replay", "receipts", "source-loss", "source-replay"):
         path = base / (phase + ".console.log")
         with path.open("x") as output:
             proc = subprocess.run(["bash", script], cwd=game, env=dict(os.environ, ANYA_BAG_PHASE=phase),
@@ -45,6 +46,10 @@ def main():
         pids.add(lines[1])
         assert (game / "history-world/level.dat").is_file()
         receipts.extend(lines)
+        if phase == "receipts":
+            receipts.append("SAVED original entity chunk SHA-256 " + region_rollback.capture(game))
+        if phase == "source-loss":
+            receipts.append(region_rollback.reinsert(game))
     summary = "\n".join(receipts) + "\n"
     (base / "CHECKS.txt").write_text(summary)
     print(summary)

@@ -47,10 +47,6 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
 
     private BagHistoryPresence(Path root, UUID bag) { this.root = root; this.bag = bag; }
 
-    static void checkLiveStack(ItemStack stack, HolderLookup.Provider registries, UUID bagId) throws IOException {
-        new LiveStacks(bagId).check(stack, registries);
-    }
-
     /** One instance per restore request so shared menu/inventory slots consume a single inspection budget. */
     static final class LiveStacks {
         private final UUID bag;

@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
@@ -30,6 +31,7 @@ public final class BackpackHistory {
     private static BagHistoryStore active;
     private static boolean processing;
     private static long lastError;
+    private static UUID lastReplayChecked;
 
     @SubscribeEvent public static void start(ServerStartedEvent event) {
         queued.clear();
@@ -40,7 +42,7 @@ public final class BackpackHistory {
         } catch (IOException ex) { report(ex); }
     }
     @SubscribeEvent public static void stop(ServerStoppedEvent event) {
-        queued.clear(); active = null; processing = false; lastError = 0;
+        queued.clear(); active = null; processing = false; lastError = 0; lastReplayChecked = null;
     }
 
     static void markDrop(ItemEntity entity, UUID owner, String name) {
@@ -56,6 +58,43 @@ public final class BackpackHistory {
     @SubscribeEvent public static void deathDrops(LivingDropsEvent event) {
         if (event.getEntity() instanceof ServerPlayer player && !(player instanceof FakePlayer))
             for (ItemEntity drop : event.getDrops()) markDrop(drop, player.getUUID(), player.getGameProfile().getName());
+    }
+
+    @SubscribeEvent public static void loadedDrop(EntityJoinLevelEvent event) {
+        if (!event.loadedFromDisk() || !(event.getLevel() instanceof ServerLevel level)
+                || !(event.getEntity() instanceof ItemEntity drop) || !BackpackAccess.isBag(drop.getItem())
+                || !drop.getPersistentData().hasUUID(OWNER)) return;
+        var data = BagInventory.data(drop.getItem());
+        if (!data.hasUUID("BagId")) return;
+        try {
+            active = BagHistoryStore.openIfExists(level.getServer());
+            if (active == null) return;
+            var row = active.get(data.getUUID("BagId"));
+            if (row == null || row.state() == OBSERVED || row.state() == CONFLICT
+                    || !row.owner().equals(drop.getPersistentData().getUUID(OWNER))
+                    || !sameSource(row, drop, level)
+                    || !ItemStack.matches(drop.getItem(), row.restoreStack(level.registryAccess()))) return;
+            boolean replay = row.proof().getBoolean("HeldReplay");
+            if (row.state() == RETURNED || row.state() == LOCATED && replay) {
+                // Escrow this exact physical original before a rolled-back entity chunk exposes it.
+                // Its previous delivery may also have been rolled back independently in playerdata.
+                active.put(row, row.holdReplay(UUID.randomUUID()));
+            } else if (row.state() != DELIVERING && !replay) {
+                // The owner can pick up the original. Close any unfulfilled return.
+                if (row.state() != LOCATED) active.put(row, row.withState(LOCATED));
+                queued.remove(row.id());
+                return;
+            }
+            event.setCanceled(true);
+            // Another listener cannot extract the journaled item from this unregistered entity.
+            drop.setItem(ItemStack.EMPTY);
+        } catch (IOException | RuntimeException ex) { report(ex); }
+    }
+
+    private static boolean sameSource(BagHistoryStore.Entry row, ItemEntity drop, ServerLevel level) {
+        var proof = row.proof();
+        return proof.hasUUID("Entity") && proof.getUUID("Entity").equals(drop.getUUID())
+                && proof.getString("Dimension").equals(level.dimension().location().toString());
     }
 
     /** Invoked at the final discard for fatal item damage, void loss or expiration after all extensions. */
@@ -80,11 +119,11 @@ public final class BackpackHistory {
             var proof = new CompoundTag();
             proof.putUUID("Entity", entity.getUUID());
             proof.putString("Dimension", level.dimension().location().toString());
-            if (old != null && old.state() == CAPTURING && old.proof().equals(proof)
+            if (old != null && old.state() == CAPTURING && sameSource(old, entity, level)
                     && old.owner().equals(owner) && ItemStack.matches(stack, old.restoreStack(level.registryAccess()))) {
                 capturing = old;
             } else if (old == null || old.state() == OBSERVED || old.state() == LOCATED
-                    || old.state() == RETURNED && !old.proof().equals(proof)) {
+                    || old.state() == RETURNED && !sameSource(old, entity, level)) {
                 capturing = BagHistoryStore.Entry.observed(id, owner, data.getString(NAME), stack.getHoverName().getString(), now)
                         .capture(stack, level.registryAccess(), now, UUID.randomUUID()).withProof(proof);
                 active.put(old, capturing);
@@ -121,6 +160,7 @@ public final class BackpackHistory {
         try {
             active = BagHistoryStore.openIfExists(operator.getServer());
             if (active == null) return List.of();
+            if (!processing) checkHeldReplay(operator);
             return active.entries().stream().filter(r -> r.state() == AVAILABLE || r.state() == CAPTURING
                             || (r.state() == PENDING || r.state() == DELIVERING) && !queued.contains(r.id()))
                     .sorted(Comparator.comparingLong(BagHistoryStore.Entry::time).reversed().thenComparing(BagHistoryStore.Entry::id))
@@ -128,6 +168,27 @@ public final class BackpackHistory {
                     .map(r -> new Row(r.id(), r.owner(), r.ownerName(), r.bagName(), r.time(),
                             r.state() == AVAILABLE ? "Ready to return" : "Check interrupted return", true, r.transaction())).toList();
         } catch (IOException ex) { report(ex); AnyaStorage.tell(operator, "Backpack history is unavailable."); return List.of(); }
+    }
+
+    /** Reconcile at most one rolled-back source per history request, after its chunk has finished loading. */
+    private static void checkHeldReplay(ServerPlayer operator) throws IOException {
+        var held = active.entries().stream().filter(r -> r.state() == REPLAY_HELD)
+                .sorted(Comparator.comparing(BagHistoryStore.Entry::id)).toList();
+        if (held.isEmpty()) return;
+        var row = held.stream().filter(r -> lastReplayChecked == null || r.id().compareTo(lastReplayChecked) > 0)
+                .findFirst().orElse(held.getFirst());
+        lastReplayChecked = row.id();
+        processing = true;
+        try {
+            verifyAbsent(operator.getServer(), row.id());
+            active.put(row, row.withState(AVAILABLE));
+        } catch (BagHistoryPresence.Present present) {
+            active.put(row, row.withState(LOCATED));
+        } catch (IOException ex) {
+            report(ex);
+            AnyaStorage.tell(operator, "A recovered drop is being held until its saved location can be verified.");
+        } finally { processing = false; }
+        if (held.size() > 1) AnyaStorage.tell(operator, "Open backpack history again to check the next interrupted return.");
     }
 
     public static String restore(ServerPlayer operator, UUID id, UUID loss) {

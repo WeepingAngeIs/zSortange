@@ -44,7 +44,7 @@ final class BagHistoryStore {
     private static WeakReference<MinecraftServer> currentServer = new WeakReference<>(null);
     private static BagHistoryStore currentStore;
 
-    enum State { OBSERVED, CAPTURING, AVAILABLE, PENDING, DELIVERING, RETURNED, LOCATED, CONFLICT }
+    enum State { OBSERVED, CAPTURING, AVAILABLE, PENDING, DELIVERING, RETURNED, LOCATED, CONFLICT, REPLAY_HELD }
 
     record Entry(UUID id, UUID owner, String ownerName, String bagName, long time, long expires,
                  State state, UUID transaction, CompoundTag stack, CompoundTag proof) {
@@ -61,6 +61,12 @@ final class BagHistoryStore {
                 throw new IllegalArgumentException("Missing backpack recovery item or loss ID");
             stack = stack == null ? null : stack.copy();
             proof = proof == null ? new CompoundTag() : proof.copy();
+            if (proof.contains("HeldReplay") && (!proof.contains("HeldReplay", Tag.TAG_BYTE)
+                    || proof.getByte("HeldReplay") != 1 || state == State.CAPTURING || state == State.OBSERVED))
+                throw new IllegalArgumentException("Invalid backpack replay custody marker");
+            if (state == State.REPLAY_HELD && (!proof.getBoolean("HeldReplay")
+                    || !proof.hasUUID("Entity") || proof.getString("Dimension").isBlank()))
+                throw new IllegalArgumentException("Missing witnessed backpack entity for replay custody");
         }
 
         @Override public CompoundTag stack() { return stack == null ? null : stack.copy(); }
@@ -100,6 +106,16 @@ final class BagHistoryStore {
 
         Entry withState(State next) {
             return new Entry(id, owner, ownerName, bagName, time, expires, next, transaction, stack, proof);
+        }
+
+        Entry holdReplay(UUID newNonce) throws IOException {
+            boolean eligible = state == State.RETURNED || state == State.LOCATED && proof.getBoolean("HeldReplay");
+            if (!eligible || newNonce == null || newNonce.equals(transaction)
+                    || !proof.hasUUID("Entity") || proof.getString("Dimension").isBlank())
+                throw new IOException("Replay custody requires the returned loss, its entity proof, and a fresh recovery ID");
+            var replayProof = proof.copy();
+            replayProof.putBoolean("HeldReplay", true);
+            return new Entry(id, owner, ownerName, bagName, time, expires, State.REPLAY_HELD, newNonce, stack, replayProof);
         }
 
         Entry withProof(CompoundTag nextProof) {
@@ -239,6 +255,17 @@ final class BagHistoryStore {
                 throw new IOException("History needs an observation or capture before recovery");
             return;
         }
+        if (old.state == State.REPLAY_HELD) {
+            if ((next.state != State.REPLAY_HELD && next.state != State.AVAILABLE && next.state != State.LOCATED)
+                    || !next.equals(old.withState(next.state)))
+                throw new IOException("Held backpack replay or its proof changed");
+            return;
+        }
+        if (next.state == State.REPLAY_HELD) {
+            if (!next.equals(old.holdReplay(next.transaction)))
+                throw new IOException("Returned backpack replay does not match its recorded loss");
+            return;
+        }
         if (next.state == State.CAPTURING && (old.state == State.OBSERVED || old.state == State.RETURNED || old.state == State.LOCATED)) {
             // A later, separately witnessed loss can belong to a player the item was transferred to.
             // The gameplay service supplies the attested owner; an in-flight cycle can never be reassigned.
@@ -249,7 +276,7 @@ final class BagHistoryStore {
         if (old.state == State.OBSERVED && next.state == State.OBSERVED) return;
         if (!old.owner.equals(next.owner) || !Objects.equals(old.transaction, next.transaction)
                 || old.time != next.time || old.expires != next.expires
-                || !Objects.equals(old.stack, next.stack))
+                || !Objects.equals(old.stack, next.stack) || !old.proof.equals(next.proof))
             throw new IOException("Backpack loss identity, snapshot or expiry changed");
         boolean allowed = old.state == next.state || next.state == State.CONFLICT || switch (old.state) {
             case CAPTURING -> next.state == State.AVAILABLE || next.state == State.LOCATED;

@@ -15,7 +15,11 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -46,11 +50,13 @@ import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.entity.item.ItemExpireEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
 
@@ -71,6 +77,9 @@ public final class HistoryReview {
     private static ItemEntity loose;
     private static ItemEntity extending;
     private static boolean extensionSeen;
+    private record SourceDrop(UUID owner, String ownerName, String dimension, ItemStack stack) {}
+    private static final Map<UUID,SourceDrop> diskSources = new HashMap<>();
+    private static final Set<UUID> canceledSources = new HashSet<>();
 
     private record Actor(ServerPlayer player, List<Component> chat, EmbeddedChannel channel) {}
 
@@ -206,7 +215,7 @@ public final class HistoryReview {
     @SubscribeEvent
     public static void start(ServerStartedEvent event) throws Exception {
         phase = System.getenv("ANYA_BAG_PHASE");
-        require("true".equals(System.getenv("GITHUB_ACTIONS")) && List.of("seed", "queue", "deliver", "replay", "receipts").contains(phase),
+        require("true".equals(System.getenv("GITHUB_ACTIONS")) && List.of("seed", "queue", "deliver", "replay", "receipts", "source-loss", "source-replay").contains(phase),
                 "Disposable hosted server required");
         server = event.getServer();
         var actual = ModList.get().getModContainerById("anyastorage").orElseThrow().getModInfo().getOwningFile().getFile().getFilePath();
@@ -228,9 +237,15 @@ public final class HistoryReview {
             owner.player.getInventory().selected = 0;
         } else {
             oracle = NbtIo.readCompressed(ORACLE, NbtAccounter.create(16L << 20));
-            if ("deliver".equals(phase) || "replay".equals(phase) || "receipts".equals(phase)) {
+            if ("deliver".equals(phase) || "replay".equals(phase) || "receipts".equals(phase) || phase.startsWith("source-")) {
                 owner = join("HistoryOwner", 2, false);
                 nextOwner = join("OtherHolder", 5, false);
+            }
+            if (phase.startsWith("source-") || phase.equals("receipts")) {
+                // Ordinary nearby player watch loads the test chunk. Neither bag is in pickup range.
+                var floor = new BlockPos(26, 80, 3);
+                server.overworld().setBlockAndUpdate(floor, Blocks.STONE.defaultBlockState());
+                secondOp.player.teleportTo(server.overworld(), 26.5, 81, 3.5, 0, 0);
             }
         }
     }
@@ -272,6 +287,8 @@ public final class HistoryReview {
             case "deliver" -> deliver();
             case "replay" -> replay();
             case "receipts" -> receipts();
+            case "source-loss" -> sourceLoss();
+            case "source-replay" -> sourceReplay();
         }
         if (ticks > 900) throw new IllegalStateException("Backpack history fixture timed out");
     }
@@ -282,6 +299,22 @@ public final class HistoryReview {
             event.addExtraLife(35);
             extensionSeen = true;
         }
+    }
+
+    @SubscribeEvent(priority=EventPriority.HIGHEST, receiveCanceled=true)
+    public static void observeSavedSource(EntityJoinLevelEvent event) {
+        if (!"source-replay".equals(System.getenv("ANYA_BAG_PHASE")) || !event.loadedFromDisk()
+                || !(event.getEntity() instanceof ItemEntity drop) || !drop.getItem().is(Content.BACKPACK.get())) return;
+        var data = drop.getPersistentData();
+        if (data.hasUUID("AnyaBagDropOwner"))
+            diskSources.put(drop.getUUID(), new SourceDrop(data.getUUID("AnyaBagDropOwner"), data.getString("AnyaBagDropName"),
+                    event.getLevel().dimension().location().toString(), drop.getItem().copy()));
+    }
+
+    @SubscribeEvent(priority=EventPriority.LOWEST, receiveCanceled=true)
+    public static void observeQuarantine(EntityJoinLevelEvent event) {
+        if (event.loadedFromDisk() && event.isCanceled() && diskSources.containsKey(event.getEntity().getUUID()))
+            canceledSources.add(event.getEntity().getUUID());
     }
 
     private static void seed() throws Exception {
@@ -526,6 +559,116 @@ public final class HistoryReview {
             exact(nextOwner, "timer", 0);
             require(drops("damage").isEmpty() && drops("timer").isEmpty(), "Replaying an interrupted delivery dropped a copy");
             evidence.add("PASS A fifth server recovered both injected interruptions. The prepared receipt resumed once. The committed receipt finalized without inserting a second stack after the original moved. Both real disk records reached RETURNED for their original loss IDs.");
+            // Keep the actual source entities, unique IDs and original owner tags for the chunk rollback.
+            for (String name : List.of("voidfall", "damage")) {
+                ItemEntity drop = toss(owner, name);
+                drop.setPos(name.equals("voidfall") ? 34.5 : 36.5, 82, 3.5);
+                drop.setDeltaMovement(Vec3.ZERO);
+                drop.setNoGravity(true);
+                drop.setNoPickUpDelay();
+                oracle.putUUID(name + "-source-entity", drop.getUUID());
+                require(drop.getPersistentData().getUUID("AnyaBagDropOwner").equals(owner.player.getUUID()),
+                        "Original toss lacks its witnessed holder");
+            }
+        }
+        if (ticks == 270) {
+            for (String name : List.of("voidfall", "damage"))
+                require(drops(name).size() == 1 && drops(name).get(0).chunkPosition().x == 2
+                        && drops(name).get(0).chunkPosition().z == 0, "Source outside checkpoint chunk " + name);
+            evidence.add("SAVED Two real, pickup-enabled dropped backpacks, with original entity UUIDs, positions, dimension and player toss ownership in overworld entity chunk 2,0.");
+            finish();
+        }
+    }
+
+    private static ItemEntity source(String name) {
+        var entity = server.overworld().getEntity(oracle.getUUID(name + "-source-entity"));
+        require(entity instanceof ItemEntity, "Original saved drop did not load: " + name);
+        ItemEntity drop = (ItemEntity)entity;
+        require(ItemStack.matches(original(name), drop.getItem())
+                && drop.getPersistentData().getUUID("AnyaBagDropOwner").equals(owner.player.getUUID()), "Saved source changed: " + name);
+        return drop;
+    }
+
+    private static void sourceLoss() throws Exception {
+        if (ticks == 100) {
+            exact(owner, "voidfall", 0);
+            exact(owner, "damage", 0);
+            var falling = source("voidfall");
+            falling.setPos(falling.getX(), server.overworld().getMinBuildHeight() - 100.0, falling.getZ());
+            var hurt = source("damage");
+            require(hurt.hurt(hurt.damageSources().cactus(), 100) && hurt.isRemoved(), "Saved damage source survived");
+        }
+        if (ticks == 180) {
+            for (String name : List.of("voidfall", "damage")) {
+                var lost = row(name);
+                require(lost != null && lost.restorable() && lost.owner().equals(owner.player.getUUID()),
+                        "Source did not produce a real loss: " + name);
+                oracle.putUUID(name + "-source-loss", lost.lossId());
+            }
+            command(op, restoreCommand("voidfall", oracle.getUUID("voidfall-source-loss")));
+            exact(owner, "voidfall", 1);
+            exact(owner, "damage", 0);
+            HistoryDiskChecks.returned(server, id("voidfall"), oracle.getUUID("voidfall-source-loss"));
+            require(server.saveEverything(true, true, true), "Between-returns player snapshot was not saved");
+            UUID ownerId = owner.player.getUUID();
+            Files.copy(Path.of("history-world/playerdata", ownerId + ".dat"), Path.of("between-returns-player.dat"));
+            Files.writeString(Path.of("rollback-owner-id.txt"), ownerId.toString(), StandardOpenOption.CREATE_NEW);
+            command(secondOp, restoreCommand("damage", oracle.getUUID("damage-source-loss")));
+            exact(owner, "damage", 1);
+            HistoryDiskChecks.returned(server, id("damage"), oracle.getUUID("damage-source-loss"));
+            evidence.add("PASS The exact saved source UUIDs suffered normal below-world loss and fatal damage. Both were delivered and reached RETURNED. The ordinary player save made between deliveries contains the first bag only.");
+            finish();
+        }
+    }
+
+    private static void sourceReplay() throws Exception {
+        if (ticks == 100) {
+            exact(owner, "voidfall", 1);
+            exact(owner, "damage", 0);
+            for (String name : List.of("voidfall", "damage")) {
+                UUID entityId = oracle.getUUID(name + "-source-entity");
+                var drop = diskSources.get(entityId);
+                require(drop != null && drop.owner.equals(owner.player.getUUID()) && drop.ownerName.equals("HistoryOwner")
+                        && drop.dimension.equals("minecraft:overworld") && ItemStack.matches(original(name), drop.stack),
+                        "Disk loader did not reconstruct exact tagged source " + name);
+                require(canceledSources.contains(entityId) && server.overworld().getEntity(entityId) == null && drops(name).isEmpty(),
+                        "Replayed source could become available for pickup: " + name);
+                command(op, restoreCommand(name, oracle.getUUID(name + "-source-loss")));
+            }
+            exact(owner, "voidfall", 1);
+            exact(owner, "damage", 0);
+            // Enter the actual pickup area. Both stored drops originally had zero pickup delay.
+            server.overworld().setBlockAndUpdate(new BlockPos(34, 80, 3), Blocks.STONE.defaultBlockState());
+            owner.player.teleportTo(server.overworld(), 34.5, 81, 3.5, 0, 0);
+        }
+        if (ticks == 150) {
+            exact(owner, "voidfall", 1);
+            exact(owner, "damage", 0);
+            command(op, CMD);
+            command(op, CMD);
+            require(row("voidfall") == null, "Surviving delivered original generated a second offer");
+            var newOffer = row("damage");
+            UUID stale = oracle.getUUID("damage-source-loss");
+            require(newOffer != null && newOffer.restorable() && !newOffer.lossId().equals(stale),
+                    "Missing replacement action for the sole surviving rolled-back source");
+            command(secondOp, restoreCommand("damage", stale));
+            exact(owner, "damage", 0);
+            command(op, restoreCommand("damage", newOffer.lossId()));
+            command(secondOp, restoreCommand("damage", newOffer.lossId()));
+            oracle.putUUID("damage-replay-return", newOffer.lossId());
+        }
+        if (ticks == 210) {
+            exact(owner, "voidfall", 1);
+            exact(owner, "damage", 1);
+            for (String name : List.of("voidfall", "damage")) {
+                require(drops(name).isEmpty(), "Rolled-back source remained in the level");
+                exact(nextOwner, name, 0);
+                exact(op, name, 0);
+                exact(secondOp, name, 0);
+            }
+            require(row("voidfall") == null && row("damage") == null, "Resolved entity replay remained listed");
+            HistoryDiskChecks.returned(server, id("damage"), oracle.getUUID("damage-replay-return"));
+            evidence.add("PASS A seventh JVM reloaded the byte-identical pre-loss entity chunk and earlier player save. Actual loadedFromDisk events carried both original UUIDs, owners, dimension and components, and were canceled before pickup. Listing closed the already-delivered original. Only a new recovery link returned the inventory-rolled-back original, exactly once. Prior links could not deliver either bag.");
             finish();
         }
     }
