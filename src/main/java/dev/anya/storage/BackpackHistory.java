@@ -217,7 +217,8 @@ public final class BackpackHistory {
             if (row.state() == AVAILABLE) {
                 row.restoreStack(server.registryAccess());
                 var owner = server.getPlayerList().getPlayer(row.owner());
-                if (owner == null || !ready(owner) || blockedByEarlierDelivery(row)) verifyAbsent(server, id);
+                if (owner == null || !ready(owner) || RosecourtCustody.ownerHeld(server, row.owner())
+                        || blockedByEarlierDelivery(row)) verifyAbsent(server, id);
                 if (!operator(operator)) return "Operator permission required.";
                 var approved = row.withState(PENDING);
                 active.put(row, approved);
@@ -273,7 +274,8 @@ public final class BackpackHistory {
                     var owner = server.getPlayerList().getPlayer(row.owner());
                     if (owner == null || row.state() != DELIVERING && !ready(owner)) continue;
                     // A full inventory may still have an already-committed receipt to acknowledge.
-                    if (!ready(owner) && !BagDeliveryReceipt.matches(owner, row.transaction(), true)) continue;
+                    if ((!ready(owner) || RosecourtCustody.ownerHeld(server, row.owner()))
+                            && !BagDeliveryReceipt.matches(owner, row.transaction(), true)) continue;
                     if (blockedByEarlierDelivery(row)) continue;
                     deliver(server, row, null);
                     break;
@@ -307,6 +309,8 @@ public final class BackpackHistory {
             active.put(row, row.withState(RETURNED)); queued.remove(id);
             return "Delivery to " + row.ownerName() + " confirmed.";
         }
+        if (RosecourtCustody.ownerHeld(server, row.owner()))
+            return "Queued for " + row.ownerName() + " until Rosecourt releases their inventory.";
         if (!ready(owner)) return "Queued for " + row.ownerName() + " until a backpack slot is free in their inventory.";
         if (blockedByEarlierDelivery(row)) return "Queued behind an earlier return to this owner.";
         if (row.state() == PENDING) {
@@ -322,7 +326,8 @@ public final class BackpackHistory {
             queued.remove(id);
             throw new IOException("Operator permission changed during recovery.");
         }
-        if (server.getPlayerList().getPlayer(row.owner()) != owner || !ready(owner))
+        if (server.getPlayerList().getPlayer(row.owner()) != owner || !ready(owner)
+                || RosecourtCustody.ownerHeld(server, row.owner()))
             return "Queued until the owner is available.";
         if (active.get(id) != row) throw new IOException("That return changed or expired.");
         ItemStack bag = row.restoreStack(server.registryAccess());

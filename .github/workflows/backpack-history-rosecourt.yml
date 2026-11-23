@@ -1,0 +1,152 @@
+name: Backpack recovery with occupied Rosecourt
+on:
+  push:
+    branches: [experiment/backpack-history-rosecourt]
+permissions:
+  actions: read
+  contents: read
+env:
+  PLAYABLE: anya-storage-plus-0.3.0-beta.7-baghistory.2.jar
+  JAIL: Minecraft-Jail-1.3.0-beta.3.jar
+  JAIL_HASH: d7cd43db7d6c4ea88372a1a7e09faee843d51d566a03c398dc999505a8053243
+jobs:
+  storage:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - name: Fetch the pinned upstream jail writer
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: jail-249-build-411857009b8e05f606bb0b5b70648dcce8a9623b
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44305765452
+          github-token: ${{ github.token }}
+          path: jail-build
+      - name: Build and freeze the cumulative playable
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor a070abe4d9a299b4cea535cef968fb0ac27de712 HEAD
+          printf '%s  %s\n' "$JAIL_HASH" "jail-build/dist/migration-build/$JAIL" | sha256sum -c -
+          gradle --no-daemon --console=plain --max-workers=2 jar
+          mkdir -p upload fixture-input
+          cp "build/libs/$PLAYABLE" upload/
+          git rev-parse HEAD >upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" >SHA256SUMS.txt)
+      - name: Run exact frozen JAR through nine disposable server processes
+        run: |
+          python3 -u -B fixtures/backpack-history/run.py "upload/$PLAYABLE" "jail-build/dist/migration-build/$JAIL"
+          cp build/bag-history/CHECKS.txt upload/
+          cp build/bag-history/tools/hosted-bag-history-fixture*.jar fixture-input/
+          (cd upload && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: recovery-format-diagnostics
+          path: |
+            build/bag-history/*.log
+            build/bag-history/game/crash-reports/*.txt
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storage-candidate-and-scoped-recovery-checks
+          path: upload
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hosted-test-helper
+          path: fixture-input/
+          retention-days: 2
+          if-no-files-found: error
+  pack-custody:
+    if: github.event.repository.private == false
+    needs: storage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    env:
+      UQ_ACCESSORY_INTEGRATION: '1'
+    steps:
+      - name: Check out the exact upstream jail and full-pack fixture
+        uses: actions/checkout@v4
+        with:
+          repository: WeepingAngeIs/Server-Jars
+          ref: 411857009b8e05f606bb0b5b70648dcce8a9623b
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with: {path: storage, persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: jail-249-build-411857009b8e05f606bb0b5b70648dcce8a9623b
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44305765452
+          github-token: ${{ github.token }}
+          path: jail-build
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: jail-production-build-7b2f6b34412403b0839f1be9b82e136d1d893b20
+          repository: WeepingAngeIs/Server-Jars
+          run-id: 44099299150
+          github-token: ${{ github.token }}
+          path: baseline
+      - uses: actions/download-artifact@v4
+        with: {name: storage-candidate-and-scoped-recovery-checks, path: verified-storage}
+      - uses: actions/download-artifact@v4
+        with: {name: hosted-test-helper, path: test-only}
+      - name: Prepare the original sealed pack and upstream stimulus
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 411857009b8e05f606bb0b5b70648dcce8a9623b
+          test "$(git -C storage rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(cat verified-storage/SOURCE_COMMIT.txt)" = "$GITHUB_SHA"
+          (cd verified-storage && sha256sum -c SHA256SUMS.txt)
+          printf '%s  %s\n' "$JAIL_HASH" "jail-build/dist/migration-build/$JAIL" | sha256sum -c -
+          mkdir -p dist/120-release minecraft-jail/build/libs
+          cp baseline/dist/production-candidate/Unyielding-1.2.0.jar dist/120-release/
+          cp "jail-build/dist/migration-build/$JAIL" minecraft-jail/build/libs/Minecraft-Jail-1.2.0.jar
+          python3 .github/scripts/fetch-build-dependencies.py
+          python3 .github/native249/full_prepare.py
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0 libopenal1 libxrandr2 libxcursor1 libxinerama1
+          python3 -m pip install --disable-pip-version-check minecraft-launcher-lib==8.0
+          bash .github/client249/memory.sh
+      - name: Provision the published dedicated subset and all 365 client mods
+        run: |
+          PACK249_INSTALL_ONLY=1 bash .github/pack249/server.sh
+          python3 .github/pack249/provision.py --side client --dest "$RUNNER_TEMP/pack249-client-native"
+          python3 .github/client249/launch.py "$RUNNER_TEMP/pack249-client-native" --install-only
+      - name: Admit a real connected player in a fresh native Rosecourt world
+        timeout-minutes: 35
+        run: bash .github/native249/game-scope.sh 1 "jail-build/dist/migration-build/$JAIL"
+      - name: Verify recovery and restart in the newly occupied full-pack world
+        timeout-minutes: 57
+        run: python3 -u storage/fixtures/backpack-history/rosecourt_pack.py "verified-storage/$PLAYABLE" test-only/hosted-bag-history-fixture*.jar
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: occupied-pack-diagnostics
+          path: |
+            dist/packaged-smoke/center-phase1.json
+            dist/packaged-smoke/full249-first-session-saved.json
+            dist/packaged-smoke/full249-phase1-logs/*.log
+            dist/packaged-smoke/full249-scope-logs/*.log
+            dist/storage-proof/*.log
+          retention-days: 3
+      - name: Package both verification receipts with the exact playable
+        run: |
+          cp dist/storage-proof/VERIFIED.txt verified-storage/OCCUPIED_ROSECOURT.txt
+          (cd verified-storage && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-baghistory.2-occupied-rosecourt-verified
+          path: verified-storage
+          retention-days: 14
+          if-no-files-found: error

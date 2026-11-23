@@ -41,11 +41,19 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     private final Path root;
     private final UUID bag;
     private final long started = System.nanoTime();
+    private final RosecourtCustody custody;
+    private boolean readingJailSettings;
+    private boolean live = true;
+    private Path unrecognized;
     private final byte[] discard = new byte[8192];
     private long inflated, packed, tags;
     private int paths;
 
-    private BagHistoryPresence(Path root, UUID bag) { this.root = root; this.bag = bag; }
+    private BagHistoryPresence(MinecraftServer server, Path root, UUID bag) {
+        this.root = root;
+        this.bag = bag;
+        custody = new RosecourtCustody(server, root, bag, started + TimeUnit.SECONDS.toNanos(5));
+    }
 
     /** One instance per restore request so shared menu/inventory slots consume a single inspection budget. */
     static final class LiveStacks {
@@ -117,7 +125,7 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     }
 
     static void verifyAbsent(MinecraftServer server, UUID bagId) throws IOException {
-        var scan = new BagHistoryPresence(server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize(), bagId);
+        var scan = new BagHistoryPresence(server, server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize(), bagId);
         if (!Files.isDirectory(scan.root, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isRegularFile(scan.root.resolve("level.dat"), LinkOption.NOFOLLOW_LINKS))
             throw new IOException("The active world save is unavailable.");
@@ -127,6 +135,9 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
             throw new IOException("A saved-storage record could not be inspected; recovery paused.", e);
         }
         if (!scan.externalFiles.equals(scan.referenced)) throw new IOException("Unmatched external chunk files; recovery paused.");
+        scan.custody.verify(scan);
+        if (scan.unrecognized != null)
+            throw new IOException("Unrecognized world storage (" + scan.unrecognized + "); recovery cannot verify its contents.");
         scan.checkTime();
     }
 
@@ -143,6 +154,13 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
         countPath();
         Path rel = root.relativize(dir);
+        if (rel.equals(RosecourtCustody.INTEGRATED)) custody.integrated = true;
+        if (rel.equals(RosecourtCustody.INTERFACE)) custody.indexed = true;
+        if (rel.startsWith("jail-runtime-transitions-v1") && rel.getNameCount() > 1) {
+            // Migration bundles can contain historical playerdata copies. A backup cannot close a live claim.
+            if (unrecognized == null) unrecognized = rel;
+            return FileVisitResult.SKIP_SUBTREE;
+        }
         // Datapacks are definitions/structures available to the world, never live inventory instances.
         if (rel.equals(JOURNAL) || rel.equals(Path.of("datapacks"))) return FileVisitResult.SKIP_SUBTREE;
         return FileVisitResult.CONTINUE;
@@ -153,6 +171,7 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
         if (!attrs.isRegularFile()) throw new IOException("A linked, nested too deeply, or unreadable world entry prevents recovery.");
         Path rel = root.relativize(path);
         String name = path.getFileName().toString();
+        boolean cobblemonBackup = CobblemonPlayerData.nbtFallback(rel);
         if (rel.equals(POCKET_INDEX) || rel.equals(Path.of("level.dat_old"))
                 || rel.getNameCount() == 2 && rel.startsWith("playerdata") && name.endsWith(".dat_old")
                 || rel.equals(Path.of("session.lock")) || rel.equals(Path.of("serverconfig", "readme.txt"))
@@ -161,12 +180,18 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
                 || rel.startsWith(Path.of("anya_storage", "guide_grants")) && name.endsWith(".claim")
                 || rel.startsWith(Path.of("anya_storage", "interiors")) && (name.endsWith(".png") || name.equals("catalog.json")))
             return FileVisitResult.CONTINUE;
-        if (name.endsWith(".mca")) {
+        if (custody.collect(rel, attrs)) {
+            chargePacked(attrs.size());
+        } else if (CobblemonPlayerData.recognizes(rel)) {
+            chargePacked(attrs.size());
+            CobblemonPlayerData.verify(path, rel, started + TimeUnit.SECONDS.toNanos(5));
+        } else if (name.endsWith(".mca")) {
             region(path);
         } else if (name.endsWith(".mcc")) {
             externalFiles.add(path);
-        } else if (name.endsWith(".dat") || name.endsWith(".nbt")) {
+        } else if (name.endsWith(".dat") || name.endsWith(".nbt") || cobblemonBackup) {
             chargePacked(attrs.size());
+            readingJailSettings = rel.equals(Path.of("data", "unyielding_jail.dat"));
             try (var input = new BufferedInputStream(Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS))) {
                 input.mark(2);
                 int a = input.read(), b = input.read();
@@ -174,15 +199,19 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
                 if (a == 0x1f && b == 0x8b) inspect(new GZIPInputStream(input));
                 else if ((a & 15) == 8 && b >= 0 && ((a << 8) + b) % 31 == 0) inspect(new InflaterInputStream(input));
                 else inspect(input);
-            }
-        } else {
-            throw new IOException("Unrecognized world storage (" + rel + "); recovery cannot verify its contents.");
+            } catch (Present present) {
+                if (cobblemonBackup) throw new IOException("A Cobblemon backup contains that backpack. Check its active location before recovery.");
+                throw present;
+            } finally { readingJailSettings = false; }
+        } else if (unrecognized == null) {
+            // A known existing item can close the claim. Absence still requires every store to be understood.
+            unrecognized = rel;
         }
         checkUnchanged(path, attrs);
         return FileVisitResult.CONTINUE;
     }
 
-    private static void checkUnchanged(Path path, BasicFileAttributes before) throws IOException {
+    static void checkUnchanged(Path path, BasicFileAttributes before) throws IOException {
         var after = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
         if (!after.isRegularFile() || after.size() != before.size() || !after.lastModifiedTime().equals(before.lastModifiedTime())
                 || !Objects.equals(after.fileKey(), before.fileKey()))
@@ -253,6 +282,11 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
         }
     }
 
+    void inspectReference(InputStream decoded) throws IOException {
+        live = false;
+        try { inspect(decoded); } finally { live = true; }
+    }
+
     private void inspect(InputStream decoded) throws IOException {
         // Charge skipped arrays as well as visited bytes. This bounds highly compressed chunks.
         try (var in = new DataInputStream(new BufferedInputStream(new FilterInputStream(decoded) {
@@ -300,10 +334,14 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
             }
             case 10 -> {
                 for (int entry; (entry = in.readUnsignedByte()) != 0;) {
-                    if (in.readUTF().equals("BagId")) {
+                    String key = in.readUTF();
+                    if (readingJailSettings && key.equals("integratedCustodyInitialized")) {
+                        if (entry != 1) throw new IOException("Unrecognized jail initialization record.");
+                        custody.declared |= in.readByte() != 0;
+                    } else if (key.equals("BagId")) {
                         if (entry != 11 || in.readInt() != 4) throw new IOException("Unsupported backpack identity format.");
                         long high = in.readLong(), low = in.readLong();
-                        if (high == bag.getMostSignificantBits() && low == bag.getLeastSignificantBits()) throw new Present();
+                        if (live && high == bag.getMostSignificantBits() && low == bag.getLeastSignificantBits()) throw new Present();
                     } else value(in, entry, depth + 1);
                 }
             }

@@ -215,7 +215,8 @@ public final class HistoryReview {
     @SubscribeEvent
     public static void start(ServerStartedEvent event) throws Exception {
         phase = System.getenv("ANYA_BAG_PHASE");
-        require("true".equals(System.getenv("GITHUB_ACTIONS")) && List.of("seed", "queue", "deliver", "replay", "receipts", "source-loss", "source-replay").contains(phase),
+        require("true".equals(System.getenv("GITHUB_ACTIONS")) && List.of("seed", "queue", "deliver", "replay", "receipts", "source-loss", "source-replay",
+                        "custody-format", "custody-restart", "pack-storage", "pack-restart").contains(phase),
                 "Disposable hosted server required");
         server = event.getServer();
         var actual = ModList.get().getModContainerById("anyastorage").orElseThrow().getModInfo().getOwningFile().getFile().getFilePath();
@@ -223,6 +224,18 @@ public final class HistoryReview {
                 "The server did not load the frozen candidate JAR");
         evidence.add(phase + " " + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(actual))));
         evidence.add("JVM " + ProcessHandle.current().pid());
+        if (phase.startsWith("pack-")) {
+            RosecourtReview.verifyFullPack(server);
+            oracle = phase.equals("pack-storage") ? new CompoundTag() : NbtIo.readCompressed(ORACLE, NbtAccounter.create(16L << 20));
+            return; // Actual Dev joins from the separately launched full Minecraft client.
+        }
+        if (phase.startsWith("custody-")) {
+            op = join("HistoryOp", 10, true);
+            owner = join("CustodyOwner", 2, false);
+            nextOwner = join("EscrowHolder", 4, false);
+            oracle = phase.equals("custody-format") ? new CompoundTag() : NbtIo.readCompressed(ORACLE, NbtAccounter.create(16L << 20));
+            return;
+        }
         op = join("HistoryOp", 10, true);
         secondOp = join("SecondOp", 14, true);
         server.overworld().getChunkAt(CHEST);
@@ -251,12 +264,15 @@ public final class HistoryReview {
     }
 
     private static void createBag(String name, int index) {
-        var inv = owner.player.getInventory();
+        createBag(owner, name, index);
+    }
+    private static void createBag(Actor originalOwner, String name, int index) {
+        var inv = originalOwner.player.getInventory();
         var host = new ItemStack(Content.BACKPACK.get());
         host.set(DataComponents.CUSTOM_NAME, Component.literal("Fixture " + name));
         inv.setItem(index, host);
         if (index < 9) inv.selected = index;
-        var bag = new BagInventory(owner.player, index);
+        var bag = new BagInventory(originalOwner.player, index);
         var nested = new CompoundTag();
         nested.putString("label", name);
         nested.putIntArray("values", new int[]{47, 3, 81});
@@ -266,20 +282,28 @@ public final class HistoryReview {
         item.set(DataComponents.CUSTOM_NAME, Component.literal("Etched " + name));
         item.set(DataComponents.CUSTOM_DATA, CustomData.of(metadata));
         bag.setItem(3, item);
-        if (name.equals("damage") || name.equals("timer")) {
+        if (name.equals("damage") || name.equals("timer") || name.startsWith("jail-")) {
             var disc = new ItemStack(Content.UPGRADES.get("feeding").get());
             disc.set(DataComponents.CUSTOM_NAME, Component.literal("Personal feeding module " + name));
             disc.set(DataComponents.CUSTOM_DATA, CustomData.of(metadata));
             inv.setItem(9, disc);
             require(Upgrades.change(bag, "feeding", false), "Named upgrade installation failed");
-            require(Upgrades.installed(new BagInventory(owner.player, index), "feeding"), "Installed disk missing");
+            require(Upgrades.installed(new BagInventory(originalOwner.player, index), "feeding"), "Installed disk missing");
         }
-        oracle.put(name, inv.getItem(index).save(owner.player.registryAccess()));
+        oracle.put(name, inv.getItem(index).save(originalOwner.player.registryAccess()));
     }
 
     @SubscribeEvent
     public static void tick(ServerTickEvent.Post event) throws Exception {
         if (phase == null) return;
+        if (phase.startsWith("pack-") && owner == null) {
+            var client = server.getPlayerList().getPlayerByName("Dev");
+            if (client == null) return;
+            require(!client.connection.getConnection().isMemoryConnection(), "Expected independent full-pack client");
+            owner = op = new Actor(client, new ArrayList<>(), null);
+            server.getPlayerList().op(client.getGameProfile());
+            nextOwner = join("EscrowHolder", 4, false);
+        }
         ticks++;
         switch (phase) {
             case "seed" -> seed();
@@ -289,8 +313,89 @@ public final class HistoryReview {
             case "receipts" -> receipts();
             case "source-loss" -> sourceLoss();
             case "source-replay" -> sourceReplay();
+            case "pack-storage", "custody-format" -> custody(false);
+            case "pack-restart", "custody-restart" -> custody(true);
         }
         if (ticks > 900) throw new IllegalStateException("Backpack history fixture timed out");
+    }
+
+    private static void custody(boolean restart) throws Exception {
+        if (ticks != 120) return;
+        boolean full = phase.startsWith("pack-");
+        if (restart) {
+            exact(owner, "jail-lost", full ? 1 : 0);
+            exact(nextOwner, "jail-held", 0);
+            command(op, restoreCommand("jail-lost", oracle.getUUID("lost-action")));
+            command(op, restoreCommand("jail-held", oracle.getUUID("held-action")));
+            exact(owner, "jail-lost", full ? 1 : 0);
+            exact(owner, "jail-held", 0);
+            exact(nextOwner, "jail-held", 0);
+            RosecourtReview.verifyHeld(server, oracle.getUUID("custody-tx"), nextOwner.player.getUUID(), original("jail-held"), full);
+            if (full) evidence.add("PASS Restart preserved both the single exact restored bag and the separate held bag. Replaying both original chat actions produced no second item.");
+            else {
+                require(row("jail-lost") != null && row("jail-held") != null, "Paused claims lost after restart");
+                evidence.add("PASS Without the live jail mod, recovery remained paused across restart and native escrow retained the original bag. Both chat links remained retriable.");
+            }
+            finish(); return;
+        }
+        owner.player.getInventory().clearContent();
+        nextOwner.player.getInventory().clearContent();
+        owner.player.closeContainer();
+        owner.player.setGameMode(GameType.SURVIVAL);
+        createBag("jail-lost", 1);
+        createBag(nextOwner, "jail-held", 2);
+        destroy(owner, "jail-lost");
+        destroy(nextOwner, "jail-held");
+        var regular = row("jail-lost");
+        var held = row("jail-held");
+        require(regular != null && held != null && regular.restorable() && held.restorable(), "Missing witnessed bag losses");
+        oracle.putUUID("lost-action", regular.lossId());
+        oracle.putUUID("held-action", held.lossId());
+        // Inject only the held bag's earlier original into a typed historical import.
+        // The lost bag has no surviving stack anywhere in the current world or custody.
+        UUID transaction = UUID.randomUUID();
+        oracle.putUUID("custody-tx", transaction);
+        RosecourtReview.importHeld(server, nextOwner.player, transaction, original("jail-held"), full);
+        require(!held.owner().equals(regular.owner()) && held.owner().equals(nextOwner.player.getUUID())
+                && regular.owner().equals(owner.player.getUUID()), "Unexpected original owner");
+        if (!full) {
+            RosecourtReview.checkRejectedJournals(server, transaction, expectedReason -> {
+                var message = BackpackHistory.restore(op.player, id("jail-lost"), regular.lossId());
+                var pending = row("jail-lost");
+                require(message.startsWith("Return paused") && message.contains(expectedReason)
+                                && pending != null && regular.lossId().equals(pending.lossId()),
+                        "Invalid evidence must keep the original loss retriable: " + message);
+                exact(owner, "jail-lost", 0);
+                exact(nextOwner, "jail-held", 0);
+            });
+            evidence.add("PASS A damaged custody frame, an unindexed escrow, and a Cobblemon player-data extension each paused the same return with its own reason. The original journal bytes and supported player-data shape were retained.");
+            for (var pair : List.of(held, regular)) {
+                String response = BackpackHistory.restore(op.player, pair.id(), pair.lossId());
+                require(response.contains("active and saved custody records could not be confirmed"),
+                        "Intact journals must reach the missing-authority guard: " + response);
+            }
+            exact(nextOwner, "jail-held", 0);
+            exact(owner, "jail-lost", 0);
+            RosecourtReview.verifyHeld(server, transaction, nextOwner.player.getUUID(), original("jail-held"), false);
+            evidence.add("PASS With valid native inventory and index bytes but no live Rosecourt, both owners' links remained eligible and neither received an item. The native beta.3 reader found the held backpack exactly once.");
+            finish(); return;
+        }
+        command(op, restoreCommand("jail-held", held.lossId()));
+        if (row("jail-held") != null) throw new IllegalStateException("Held backpack did not close its action: "
+                + BackpackHistory.restore(op.player, id("jail-held"), held.lossId()));
+        command(op, restoreCommand("jail-held", held.lossId()));
+        exact(owner, "jail-held", 0);
+        exact(nextOwner, "jail-held", 0);
+        command(op, restoreCommand("jail-lost", regular.lossId()));
+        if (row("jail-lost") != null) throw new IllegalStateException("Legitimately lost backpack did not return: "
+                + BackpackHistory.restore(op.player, id("jail-lost"), regular.lossId()));
+        command(op, restoreCommand("jail-lost", regular.lossId()));
+        exact(owner, "jail-lost", 1);
+        exact(owner, "jail-held", 0);
+        exact(nextOwner, "jail-held", 0);
+        RosecourtReview.verifyHeld(server, transaction, nextOwner.player.getUUID(), original("jail-held"), full);
+        evidence.add("PASS On the previously occupied full-pack server, the exact Jail JAR indexed the separate synthetic historical backpack through its console bind command. A hosted full-pack player's valid Storage recovery was denied for that held bag and returned the independently lost bag to its separate owner with its contents and upgrade once.");
+        finish();
     }
 
     @SubscribeEvent
@@ -675,7 +780,7 @@ public final class HistoryReview {
 
     private static void finish() throws Exception {
         for (Actor actor : new Actor[]{owner, nextOwner, op, secondOp}) {
-            if (actor == null) continue;
+            if (actor == null || actor.channel == null) continue;
             server.getPlayerList().remove(actor.player);
             actor.channel.finishAndReleaseAll();
         }

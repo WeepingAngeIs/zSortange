@@ -28,7 +28,13 @@ def main():
     script = (base / "launch.txt").read_text().strip()
     receipts = []
     pids = set()
-    for phase in ("seed", "queue", "deliver", "replay", "receipts", "source-loss", "source-replay"):
+    phases = ["seed", "queue", "deliver", "replay", "receipts", "source-loss", "source-replay"]
+    if len(sys.argv) > 2:
+        jail = Path(sys.argv[2]).resolve(strict=True)
+        assert sha256(jail.read_bytes()).hexdigest() == "d7cd43db7d6c4ea88372a1a7e09faee843d51d566a03c398dc999505a8053243"
+        os.environ["ANYA_ROSE_JAR"] = str(jail)
+        phases.extend(["custody-format", "custody-restart"])
+    for phase in phases:
         path = base / (phase + ".console.log")
         with path.open("x") as output:
             proc = subprocess.run(["bash", script], cwd=game, env=dict(os.environ, ANYA_BAG_PHASE=phase),
