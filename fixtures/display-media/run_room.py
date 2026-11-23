@@ -22,9 +22,13 @@ def check_audio(proof, target, role, bounds):
     start, end = bounds
     period = 12000
     # Keep the actual interior audio that passed, independently for each client.
+    sampled=[]
+    strongest=(0,0,0,start)
     for i in range(max(0, start - 24000), min(end + 24000, len(data)) - period, period // 2):
         segment = data[i:i + period]
         ratio, rms, peak = diagnostic_tone(segment, 48000)
+        sampled.append((ratio,rms,peak))
+        if ratio*rms>strongest[0]*strongest[1]: strongest=(ratio,rms,peak,i)
         if ratio > .75 and rms >= 35 and peak == 440:
             with wave.open(str(proof / (role + "-room-audio.wav")), "wb") as evidence:
                 evidence.setnchannels(1)
@@ -32,7 +36,45 @@ def check_audio(proof, target, role, bounds):
                 evidence.setframerate(48000)
                 evidence.writeframes(segment.tobytes())
             return f"{role} heard {peak} Hz in its own PulseAudio monitor, RMS {rms}, tone share {ratio:.3f}."
-    raise AssertionError(f"No movie audio on {role}'s own output, samples {start}..{end}")
+    i=max(0,min(strongest[3],len(data)-48000))
+    with wave.open(str(proof/(role+"-synthetic-diagnostic.wav")),"wb") as out:
+        out.setnchannels(1);out.setsampwidth(2);out.setframerate(48000);out.writeframes(data[i:i+48000].tobytes())
+    raise AssertionError(f"No movie tone on {role}: samples {start}..{end}; peak (share, RMS, Hz, offset) {strongest}, max RMS {max((s[1] for s in sampled),default=0)}")
+
+
+def pulse_list(kind):
+    return json.loads(subprocess.check_output(["pactl","--format=json","list",kind],text=True))
+
+
+def actual_routes(clients, sinks, target):
+    """Associate Pulse's real Java process with its launcher's process group or isolated game directory."""
+    result={}
+    for stream in pulse_list("sink-inputs"):
+        props=stream.get("properties",{})
+        raw_pid=props.get("application.process.id","")
+        if not str(raw_pid).isdigit():continue
+        pid=int(raw_pid)
+        try:
+            game=Path(f"/proc/{pid}/cwd").resolve(strict=True)
+            group=os.getpgid(pid)
+            executable=Path(f"/proc/{pid}/exe").resolve(strict=True).name
+        except (FileNotFoundError,ProcessLookupError,PermissionError):
+            continue
+        if executable!="java":continue
+        matches=[role for role,process in clients.items() if game==target/role or group==process.pid]
+        if not matches:continue
+        assert len(matches)==1, matches
+        role=matches[0]
+        assert role not in result, f"Ambiguous simultaneous OpenAL outputs for {role}"
+        result[role]=(pid,int(stream["index"]),int(stream["sink"]))
+        if int(stream["sink"])!=sinks[role]:
+            subprocess.run(["pactl","move-sink-input",str(stream["index"]),str(sinks[role])],check=True)
+            # Verify the resulting route on a fresh PulseAudio snapshot.
+            return {}
+        if stream.get("mute",False):
+            subprocess.run(["pactl","set-sink-input-mute",str(stream["index"]),"0"],check=True)
+            return {}
+    return result
 
 
 def main():
@@ -72,13 +114,17 @@ def main():
             if srv.poll() is not None or time.monotonic() > deadline:
                 raise RuntimeError("Disposable room server startup failed")
             time.sleep(.5)
-        clients = []
+        clients = {}
+        sinks = {}
         for role in ROLES:
             name = "anya_" + role.lower()
             subprocess.run(["pactl","load-module","module-null-sink","sink_name="+name,
                             "sink_properties=device.description="+name,"rate=48000","channels=2"],check=True)
             subprocess.run(["pactl","set-sink-volume",name,"100%"],check=True)
+            subprocess.run(["pactl","set-sink-mute",name,"0"],check=True)
             subprocess.run(["pactl","set-source-volume",name+".monitor","100%"],check=True)
+            subprocess.run(["pactl","set-source-mute",name+".monitor","0"],check=True)
+            sinks[role]=int(next(s for s in pulse_list("sinks") if s["name"]==name)["index"])
             rc = ctx.enter_context((target/(role + ".pcm")).open("xb", buffering=0))
             recorders[role]=launch(["parec","--raw","--device="+name+".monitor","--format=s16le","--rate=48000",
                                   "--channels=1","--latency-msec=50"],target,role + "-capture",env,rc)
@@ -86,17 +132,29 @@ def main():
             (folder/"options.txt").write_text("onboardAccessibility:false\ntutorialStep:none\nguiScale:2\n"
                 "renderDistance:3\nsimulationDistance:3\nenableVsync:false\nmaxFps:30\nfov:0.0\n"
                 "soundCategory_master:1.0\nsoundCategory_block:1.0\nsoundCategory_music:0.0\n"
-                "soundCategory_ambient:0.0\nsoundCategory_player:0.0\n")
+                "soundCategory_ambient:0.0\nsoundCategory_player:0.0\nsoundDevice:"+name+"\n")
             cli = launch(["xvfb-run","-a","-s","-screen 0 1024x768x24","bash",(folder/"launch.txt").read_text().strip()],
                          folder,role,dict(env,PULSE_SINK=name,ALSOFT_LOGFILE=str(target/(role+"-openal.log"))))
-            clients.append(cli)
+            clients[role]=cli
             pids.add(cli.pid)
         assert len(pids)==3
         deadline = time.monotonic() + 600
+        routed=False
+        next_route=0.
         while not (proof / "PASS").exists():
             if (proof/"FAILED").exists(): raise AssertionError((proof/"FAILED").read_text())
-            if any(p.poll() is not None for p in (srv,*clients,*recorders.values())) or time.monotonic()>deadline:
+            if any(p.poll() is not None for p in (srv,*clients.values(),*recorders.values())) or time.monotonic()>deadline:
                 raise RuntimeError("Incomplete three-player check: "+str(sorted(p.name for p in proof.iterdir())))
+            if time.monotonic()>=next_route:
+                routes=actual_routes(clients,sinks,target)
+                next_route=time.monotonic()+(2 if routed else .5)
+                if len(routes)==3 and not routed:
+                    assert len({v[0] for v in routes.values()})==3 and len({v[2] for v in routes.values()})==3
+                    (proof/"verified-mixer-routes").write_text(json.dumps(routes,indent=2))
+                    print("Real client JVM PID, Pulse input, dedicated sink: "+str(routes),flush=True)
+                    routed=True
+                elif routed:
+                    assert len(routes)==3,"A verified Java audio output changed or disconnected"
             for role in ROLES:
                 count = (target / (role + ".pcm")).stat().st_size // 2
                 if role not in starts and (proof / ("late-inside" if role=="LateGuest" else "screen")).exists():
@@ -110,9 +168,13 @@ def main():
             time.sleep(.1)
         srv.stdin.write(b"stop\n");srv.stdin.flush()
         assert srv.wait(timeout=100)==0 and "All dimensions are saved" in (target/"server.log").read_text(errors="replace")
+        failures=[]
         for role in ROLES:
             recorders[role].send_signal(signal.SIGINT);recorders[role].wait(timeout=10)
-            metrics.append(check_audio(proof,target,role,(starts[role],ends[role])))
+            try: metrics.append(check_audio(proof,target,role,(starts[role],ends[role])))
+            except AssertionError as err: failures.append(str(err))
+        (proof/"mixer-results.txt").write_text("\n".join(metrics+failures)+"\n")
+        if failures: raise AssertionError("\n".join(failures))
     clocks = []
     for role in ROLES:
         receipt=(proof/("movie-"+role)).read_text()

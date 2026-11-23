@@ -55,7 +55,8 @@ public final class RoomMediaServer {
             var owner=server.getPlayerList().getPlayerByName("RoomHost");
             var guest=server.getPlayerList().getPlayerByName("RoomGuest");
             var late=server.getPlayerList().getPlayerByName("LateGuest");
-            if(owner==null || guest==null || late==null || !flag("audit-RoomHost") || !flag("audit-RoomGuest") || !flag("audit-LateGuest"))return;
+            if(owner==null || guest==null || late==null || !flag("verified-mixer-routes")
+                    || !flag("audit-RoomHost") || !flag("audit-RoomGuest") || !flag("audit-LateGuest"))return;
             require(++age<1500,"Hosted room step "+step+" timed out");
             var home=server.overworld();
             switch(step){
