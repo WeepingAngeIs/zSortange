@@ -1,0 +1,33 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def playable = p.file(p.property('bagPlayable'))
+    def probe = p.sourceSets.create('bagHistoryProbe')
+    probe.java.srcDir p.file('fixtures/backpack-history/java')
+    probe.resources.srcDir p.file('fixtures/backpack-history/resources')
+    p.neoForge.addModdingDependenciesTo(probe)
+    p.dependencies.add(probe.compileOnlyConfigurationName, p.files(playable))
+    def helper = p.tasks.register('bagHistoryProbeJar', Jar) {
+        dependsOn probe.classesTaskName
+        from probe.output
+        archiveBaseName = 'hosted-bag-history-fixture'
+        destinationDirectory = p.layout.buildDirectory.dir('bag-history/tools')
+    }
+    def runtime = p.sourceSets.create('bagHistoryRuntime')
+    p.neoForge.addModdingDependenciesTo(runtime)
+    p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(playable, helper))
+    p.neoForge.runs.create('bagHistoryReview') {
+        server()
+        programArgument '--nogui'
+        sourceSet = runtime
+        loadedMods = []
+        gameDirectory = p.file('build/bag-history/game')
+        jvmArguments.addAll '-Xmx1700m', '-Xms256m', '-XX:ActiveProcessorCount=2'
+        systemProperty 'anya.bagHistoryPlayable', playable.absolutePath
+    }
+    p.tasks.register('prepareBagHistoryReview') {
+        dependsOn helper, 'createBagHistoryReviewLaunchScript'
+        doLast {
+            def launch = p.tasks.named('createBagHistoryReviewLaunchScript').get().launchScript.get().asFile
+            p.file('build/bag-history/launch.txt').text = launch.absolutePath
+        }
+    }
+}}

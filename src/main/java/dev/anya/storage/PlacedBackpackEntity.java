@@ -127,6 +127,10 @@ public final class PlacedBackpackEntity extends BlockEntity {
         var entity = new ItemEntity(level,worldPosition.getX()+.5,worldPosition.getY()+.25,worldPosition.getZ()+.5,bag);
         entity.setDefaultPickUpDelay();
         entity.setTarget(owner);
+        if (owner != null) {
+            var player = level.getServer().getPlayerList().getPlayer(owner);
+            BackpackHistory.markDrop(entity, owner, player == null ? "" : player.getGameProfile().getName());
+        }
         if (level.addFreshEntity(entity)) return true;
         // An addon may deny item spawns. A normal break must leave the original bag available for pickup.
         slot.setItem(0,bag);
