@@ -57,9 +57,9 @@ def check_decoder(jar, source, target):
             assert kind==2
             rate,n=struct.unpack_from(">ii",binary,i);i+=8
             pcm=np.frombuffer(binary,dtype="<i2",offset=i,count=n//2)
-            score,rms,hz=diagnostic_tone(pcm,rate)
-            print(f"Bundled AAC decoder: {rate} Hz PCM, peak {hz} Hz, spectral share {score}, RMS {rms}",flush=True)
-            return score>.75 and rms>=50
+            sustained=[diagnostic_tone(pcm[rate*second:rate*second+rate//2],rate) for second in (1,2,3)]
+            print(f"Bundled AAC decoder: {rate} Hz PCM. Interior tone windows (share, RMS, peak Hz): {sustained}",flush=True)
+            return all(share>.75 and rms>=50 and hz==440 for share,rms,hz in sustained)
     return False
 
 

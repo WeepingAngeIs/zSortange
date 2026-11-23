@@ -20,9 +20,9 @@ jobs:
         with: {gradle-version: '8.14.3'}
       - name: Prepare the hosted framebuffer and isolated audio sink
         run: |
-          if ! command -v parec || ! command -v pulseaudio || ! command -v ffmpeg || ! command -v xvfb-run; then
+          if ! command -v parec || ! command -v pulseaudio || ! command -v xvfb-run; then
             sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=1 -o Acquire::http::Timeout=20 update -qq
-            sudo apt-get install -y --no-install-recommends ffmpeg xvfb pulseaudio pulseaudio-utils libgl1-mesa-dri libopenal1
+            sudo apt-get install -y --no-install-recommends xvfb pulseaudio pulseaudio-utils libgl1-mesa-dri libopenal1
           fi
           python3 -c 'import numpy,PIL' || python3 -m pip install --disable-pip-version-check numpy Pillow
       - name: Freeze the cumulative playable and verify its embedded codec
@@ -36,7 +36,6 @@ jobs:
           git rev-parse HEAD > upload/SOURCE_COMMIT.txt
           (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
           unzip -t "upload/$PLAYABLE" 'META-INF/anya-media/screen-codec.jar'
-          ffprobe -v error -show_entries stream=codec_name,profile,width,height,r_frame_rate,sample_rate,channels -of json fixtures/display-media/inputs/color-tone.mp4
       - name: Play source from real menus in a hosted client and measure game pixels and mixer output
         run: |
           python3 -u -B fixtures/display-media/run.py "upload/$PLAYABLE"

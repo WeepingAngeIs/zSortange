@@ -1,0 +1,7 @@
+The isolated screen decoder bundles JCodec 0.2.5 for MP4 demultiplexing
+and H.264 video (JCodec-LICENSE.txt), and JAAD 0.9.4 for AAC audio.
+
+JAAD originally by in-somnia, with changes distributed by Tianscar.
+Maven coordinate: com.tianscar.javasound:jaad:0.9.4
+The published artifact declares the Apache License, Version 2.0.
+A copy is included in JAAD-APACHE-2.0.txt.

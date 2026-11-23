@@ -8,19 +8,29 @@ base { archivesName = 'anya-storage-plus' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 java.withSourcesJar()
 sourceSets { screenCodec }
-dependencies { screenCodecImplementation 'org.jcodec:jcodec:0.2.5' }
+configurations { screenAudioDecoder }
+dependencies {
+    screenCodecImplementation 'org.jcodec:jcodec:0.2.5'
+    screenAudioDecoder 'com.tianscar.javasound:jaad:0.9.4'
+}
+// Compile against the independent AAC library rather than JCodec's older in-tree fork.
+sourceSets.screenCodec.compileClasspath = configurations.screenAudioDecoder + sourceSets.screenCodec.compileClasspath
+def pinnedScreenDecoder = { configuration, expected ->
+    def decoder = configuration.singleFile
+    def digest = java.security.MessageDigest.getInstance('SHA-256').digest(decoder.bytes).encodeHex().toString()
+    if (digest != expected) throw new GradleException('Unexpected screen decoder dependency digest')
+    zipTree(decoder)
+}
 def screenCodecJar = tasks.register('screenCodecJar', Jar) {
     archiveFileName = 'screen-codec.jar'
     destinationDirectory = layout.buildDirectory.dir('screen-codec')
     manifest { attributes('Main-Class': 'dev.anya.codec.ScreenCodec') }
     from sourceSets.screenCodec.output
-    from {
-        def decoder = configurations.screenCodecRuntimeClasspath.singleFile
-        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(decoder.bytes).encodeHex().toString()
-        if (digest != '890329dad124e8b739c1d6602a59a53c8a474daddff265c2561e21c498496c81') {
-            throw new GradleException('Unexpected screen codec dependency digest')
-        }
-        zipTree(decoder)
+    from({ pinnedScreenDecoder(configurations.screenCodecRuntimeClasspath,'890329dad124e8b739c1d6602a59a53c8a474daddff265c2561e21c498496c81') }) {
+        exclude 'net/sourceforge/jaad/**'
+    }
+    from({ pinnedScreenDecoder(configurations.screenAudioDecoder,'22f9fba52e328bdda2bb01935c5c32fa0625d31fd557b909b5d138b188c8afca') }) {
+        include 'net/sourceforge/jaad/**'
     }
     exclude 'META-INF/MANIFEST.MF'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
