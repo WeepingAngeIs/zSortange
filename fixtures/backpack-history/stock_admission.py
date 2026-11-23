@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -19,6 +20,7 @@ from rosecourt_pack import digest, stop_group, tail
 
 SEAL = "4fe43c038efc2211fdb0be84e25efd4f0c279e900c9afc21574dff4cf2f4a8cd"
 JAIL = "d7cd43db7d6c4ea88372a1a7e09faee843d51d566a03c398dc999505a8053243"
+COMPANION = "ec3ae2c48399e40ffa615ddec85408bc29b2479c5a35eb7236c3e036ebdf762c"
 STOCK_RUNTIME = "4ef154609c7d6fc407dd212ae702c87b6f55c4a9e7bfe565eeee860250d25248"
 OWNER = uuid.UUID(bytes=hashlib.md5(b"OfflinePlayer:Visitor").digest(), version=3)
 MARKER = "Stock custody checkpoint"
@@ -123,7 +125,7 @@ def verify_saved(world, expected_runtime):
     assert origin[:4]==b"JOL1" and origin[4:36].hex()==digest_items
     assert struct.unpack(">I",origin[36:40])[0]==len(origin)-40
     plan=nbt(held(world/"integrated-jail-v1/escrow.v1",tx))
-    assert int(plan["cell"])==6 and plan["digest"].tobytes().hex()==digest_items
+    assert plan["digest"].tobytes().hex()==digest_items
     assert str(plan["contract"]) in ("native-supported-v2","native-retained-xp-v3")
     locker_coordinates = tuple(int(plan[axis]) for axis in ("x", "y", "z"))
     verify_index(world/"custody-interface-v1/custody.v1",tx,digest_items,locker_coordinates)
@@ -138,7 +140,13 @@ def verify_saved(world, expected_runtime):
     assert jail_data["integratedCustodyInitialized"] and len(jail_data["prisoners"])==1
     row=jail_data["prisoners"][0]
     assert uid(row["player"])==OWNER and row["jail"]==plan["jail"] and row["prior"]==plan["prior"]
-    assert int(row["geometry"])==int(plan["geometry"])==int(jail_data["geometry"])
+    assert int(row["geometry"])==int(plan["geometry"])==int(jail_data["geometry"])==4
+    # DetentionCenter.cell records the room via the location of cell one and the
+    # floor offsets from DetentionPlan. The journal does not store a cell number.
+    first=jail_data["location"]; dest=plan["jail"]
+    assert all(dest[k]==first[k] for k in ("dim","y","yaw","pitch"))
+    assert float(dest["x"])==float(first["x"])+12 and float(dest["z"])==float(first["z"])+12
+    assert locker_coordinates==(math.floor(first["x"])+8,math.floor(first["y"]),math.floor(first["z"])+12)
     terrain=world/"data/unyielding-jail-placement.before"
     assert terrain.stat().st_size>40
     return {"owner":str(OWNER),"native_cell":6,"native_transaction":str(tx),"marker_count":13,
@@ -186,36 +194,63 @@ def main():
     shutil.copy2(root/"dist/packaged-harness/run-server/eula.txt",server/"eula.txt")
     (server/"server.properties").write_text("online-mode=false\nserver-ip=127.0.0.1\nserver-port=25565\n"
         "level-name=jail_certified_smoke\nlevel-type=minecraft:flat\ngenerate-structures=false\n"
-        "spawn-protection=0\ndifficulty=peaceful\nspawn-monsters=false\nmax-players=2\nview-distance=3\n"
-        "simulation-distance=3\nenable-query=false\nenable-rcon=false\nmax-tick-time=-1\n")
-    (client/"options.txt").write_text("guiScale:2\nrenderDistance:3\nsimulationDistance:3\nmaxFps:30\n"
+        'generator-settings={"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}\n'
+        "spawn-protection=0\ndifficulty=peaceful\nspawn-monsters=false\nmax-players=2\nview-distance=2\n"
+        "simulation-distance=2\nenable-query=false\nenable-rcon=false\nmax-tick-time=-1\n")
+    (client/"options.txt").write_text("guiScale:2\nrenderDistance:2\nsimulationDistance:2\nmaxFps:30\n"
         "enableVsync:false\nonboardAccessibility:false\nsoundCategory_master:0.0\ntutorialStep:none\n")
     config=digest(server/"config/neoorigins/admin.toml")
     server_log=output/"native-server.log"
-    env=dict(os.environ)
-    assert not any(env.get(k) for k in ("JAVA_TOOL_OPTIONS","UQ_PACKAGED_JAIL_SMOKE"))
+    companion=server/"mods/Unyielding-1.2.0.jar"
+    assert digest(companion)==COMPANION and digest(client/"mods"/companion.name)==COMPANION
+    # full_prepare exports staging paths to later Actions steps. Bind the original
+    # upstream verifier to the actual installed, pinned JARs as native249/full_run does.
+    assert not any(os.environ.get(k) for k in ("JAVA_TOOL_OPTIONS","UQ_PACKAGED_JAIL_SMOKE","UQ_PACKAGED_PHASE"))
+    env=dict(os.environ,UQ_PACKAGED_JAIL_SMOKE="1",UQ_JAIL_JAR=str(server/"mods"/jail.name),UQ_JAIL_SHA256=JAIL,
+             UQ_BUNDLE_JAR=str(companion),UQ_BUNDLE_SHA256=COMPANION)
     srv=cli=None
     with server_log.open("x") as slog,(output/"native-client.log").open("x") as clog:
         try:
             # A single Visitor cannot start the original two-player certified lifecycle.
             # The separate player-only escape test is opt-in and is not part of this run.
             srv=subprocess.Popen(["java","-Xms512m","-Xmx3G","-Dneoforge.readTimeout=180",
-                "-Duq.integratedJail=true","-Duq.certifiedJail=true",
+                "-Duq.integratedJail=true","-Duq.certifiedJail=true","-Duq.certifiedPhase=1",
                 "@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt","nogui"],cwd=server,env=env,
                 stdin=subprocess.PIPE,stdout=slog,stderr=subprocess.STDOUT,text=True,start_new_session=True)
-            await_signal(lambda:"Done (" in tail(server_log),[srv],750,"Stock dedicated startup failed")
+            identity=report/"split-identity-jail_certified_smoke-1-normal.json"
+            def native_ready():
+                log=tail(server_log)
+                if "Encountered an unexpected exception" in log or list((server/"crash-reports").glob("*.txt")):
+                    raise RuntimeError("Original stock server failed before verified startup: "+log[-2800:])
+                if not identity.is_file():
+                    return False
+                return "Done (" in server_log.read_text(errors="replace")
+            await_signal(native_ready,[srv],900,"Native verifier did not confirm the actual production JARs")
+            ids=json.loads(identity.read_text())
+            assert ids["separate_jars_loaded"] and ids["non_jail_mods_loaded"] and ids["old_jail_classes_absent"]
+            assert ids["world"]==world.name and ids["phase"]=="1" and ids["probe"]=="normal"
+            assert ids["commit"]==os.environ["GITHUB_SHA"] and ids["jail_sha256"]==JAIL and ids["companion_sha256"]==COMPANION
+            shutil.copy2(identity,output/identity.name)
             print("Stock dedicated world started. Opening the independent client.",flush=True)
             cli_env=dict(env,LIBGL_ALWAYS_SOFTWARE="true",ALSOFT_DRIVERS="null",UQ_TEST_JOIN_FROM_TITLE="1",
-                         JAVA_TOOL_OPTIONS="-Duq.playerOnly=true -Duq.playerOnlyPhase=1")
+                         JAVA_TOOL_OPTIONS="-Duq.integratedJail=true -Duq.certifiedJail=true -Duq.certifiedPhase=1 -Duq.playerOnly=true -Duq.playerOnlyPhase=1")
             cli=subprocess.Popen(["xvfb-run","-a","-s","-screen 0 800x600x24",sys.executable,str(root/".github/client249/launch.py"),
                 str(client),"--join","127.0.0.1:25565","--name","Visitor"],cwd=root,env=cli_env,stdout=clog,
                 stderr=subprocess.STDOUT,start_new_session=True)
-            await_signal(lambda:"Visitor joined the game" in tail(server_log),[srv,cli],780,"Independent Visitor did not join")
+            def visitor_joined():
+                if list((server/"crash-reports").glob("*.txt")):
+                    raise RuntimeError("Stock server crashed before Visitor could join")
+                screen=report/"client249-phase1-status.txt"
+                if screen.exists() and "DisconnectedScreen" in screen.read_text():
+                    raise RuntimeError("Visitor disconnected before login. See the original server and client logs.")
+                return "Visitor joined the game" in tail(server_log)
+            await_signal(visitor_joined,[srv,cli],1200,"Independent Visitor did not join")
             print("The independent Visitor joined the stock server.",flush=True)
             # This is an instruction to the unchanged client picker after actual login, not its success receipt.
             (report/"full249-onboarding-start.txt").write_text("Separate stock console scenario requests normal picker onboarding.")
             completed=report/"full249-onboarding-complete.txt"
-            await_signal(completed.is_file,[srv,cli],100,"Native Human/Warrior picker did not complete")
+            await_signal(completed.is_file,[srv,cli],150,"Native Human/Warrior picker did not complete")
+            assert "neoorigins:human" in completed.read_text() and "neoorigins:class_warrior" in completed.read_text()
             print("Player completed genuine Human and Warrior onboarding.",flush=True)
             def send(value):
                 srv.stdin.write(value+"\n");srv.stdin.flush()
@@ -223,8 +258,9 @@ def main():
             checks=[]
             def checked(command):
                 nonce=uuid.uuid4().hex
-                send("execute store success score #last stockproof run "+command)
-                send("execute if score #last stockproof matches 1 run say STOCK-"+nonce)
+                send("scoreboard players set #last stockproof 0")
+                send("execute store result score #last stockproof run "+command)
+                send("execute if score #last stockproof matches 1.. run say STOCK-"+nonce)
                 await_signal(lambda:("[Server] STOCK-"+nonce) in tail(server_log),[srv,cli],40,"Native command failed: "+command+"\n"+tail(server_log)[-1900:])
                 checks.append(command)
                 print("Accepted native command", command.split()[0],flush=True)
@@ -237,6 +273,7 @@ def main():
             # The ordinary world starter can put items in a new player. Only the disposable inventory is cleared.
             send("clear Visitor")
             checked("give Visitor minecraft:amethyst_shard[minecraft:custom_name='{\"text\":\"Stock custody checkpoint\"}'] 13")
+            checked("save-all flush")
             checked("jailcustody init")
             checked("jailintegrated init")
             checked("jailintegrated mode supported")

@@ -110,7 +110,7 @@ jobs:
           path: dist/stock-resources
           retention-days: 3
       - name: Admit a real player to stock Rosecourt with its matching helper and validate saved custody
-        timeout-minutes: 35
+        timeout-minutes: 45
         run: python3 -u storage/fixtures/backpack-history/pack_scope.py storage/fixtures/backpack-history/stock_admission.py "jail-build/dist/migration-build/$JAIL"
       - name: Verify recovery and restart in the newly occupied full-pack world
         timeout-minutes: 57
