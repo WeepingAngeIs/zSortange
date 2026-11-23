@@ -102,7 +102,22 @@ public final class Scenario {
     }
     private static void prepare()throws Exception{
         home=server.overworld();
-        var options=ExpansionRules.get();options.pocketStorage=true;options.pocketEditing=true;
+        var options=ExpansionRules.get();
+        if ("true".equals(System.getenv("VERIFY_POCKET_DEFAULT"))) {
+            check(Config.pocketStorageEnabled() && options.pocketEditing,"Fresh settings must allow Skygrid and editing");
+            var config=Path.of("config","anya-storage-plus.json");
+            var saved=com.google.gson.JsonParser.parseString(Files.readString(config)).getAsJsonObject();
+            var read=Config.class.getDeclaredMethod("read",Path.class);read.setAccessible(true);
+            var sample=Orders.ROOT.resolve("settings-sample.json");
+            try {
+                var expansion=saved.getAsJsonObject("expansion");expansion.addProperty("pocketStorage",false);
+                expansion.addProperty("pocketEditing",false);
+                Files.writeString(sample,saved.toString());
+                check(!((Config.Data)read.invoke(null,sample)).expansion.pocketStorage,"Saved off must survive loading");
+                expansion.remove("pocketStorage");Files.writeString(sample,saved.toString());
+                check(((Config.Data)read.invoke(null,sample)).expansion.pocketStorage,"Missing pocket setting must inherit on");
+            } finally {Files.deleteIfExists(sample);}
+        } else {options.pocketStorage=true;options.pocketEditing=true;}
         home.getGameRules().getRule(GameRules.RULE_DOMOBSPAWNING).set(false,server);
         home.setDayTime(6000);home.setWeatherParameters(24000,0,false,false);
         for(var cell:BlockPos.betweenClosed(-14,80,-12,16,80,16))home.setBlockAndUpdate(cell,Blocks.SMOOTH_STONE.defaultBlockState());

@@ -4,7 +4,7 @@ Operators can use commands or the existing settings menu to manage server-wide p
 
 ## Turn pockets on or off
 
-Pocket storage starts off with default settings. An existing config that explicitly enabled it remains enabled. On a test server with the mod's pocket dimension available, run these commands as an operator.
+Skygrid pocket storage and room editing start enabled on fresh installations. Existing saved choices take precedence. Operators can change Pocket storage in Server Settings or use these optional commands.
 
 ```text
 /anya pocket status

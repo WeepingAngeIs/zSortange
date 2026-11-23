@@ -72,7 +72,7 @@ public final class PocketService {
     static boolean present(ServerPlayer p){return p.getServer()!=null&&(p.getServer().getPlayerList().getPlayer(p.getUUID())==p||(Boolean.getBoolean("anyastorage.pocketTests")&&p instanceof FakePlayer));}
     public static String status(){return "Experimental pocket gate="+enabled()+"; active pockets="+LEASES.active().size()+"; leases="+LEASES.snapshot().size()+"; Anya-owned ticket requests="+TICKETS.size()+"; last preparation writes="+lastPreparedBlocks+" (not total engine chunks)";}
     private static String disabledHint() {
-        return "Pocket storage is off. An operator can use /anya pocket enable on the test server.";
+        return "Pocket storage is off in Server Settings.";
     }
     private static void error(ServerPlayer p,Exception e){AnyaStorage.tell(p,e.getMessage()==null?"Pocket action denied":e.getMessage());AnyaStorage.LOG.warn("Pocket action stopped for {}: {}",p.getUUID(),e.toString());}
     public static StorageEntity home(ServerPlayer p,PocketLedger.Pocket pocket){

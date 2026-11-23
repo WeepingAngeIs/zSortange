@@ -17,7 +17,7 @@ public final class ExpansionCoreTests {
         byte[] h=ByteBuffer.allocate(13).putInt(width).putInt(height).put((byte)depth).put((byte)type).put((byte)0).put((byte)0).put((byte)interlace).array();byte[] c=chunk("IHDR",h);byte[] result=png.clone();System.arraycopy(c,0,result,8,c.length);return result;
     }
     public static void run()throws Exception{
-        ExpansionRules.Options o=new ExpansionRules.Options();ExpansionRules.validate(o);ok(!o.imagesEnabled&&!o.imageSharing&&!o.monsterBackpacks&&!o.pocketStorage,"experimental features are opt-in");ok(o.imageModeration,"moderation defaults on");
+        ExpansionRules.Options o=new ExpansionRules.Options();ExpansionRules.validate(o);ok(o.pocketStorage&&!o.imageSharing&&!o.monsterBackpacks,"pockets default on while sharing and monster backpacks default off");ok(o.imageModeration,"moderation defaults on");
         o.stoneArmor=Double.NaN;invalid(o,"reject NaN attributes");o=new ExpansionRules.Options();o.magmaReduction=1;invalid(o,"fire immunity is not configurable");o=new ExpansionRules.Options();o.netheriteKnockback=.11;invalid(o,"knockback is modest");o=new ExpansionRules.Options();o.waterSwimBonus=4;invalid(o,"swim bonus bounded");o=new ExpansionRules.Options();o.imageUploaders.add("../../x");invalid(o,"permission identity is a UUID, not a path");
         for(int n:new int[]{-100,-1,0,9,100000}){o=new ExpansionRules.Options();o.imagesPerPlayer=n;invalid(o,"image quota bounds");}
         byte[] pixels=new byte[32*32*4];for(int i=0;i<pixels.length;i+=4){pixels[i]=(byte)210;pixels[i+1]=(byte)130;pixels[i+2]=(byte)170;pixels[i+3]=(byte)255;}

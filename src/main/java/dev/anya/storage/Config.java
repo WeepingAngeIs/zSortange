@@ -220,6 +220,7 @@ public final class Config {
             JsonObject saved=object.get("expansion") instanceof JsonObject settings?settings:new JsonObject();
             if(!saved.has("imagesEnabled"))data.expansion.imagesEnabled=false;
             if(!saved.has("imageUploadsForAll"))data.expansion.imageUploadsForAll=false;
+            checkBoolean(saved,"pocketStorage");
             checkBoolean(saved,"imagesEnabled");
             checkBoolean(saved,"imageUploadsForAll");
         }
@@ -248,7 +249,7 @@ public final class Config {
         try {
             if(Files.exists(path)) {
                 live=read(path);
-            } else { live=new Data(); live.expansion.pocketEditing=true;live.expansion.editingOnFirstEnable=true; persist(live); }
+            } else { live=new Data(); live.expansion.pocketEditing=true;persist(live); }
             lastStatus="Loaded revision "+live.revision;
         } catch(Exception e) { throw new IllegalStateException("Cannot load storage config; original file has not been reset",e); }
     }
