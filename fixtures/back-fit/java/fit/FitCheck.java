@@ -45,6 +45,7 @@ public final class FitCheck {
     private static int photographedTick=-1;
     private static Row current;
     private static final Map<String,List<Row>> rows=new LinkedHashMap<>();
+    private static final Map<String,String> privateRigReports=new LinkedHashMap<>();
     private static final StringBuilder csv=new StringBuilder("phase,tick,walking,walkAmount,rigPulse,x,y,z,scaleX,scaleY,scaleZ,vanillaDelta\n");
     private record Row(int tick,boolean walking,float walk,double pulse,float x,float y,float z,float sx,float sy,float sz,float vanillaDelta) {}
     public static boolean observing(){return active&&!finished&&!waiting&&phase>=0&&setUp;}
@@ -99,6 +100,7 @@ public final class FitCheck {
             int elapsed=tick-since;
             mc.options.keyUp.setDown(elapsed>=32 && elapsed<=75);
             if(elapsed>83){
+                inspectPrivateRig(mc);
                 var data=rows.get(phases.get(phase));
                 require(data.size()>15,"The backpack layer did not submit its actual item for "+phases.get(phase));
                 require(Math.abs(mc.player.getZ()-startZ)>2,"Normal walking input did not move the player in "+phases.get(phase));
@@ -180,6 +182,68 @@ public final class FitCheck {
     private static void photo(Minecraft mc,String label)throws Exception{
         try(var img=Screenshot.takeScreenshot(mc.getMainRenderTarget())){img.writeToFile(output.resolve(label+".png"));}
     }
+    /** Kept in memory until a private failure. No archive names, scripts, or textures are copied. */
+    private static void inspectPrivateRig(Minecraft mc){
+        if(!"private".equals(mode) || phase<0 || phases==null || phase>=phases.size() || mc.player==null)return;
+        String name=phases.get(phase);
+        var report=new StringBuilder("phase=").append(name).append('\n');
+        try{
+            var av=Class.forName("org.figuramc.figura.avatar.AvatarManager").getMethod("getLoadedAvatar",UUID.class)
+                    .invoke(null,mc.player.getUUID());
+            if(av==null)report.append("avatar unavailable\n");
+            else{
+                report.append("loaded=").append(av.getClass().getField("loaded").getBoolean(av))
+                        .append(" scriptError=").append(av.getClass().getField("scriptError").getBoolean(av)).append('\n');
+                var renderer=av.getClass().getField("renderer").get(av);
+                var top=renderer==null?null:renderer.getClass().getField("root").get(renderer);
+                if(top==null)report.append("model root unavailable\n");
+                else{
+                    Class<?> cls=Class.forName("dev.anya.storage.appearance.FiguraBackAnchor");
+                    var find=cls.getDeclaredMethod("find",top.getClass());find.setAccessible(true);
+                    Object anchor=find.invoke(null,top);
+                    if(anchor==null)report.append("selected=none\n");
+                    else{
+                        var part=cls.getDeclaredMethod("part");part.setAccessible(true);
+                        report.append("selected=");describePart(report,part.invoke(anchor));
+                    }
+                    var queue=new ArrayDeque<Object>();queue.add(top);
+                    int n=0;
+                    while(!queue.isEmpty() && ++n<=2048){
+                        Object item=queue.remove();
+                        String type=String.valueOf(item.getClass().getField("parentType").get(item));
+                        String partName=String.valueOf(item.getClass().getField("name").get(item));
+                        var children=(List<?>)item.getClass().getField("children").get(item);
+                        if(type.equalsIgnoreCase("body") || partName.equalsIgnoreCase("body") || partName.equalsIgnoreCase("torso")
+                                || partName.equalsIgnoreCase("BackpackPivot") || partName.equalsIgnoreCase("BackpackAnchor")){
+                            report.append("candidate=");describePart(report,item);
+                            if(children!=null)for(var child:children.stream().limit(64).toList()){report.append("  child=");describePart(report,child);}
+                        }
+                        if(children!=null)queue.addAll(children);
+                    }
+                }
+            }
+        }catch(Exception diagnostic){report.append("diagnostic unavailable: ").append(diagnostic.getClass().getSimpleName());}
+        privateRigReports.put(name,report.toString());
+    }
+    private static void describePart(StringBuilder out,Object part)throws Exception{
+        var type=part.getClass();
+        out.append(type.getField("name").get(part)).append(" type=").append(type.getField("parentType").get(part))
+                .append(" visible=").append(type.getMethod("getVisible").invoke(part));
+        double[] low={Double.MAX_VALUE,Double.MAX_VALUE,Double.MAX_VALUE};
+        double[] high={-Double.MAX_VALUE,-Double.MAX_VALUE,-Double.MAX_VALUE};
+        int count=0;
+        var vertices=(Map<?,?>)type.getField("vertices").get(part);
+        if(vertices!=null)for(Object group:vertices.values())for(Object vertex:(List<?>)group){
+            if(count++>=32768)break;
+            for(int i=0;i<3;i++){
+                double value=vertex.getClass().getField(i==0?"x":i==1?"y":"z").getDouble(vertex);
+                low[i]=Math.min(low[i],value);high[i]=Math.max(high[i],value);
+            }
+        }
+        out.append(" vertices=").append(count);
+        if(count>0)out.append(" bounds=").append(Arrays.toString(low)).append("..").append(Arrays.toString(high));
+        out.append('\n');
+    }
     private static double mean(String phase,java.util.function.ToDoubleFunction<Row> field){
         return rows.get(phase).stream().filter(r->r.walking).mapToDouble(field).average().orElseThrow();
     }
@@ -221,6 +285,10 @@ public final class FitCheck {
     }
     private static void fail(Minecraft mc,Throwable e){
         finished=true;mc.options.keyUp.setDown(false);
+        if(output!=null && "private".equals(mode))try{
+            inspectPrivateRig(mc);
+            Files.writeString(output.resolve("private-rig-diagnostics.txt"),String.join("\n",privateRigReports.values()));
+        }catch(Exception ignored){}
         if(output!=null)try{Files.writeString(output.resolve("frames.csv"),csv.toString());Files.writeString(output.resolve("failure.txt"),e.toString()+"\n"+String.valueOf(e.getCause()));}catch(Exception ignored){}
         if(active)mc.stop();else throw new IllegalStateException(e);
     }

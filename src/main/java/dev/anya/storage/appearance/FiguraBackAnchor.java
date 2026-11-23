@@ -52,10 +52,14 @@ record FiguraBackAnchor(FiguraModelPart part, float x, float y, float z, float s
                         || (child.parentType != ParentType.None && child.parentType != ParentType.Body)) continue;
                 var next = bounds(child);
                 if (next == null) continue;
-                if (best == null || next.volume() > best.volume() * 1.25) {
+                if (best != null && next.sameShell(best)) {
+                    // Clothes and skin overlays can repeat the torso with a small inflation.
+                    // Measure the underlying body regardless of the order of those layers.
+                    if (next.volume() < best.volume()) best = next;
+                } else if (best == null || next.volume() > best.volume() * 1.25) {
                     best = next;
                     ambiguous = false;
-                } else if (next.volume() >= best.volume() * .8 && !next.sameShape(best)) {
+                } else if (next.volume() >= best.volume() * .8) {
                     ambiguous = true;
                 }
             }
@@ -91,9 +95,15 @@ record FiguraBackAnchor(FiguraModelPart part, float x, float y, float z, float s
         double width() { return hiX - loX; }
         double height() { return hiY - loY; }
         double volume() { return width() * height() * (hiZ - loZ); }
-        boolean sameShape(Bounds other) {
-            return Math.abs(loX-other.loX)<.15 && Math.abs(loY-other.loY)<.15 && Math.abs(loZ-other.loZ)<.15
-                    && Math.abs(hiX-other.hiX)<.15 && Math.abs(hiY-other.hiY)<.15 && Math.abs(hiZ-other.hiZ)<.15;
+        boolean sameShell(Bounds other) {
+            if (Math.abs(loX - other.loX) < .15 && Math.abs(hiX - other.hiX) < .15
+                    && Math.abs(loY - other.loY) < .15 && Math.abs(hiY - other.hiY) < .15
+                    && Math.abs(loZ - other.loZ) < .15 && Math.abs(hiZ - other.hiZ) < .15) return true;
+            // A skin inflation expands all six faces equally around the same center.
+            double growth = other.loX - loX;
+            return Math.abs(growth) <= .51 && Math.abs(hiX - other.hiX - growth) < .05
+                    && Math.abs(other.loY - loY - growth) < .05 && Math.abs(hiY - other.hiY - growth) < .05
+                    && Math.abs(other.loZ - loZ - growth) < .05 && Math.abs(hiZ - other.hiZ - growth) < .05;
         }
     }
 }

@@ -35,18 +35,33 @@ def model(name, size, anchored=True):
                 "faces":{s:{"uv":[0,0,8,8],"texture":0} for s in ("north","south","east","west","up","down")}}
     torso=cube("TorsoMesh",[-4,12,-2],[4,24,2])
     head=cube("SkullMesh",[-3,24,-3],[3,30,3])
+    elements=[torso,head]
+    torso_parts=[torso["uuid"]]
+    if name=="avatar-b":
+        # An independently authored costume layer surrounds the same torso bone.
+        # Its volume is close enough to the skin that treating both as separate trunks is ambiguous.
+        shell=cube("ShellMesh",[-4,12,-2],[4,24,2])
+        shell["from"]=[v-.155 for v in shell["from"]]
+        shell["to"]=[v+.155 for v in shell["to"]]
+        for face in shell["faces"].values():
+            face["texture"]=1
+        elements.append(shell)
+        torso_parts.insert(0,shell["uuid"])
     def group(label, kids):
         return {"name":label,"uuid":uid(label),"origin":vec([0,24,0]),"rotation":[0,0,0],
                 "visibility":True,"export":True,"children":kids}
     if anchored:
-        groups=[group("Body",[torso["uuid"]]),group("Head",[head["uuid"]])]
+        groups=[group("Body",torso_parts),group("Head",[head["uuid"]])]
     else:
         groups=[group("Decoration",[torso["uuid"], head["uuid"]])]
     texture=png((40,226,195) if size>.9 else (218,92,235))
     desc={"meta":{"model_format":"free","format_version":"4.10","box_uv":False},"name":"model",
-          "resolution":{"width":8,"height":8},"elements":[torso,head],"outliner":groups,"animations":[],
+          "resolution":{"width":8,"height":8},"elements":elements,"outliner":groups,"animations":[],
           "textures":[{"name":"fixture.png","id":"0","uuid":uid("texture"),"width":8,"height":8,
                        "uv_width":8,"uv_height":8,"source":"data:image/png;base64,"+base64.b64encode(texture).decode()}]}
+    if name=="avatar-b":
+        desc["textures"].append({**desc["textures"][0],"name":"shell.png","id":"1","uuid":uid("shell-texture"),
+                                 "source":"data:image/png;base64,"+base64.b64encode(png((112,123,239))).decode()})
     (directory/"avatar.json").write_text(json.dumps({"name":name,"authors":["Synthetic fixture"]}))
     (directory/"model.bbmodel").write_text(json.dumps(desc))
     if anchored:
