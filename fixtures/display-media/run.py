@@ -118,7 +118,8 @@ def main():
     server, client, proof = [target/k for k in ("Server","Client","proof")]
     proof.mkdir(parents=True)
     jar = Path(sys.argv[1]).resolve(strict=True)
-    if not jar.is_file() or jar.name!="anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar":
+    if not jar.is_file() or jar.name not in ("anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar",
+                                             "anya-storage-plus-0.3.0-beta.7-roommedia.1.jar"):
         raise SystemExit("Expected the exact cumulative frozen candidate")
     candidate_hash = sha256(jar.read_bytes()).hexdigest()
     inputs = Path(__file__).resolve().parent/"inputs"

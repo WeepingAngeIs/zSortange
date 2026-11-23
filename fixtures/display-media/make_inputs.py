@@ -32,3 +32,12 @@ subprocess.run([ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
                 "-movflags", "+faststart", "-map_metadata", "-1", str(root / "color-tone.mp4")], input=video, check=True)
 a, b = card((30, 50, 225), 3), card((231, 210, 32), 4)
 a.save(root / "cards.gif", save_all=True, append_images=[b], duration=[700, 700], loop=0, disposal=2)
+
+# A longer, low-frame-rate version leaves time for a third player to physically enter
+# the real pocket and test late audio, personal volume/Stop and a grant revocation.
+subprocess.run([ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                "-stream_loop", "-1", "-i", str(root / "color-tone.mp4"), "-t", "52",
+                "-vf", "fps=4,scale=96:56", "-c:v", "libx264", "-profile:v", "baseline",
+                "-pix_fmt", "yuv420p", "-bf", "0", "-g", "4", "-threads", "1",
+                "-c:a", "aac", "-profile:a", "aac_low", "-ac", "1", "-ar", "44100", "-b:a", "48k",
+                "-movflags", "+faststart", "-map_metadata", "-1", str(root / "room-color-tone.mp4")],check=True)

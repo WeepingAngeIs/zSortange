@@ -1,16 +1,16 @@
-name: Display camera, animated GIF, video and audio
+name: Personal display and shared Skygrid movie
 on:
   push:
-    branches: [experiment/storage-media]
+    branches: [experiment/skygrid-room-media]
 permissions:
   contents: read
 jobs:
   screen-playback:
     if: github.event.repository.private == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 36
+    timeout-minutes: 55
     env:
-      PLAYABLE: anya-storage-plus-0.3.0-beta.7-screenmedia.1.jar
+      PLAYABLE: anya-storage-plus-0.3.0-beta.7-roommedia.1.jar
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0, persist-credentials: false}
@@ -42,6 +42,12 @@ jobs:
           mkdir -p upload/proof
           cp build/display-media/proof/*.png build/display-media/proof/*.wav build/display-media/proof/CHECKS.txt upload/proof/
           (cd upload && sha256sum -c SHA256SUMS.txt)
+      - name: Share a guest's film with three real clients, checking actual playback and the room boundary
+        run: |
+          python3 -u -B fixtures/display-media/run_room.py "upload/$PLAYABLE"
+          mkdir -p upload/proof/room
+          cp build/display-room/proof/*.png build/display-room/proof/*.wav build/display-room/proof/CHECKS.txt upload/proof/room/
+          (cd upload && sha256sum -c SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -53,10 +59,13 @@ jobs:
             build/display-media/proof/*-synthetic-diagnostic.wav
             build/display-media/Server/crash-reports/*.txt
             build/display-media/Client/crash-reports/*.txt
+            build/display-room/*.log
+            build/display-room/proof/*
+            build/display-room/*/crash-reports/*.txt
           retention-days: 3
       - uses: actions/upload-artifact@v4
         with:
-          name: anya-storage-plus-screenmedia.1
+          name: anya-storage-plus-roommedia.1
           path: upload
           if-no-files-found: error
           retention-days: 14

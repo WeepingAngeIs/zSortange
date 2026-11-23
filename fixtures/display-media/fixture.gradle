@@ -14,19 +14,22 @@ gradle.beforeProject { project -> project.afterEvaluate {
     def runtime = project.sourceSets.create('displayRuntime')
     project.neoForge.addModdingDependenciesTo(runtime)
     project.dependencies.add(runtime.runtimeOnlyConfigurationName, project.files(playable, fixture))
-    ['Server', 'Client'].each { side ->
-        def dir = project.file("build/display-media/$side")
+    def shared = project.hasProperty('roomMedia')
+    def clients = shared ? ['RoomHost', 'RoomGuest', 'LateGuest'] : ['Client']
+    (['Server'] + clients).each { side ->
+        def dir = project.file("build/" + (shared ? "display-room/" : "display-media/") + side)
         project.neoForge.runs.create("display$side") {
             if (side == 'Server') { server(); programArgument '--nogui' }
             else {
                 client()
-                programArguments.addAll '--username', 'DisplayOwner', '--quickPlayMultiplayer', '127.0.0.1:25574', '--width', '960', '--height', '640'
+                programArguments.addAll '--username', shared ? side : 'DisplayOwner', '--quickPlayMultiplayer', '127.0.0.1:25574', '--width', '960', '--height', '640'
             }
             sourceSet = runtime
             loadedMods = []
             gameDirectory = dir
-            jvmArguments.addAll '-Xmx2g', '-Xms256m'
+            jvmArguments.addAll '-Xmx2g', '-Xms256m', '-XX:ActiveProcessorCount=2'
             systemProperty 'anyadisplay.frozen', playable.absolutePath
+            if (shared) systemProperty 'anyadisplay.room', side
         }
         project.tasks.register("prepareDisplay$side") {
             dependsOn fixture, "createDisplay${side}LaunchScript"
