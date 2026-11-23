@@ -6,9 +6,20 @@ from PIL import Image
 from wall_capture_metrics import OUT, SIDE, MASK, REGIONS, load, shot, sidecar, straighten, measure, average_color, save_grid
 
 solo = Path("solo")
-pair = Path("build/role-check") / os.environ["TRIAL"] / "control"
-assert (pair/"PASS.txt").is_file() and (solo/"PASS.txt").is_file()
-results = {"revision": "d3b25e71ab98e851777d6a7a00fbd91dc9ebc53b", "fixtureRun": os.environ["GITHUB_RUN_ID"]}
+pair = Path("same-wall")
+distant = Path("build/role-check") / os.environ["TRIAL"] / "control"
+assert (distant/"PASS.txt").is_file() and (solo/"PASS.txt").is_file()
+completed = set((pair/"events.txt").read_text().splitlines())
+for step in ("wall-gold","stock-gold","wall-blue","stock-blue","private-sign","private-screen","wall-restored",
+             "night-player-view","day-wall-blue","day-stock-blue","day-player-view","other-player-cannot-watch-same-wall-screen",
+             "skygrid-blue","skygrid-gold"):
+    assert "PASS "+step in completed
+# The near lens sits in the active hub's ticket radius. This exact same-wall run was inconclusive
+# for natural unload, which is what the separate, distant-lens fixture independently checks.
+assert (pair/"step.txt").read_text().strip()=="remove-outdoor-load-cause"
+assert "Timed out at remove-outdoor-load-cause" in (pair/"FAIL-Server").read_text()
+results = {"revision":"d3b25e71ab98e851777d6a7a00fbd91dc9ebc53b","sameWallRun":"45214750649",
+           "distantLensRun":os.environ["GITHUB_RUN_ID"],"soloControlRun":"45212887020"}
 for phase, prefix in (("day","day-"),("night","")):
     path = shot(pair,prefix+"wall-blue")
     panel = straighten(path)
@@ -44,7 +55,7 @@ for field in ("signOnMonitor","signOnTexture"):
     g=results["skygrid-gold"][field]
     assert (b[2]-b[0]) - (g[2]-g[0]) > 8, "The remote marker did not visibly change"
 guest = pair/"other-player-cannot-watch-same-wall-screen-RoomBuilder.png"
-unloaded = shot(pair,"skygrid-source-unloaded")
+unloaded = shot(distant,"skygrid-source-unloaded")
 save_grid("skygrid-and-privacy.png",[[("Skygrid / blue outside",remote["blue"][0]),
           ("Skygrid / gold outside",remote["gold"][0])],[("Other player's private-screen refusal",straighten(guest)),
           ("Keeper left / source unloaded",straighten(unloaded))]])

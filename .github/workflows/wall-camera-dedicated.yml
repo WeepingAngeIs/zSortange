@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 27
     env:
-      TRIAL: sharp-wall-night-dedicated
+      TRIAL: sharp-wall-isolated-lens
       WALL_FOLLOWUP: 'true'
       LIBGL_ALWAYS_SOFTWARE: '1'
       ALSOFT_DRIVERS: 'null'
@@ -25,7 +25,9 @@ jobs:
         with: {name: wallfaces-candidate, path: frozen, run-id: 45212887020, github-token: "${{ github.token }}"}
       - uses: actions/download-artifact@v4
         with: {name: wallfaces-candidate-captures, path: solo, run-id: 45212887020, github-token: "${{ github.token }}"}
-      - name: Run the frozen mod on both clients and the dedicated server
+      - uses: actions/download-artifact@v4
+        with: {name: wallfaces-two-client-evidence, path: same-wall, run-id: 45214750649, github-token: "${{ github.token }}"}
+      - name: Test a naturally unloading outdoor lens away from the Home Void anchor
         run: |
           set -euo pipefail
           jar="$PWD/frozen/anya-storage-plus-0.3.0-beta.7-wallfaces.1.jar"
