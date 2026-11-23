@@ -176,6 +176,7 @@ def main():
     assert not (client/"mods"/helper.name).exists() and not (server/"mods"/helper.name).exists()
     shutil.copy2(helper,client/"mods"/helper.name)
     runtime=verify_roster(root,server/"mods",server/"mods"/jail.name)
+    print("All 296 published dedicated JARs and the original jail binary match; original server has zero test helpers.",flush=True)
     assert len(list((client/"mods").glob("*.jar")))==367
     assert "eula=true" in (root/"dist/packaged-harness/run-server/eula.txt").read_text(encoding="utf-8-sig").replace(" ","")
     shutil.copy2(root/"dist/packaged-harness/run-server/eula.txt",server/"eula.txt")
@@ -196,16 +197,19 @@ def main():
                 "@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt","nogui"],cwd=server,env=env,
                 stdin=subprocess.PIPE,stdout=slog,stderr=subprocess.STDOUT,text=True,start_new_session=True)
             await_signal(lambda:"Done (" in tail(server_log),[srv],750,"Stock dedicated startup failed")
+            print("Stock dedicated world started. Opening the independent client.",flush=True)
             cli_env=dict(env,LIBGL_ALWAYS_SOFTWARE="true",ALSOFT_DRIVERS="null",UQ_TEST_JOIN_FROM_TITLE="1",
                          JAVA_TOOL_OPTIONS="-Duq.playerOnly=true -Duq.playerOnlyPhase=1")
             cli=subprocess.Popen(["xvfb-run","-a","-s","-screen 0 800x600x24",sys.executable,str(root/".github/client249/launch.py"),
                 str(client),"--join","127.0.0.1:25565","--name","Visitor"],cwd=root,env=cli_env,stdout=clog,
                 stderr=subprocess.STDOUT,start_new_session=True)
             await_signal(lambda:"Visitor joined the game" in tail(server_log),[srv,cli],780,"Independent Visitor did not join")
+            print("The independent Visitor joined the stock server.",flush=True)
             # This is an instruction to the unchanged client picker after actual login, not its success receipt.
             (report/"full249-onboarding-start.txt").write_text("Separate stock console scenario requests normal picker onboarding.")
             completed=report/"full249-onboarding-complete.txt"
             await_signal(completed.is_file,[srv,cli],100,"Native Human/Warrior picker did not complete")
+            print("Player completed genuine Human and Warrior onboarding.",flush=True)
             def send(value):
                 srv.stdin.write(value+"\n");srv.stdin.flush()
             send("scoreboard objectives add stockproof dummy")
@@ -216,6 +220,7 @@ def main():
                 send("execute if score #last stockproof matches 1 run say STOCK-"+nonce)
                 await_signal(lambda:("[Server] STOCK-"+nonce) in tail(server_log),[srv,cli],40,"Native command failed: "+command+"\n"+tail(server_log)[-1900:])
                 checks.append(command)
+                print("Accepted native command", command.split()[0],flush=True)
             checked("op Visitor")
             checked("execute as Visitor at @s run fill ~-9 ~19 ~-2 ~9 ~19 ~33 minecraft:stone")
             checked("execute as Visitor at @s run tp @s ~ ~20 ~ 0 0")

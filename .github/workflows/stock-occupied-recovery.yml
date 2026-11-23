@@ -98,12 +98,23 @@ jobs:
           PACK249_INSTALL_ONLY=1 bash .github/pack249/server.sh
           python3 .github/pack249/provision.py --side client --dest "$RUNNER_TEMP/pack249-client-native"
           python3 .github/client249/launch.py "$RUNNER_TEMP/pack249-client-native" --install-only
+      - name: Record the free runner's post-provision resources
+        run: |
+          mkdir -p dist/stock-resources
+          free -h | tee dist/stock-resources/ram.txt
+          swapon --show | tee dist/stock-resources/swap.txt
+          df -h "$RUNNER_TEMP" | tee dist/stock-resources/disk.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stock-pack-resources-before-game
+          path: dist/stock-resources
+          retention-days: 3
       - name: Admit a real player to stock Rosecourt with zero server helpers and validate the cleanly saved custody
         timeout-minutes: 35
-        run: python3 -u storage/fixtures/backpack-history/stock_admission.py "jail-build/dist/migration-build/$JAIL"
+        run: python3 -u storage/fixtures/backpack-history/pack_scope.py storage/fixtures/backpack-history/stock_admission.py "jail-build/dist/migration-build/$JAIL"
       - name: Verify recovery and restart in the newly occupied full-pack world
         timeout-minutes: 57
-        run: python3 -u storage/fixtures/backpack-history/stock_recovery.py "verified-storage/$PLAYABLE" test-only/hosted-bag-history-fixture*.jar
+        run: python3 -u storage/fixtures/backpack-history/pack_scope.py storage/fixtures/backpack-history/stock_recovery.py "verified-storage/$PLAYABLE" test-only/hosted-bag-history-fixture*.jar
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
