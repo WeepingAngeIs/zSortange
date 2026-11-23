@@ -95,6 +95,10 @@ def save_grid(name, rows):
 scenes, results, failures = {}, {}, []
 for trial, version in VERSIONS.items():
     folder = Path("observations") / f"wall-night-{trial}-evidence"
+    if trial=="candidate":
+        name = Path((folder/"runtime-jar.txt").read_text().strip().split(maxsplit=1)[1]).name
+        version = name.removeprefix("anya-storage-plus-0.3.0-beta.7-").removesuffix(".jar")
+        VERSIONS[trial] = version
     if not (folder / "PASS.txt").is_file():
         raise AssertionError(f"Missing completed client record for {version}")
     report = results[trial] = {}
@@ -106,6 +110,13 @@ for trial, version in VERSIONS.items():
         texture = load(sidecar(path, ".texture.png"))
         exact = texture.resize((SIDE,SIDE), Image.Resampling.NEAREST)
         receipt = json.loads(sidecar(path, ".scene.json").read_text())
+        if trial == "candidate":
+            receipt["realRaster"] = json.loads(sidecar(path, ".gpu.json").read_text())
+            cpu = load(sidecar(path, ".cpu.png")).resize((SIDE,SIDE), Image.Resampling.BOX)
+            contribution = load(sidecar(path, ".gpu-mask.png")).resize((SIDE,SIDE), Image.Resampling.BOX)
+            save_grid("actual-raster-" + state + ".png", [
+                [("Minecraft stock lens",stock), ("Actual in-game monitor",panel)],
+                [("Software fallback / identical input",cpu), ("White: exact GPU colors in monitor",contribution)]])
         for kind, image in (("monitor", panel), ("stock", stock), ("texture", exact)):
             scenes[trial][state, kind] = image
         receipt["sensorCoveragePercent"] = round(100*receipt["visibleRays"]/receipt["rays"], 2)
@@ -144,6 +155,22 @@ for trial, version in VERSIONS.items():
     scenes[trial]["restored","monitor"] = restored
 
 for state in ("gold","blue"):
+    installed = results["installed"][state]
+    candidate = results["candidate"][state]
+    if candidate["exactNeutralMaskPercent"] >= installed["exactNeutralMaskPercent"]:
+        failures.append(f"{state}: the candidate did not reduce the missing area of the monitor")
+    for surface in ("lit-cherry-facade", "pavement-7-to-20-blocks-through-alley"):
+        before = installed["regions"][surface]
+        after = candidate["regions"][surface]
+        if after["unmaskedPercent"] <= before["unmaskedPercent"]:
+            failures.append(f"{state} {surface}: the camera did not show more of the actual surface")
+        if after["monitor"]["meanAbsRGBError"] >= before["monitor"]["meanAbsRGBError"]:
+            failures.append(f"{state} {surface}: the photographed monitor did not get closer to the stock lens")
+    save_grid("same-wall-" + state + ".png", [[
+        ("Installed monitor", scenes["installed"][state, "monitor"]),
+        ("Updated monitor", scenes["candidate"][state, "monitor"]),
+        ("Minecraft first-person lens", scenes["candidate"][state, "stock"]),
+    ]])
     rows = []
     for trial, version in VERSIONS.items():
         rows.append([(version + " / stock lens", scenes[trial][state,"stock"]),

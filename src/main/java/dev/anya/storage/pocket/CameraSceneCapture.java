@@ -68,7 +68,7 @@ final class CameraSceneCapture {
     private final CameraSkyClearance skyClearance;
     private final BlockPos anchor;
     private final Long2ByteOpenHashMap access=new Long2ByteOpenHashMap(4096);
-    private final boolean localLighting;
+    private final boolean localLighting, localWall;
     private LevelChunk lastChunk;
     private int lastChunkX,lastChunkZ;
     private final Map<BlockState,Integer> materials=new IdentityHashMap<>();
@@ -83,9 +83,10 @@ final class CameraSceneCapture {
     private CameraSceneCapture(ServerPlayer player,ServerLevel level,CameraDevices.Device camera) {
         this.viewer=player; this.level=level; this.camera=camera;
         localLighting=player.serverLevel()==level && player.connection.hasChannel(CameraScene.Local.TYPE);
+        localWall=localLighting && !camera.getBlockState().is(CameraDevices.SKY_CAMERA.get());
         blocks=new LoadedPocketBlocks(level);
         eye=CameraFeed.eye(camera); anchor=BlockPos.containing(eye); origin=Vec3.atLowerCornerOf(anchor);
-        skyClearance=new CameraSkyClearance(viewer,level,blocks,camera.getBlockPos(),eye,true);
+        skyClearance=new CameraSkyClearance(viewer,level,blocks,camera.getBlockPos(),eye,true,localWall);
     }
 
     static CameraScene capture(ServerPlayer player, CameraDevices.Device monitor, ServerLevel level,
@@ -136,7 +137,7 @@ final class CameraSceneCapture {
         // On a street, give the whole lens a chance to resolve the nearby porch, walls
         // and road before any ray spends its budget far down the street. Both segments
         // trace the original physical lens ray. A denial in the first segment stays masked.
-        final int close=8;
+        final int close=localWall?8:NEAR_CLIP;
         for(int i:SAMPLE_ORDER){
             Vec3 ray=rays[i], end=eye.add(ray.scale(close));
             int result=trace(eye,ray,end,sky,nearestActor(ray,end,false),Pass.NEAR);
@@ -144,7 +145,7 @@ final class CameraSceneCapture {
             countMask(result);
             cells[i]=result==TRACE_CLEAR?TRACE_CLEAR:pictureCode(result);
         }
-        for(int i:SAMPLE_ORDER){
+        if(close<NEAR_CLIP)for(int i:SAMPLE_ORDER){
             if(cells[i]!=TRACE_CLEAR)continue;
             Vec3 ray=rays[i],end=eye.add(ray.scale(NEAR_CLIP));
             int result=trace(eye.add(ray.scale(close-.001)),ray,end,sky,nearestActor(ray,end,false),Pass.NEAR);
@@ -288,23 +289,15 @@ final class CameraSceneCapture {
     // actual geometry by tracing independent rays from the lens, including every intervening
     // permission check. The renderer receives no material inferred from neighbouring blocks.
     private int[] distantSurfaces(int[] cells,Vec3 forward,Vec3 right,Vec3 up,SourceSky sky){
-        int size=CameraScene.DETAIL_SIDE, side=CameraScene.SIDE, tiles=0, closeTiles=0;
+        int size=CameraScene.DETAIL_SIDE, side=CameraScene.SIDE, tiles=0;
         int[] detail=new int[0];
         var coarse=List.copyOf(faces.keySet());
         Vec3 offset=eye.subtract(origin);
-        for(int cell:SAMPLE_ORDER){
+        int[] order=localWall?streetDetailOrder(cells,coarse,offset,forward,right,up):SAMPLE_ORDER;
+        for(int cell:order){
             if(cells[cell]<2 || cells[cell]==CameraScene.ATMOSPHERE)continue;
             var face=coarse.get(cells[cell]-2);
-            double dx=face.x()+.5-offset.x,dy=face.y()+.5-offset.y,dz=face.z()+.5-offset.z;
-            double distanceSquared=dx*dx+dy*dy+dz*dz;
-            if(distanceSquared<20*20){
-                // A nearby wall seen at a grazing angle can be as thin on the screen as
-                // a distant wall. Give these faces some of the existing fine-ray budget.
-                double normalDistance=Math.abs(face.face().getAxis().choose(dx,dy,dz));
-                if(closeTiles>=CameraScene.MAX_DETAIL_CELLS/4 || distanceSquared<7*7
-                        || distanceSquared < 18*normalDistance)continue;
-                closeTiles++;
-            }
+            if(!localWall && offset.distanceToSqr(face.x()+.5,face.y()+.5,face.z()+.5)<20*20)continue;
             if(tiles==CameraScene.MAX_DETAIL_CELLS || spent() || faces.size()>=CameraScene.MAX_SURFACES)break;
             if(detail.length==0)detail=new int[cells.length*CameraScene.DETAIL_AREA];
             tiles++;
@@ -330,6 +323,77 @@ final class CameraSceneCapture {
             }
         }
         return detail;
+    }
+
+    // Spend independent rays where an ordinary observation actually lacks foreground geometry.
+    // Ranking consults only the existing coarse picture. It never supplies a material or grants a ray.
+    private static int[] streetDetailOrder(int[] cells,List<CameraScene.Surface> coarse,Vec3 origin,
+                                           Vec3 forward,Vec3 right,Vec3 up) {
+        int side=CameraScene.SIDE;
+        var ranked=new ArrayList<Integer>();
+        var distance=new double[cells.length];
+        var scores=new int[cells.length];
+        for(int cell:SAMPLE_ORDER) {
+            int ref=cells[cell];
+            if(ref<2 || ref==CameraScene.ATMOSPHERE)continue;
+            var s=coarse.get(ref-2);
+            double dx=s.x()+.5-origin.x,dy=s.y()+.5-origin.y,dz=s.z()+.5-origin.z;
+            distance[cell]=Math.sqrt(dx*dx+dy*dy+dz*dz);
+        }
+        for(int cell:SAMPLE_ORDER) {
+            if(distance[cell]<3 || distance[cell]>32)continue;
+            int row=cell/side,col=cell%side;
+            int nearRow=Math.max(0,row-1),farRow=Math.min(side-1,row+1);
+            int nearCol=Math.max(0,col-1),farCol=Math.min(side-1,col+1);
+            int gaps=0, depthEdges=0;
+            for(int r=nearRow;r<=farRow;r++)for(int c=nearCol;c<=farCol;c++) {
+                double adjacent=distance[r*side+c];
+                if(adjacent==0 || Math.abs(adjacent-distance[cell])>4)depthEdges++;
+            }
+            for(int y=0;y<3;y++)for(int x=0;x<3;x++) {
+                if(x==1 && y==1)continue;
+                double u=2*(col+(x+.5)/3)/side-1,v=1-2*(row+(y+.5)/3)/side;
+                Vec3 ray=forward.add(right.scale(u)).add(up.scale(v));
+                boolean covered=false;
+                for(int r=nearRow;r<=farRow && !covered;r++)for(int c=nearCol;c<=farCol;c++) {
+                    int ref=cells[r*side+c];
+                    if(ref>=2 && ref!=CameraScene.ATMOSPHERE && intersectsObservedFace(coarse.get(ref-2),origin,ray)) {
+                        covered=true;
+                        break;
+                    }
+                }
+                if(!covered)gaps++;
+            }
+            if(gaps==0)continue;
+            scores[cell]=gaps*8+Math.min(depthEdges,4)*4;
+            ranked.add(cell);
+        }
+        // Keep half of the existing tile budget available for the original distant landmarks.
+        // In a street with no distant surfaces, the remaining slots can cover more nearby openings.
+        ranked.sort((a,b)->Integer.compare(scores[b],scores[a]));
+        var order=new ArrayList<Integer>(cells.length);
+        boolean[] used=new boolean[cells.length];
+        for(int i=0;i<Math.min(ranked.size(),CameraScene.MAX_DETAIL_CELLS/2);i++) {
+            int cell=ranked.get(i);
+            order.add(cell);
+            used[cell]=true;
+        }
+        for(int cell:SAMPLE_ORDER)if(!used[cell] && distance[cell]>=20) {
+            order.add(cell);
+            used[cell]=true;
+        }
+        for(int cell:ranked)if(!used[cell])order.add(cell);
+        return order.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    private static boolean intersectsObservedFace(CameraScene.Surface s,Vec3 origin,Vec3 ray) {
+        var axis=s.face().getAxis();
+        double along=axis.choose(ray.x,ray.y,ray.z);
+        if(Math.abs(along)<1e-8)return false;
+        double t=(s.plane()-axis.choose(origin.x,origin.y,origin.z))/along;
+        if(t<=0)return false;
+        double x=origin.x+t*ray.x-s.x(),y=origin.y+t*ray.y-s.y(),z=origin.z+t*ray.z-s.z();
+        return x>=-.001 && x<=1.001 && y>=-.001 && y<=1.001 && z>=-.001 && z<=1.001;
     }
 
     private record AirPrefix(int axis,double depth){}

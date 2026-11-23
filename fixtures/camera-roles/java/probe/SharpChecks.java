@@ -235,6 +235,8 @@ final class SharpChecks {
             if(nightCandidate)check(gpu && localLight,"Candidate must use the authorized surface mesh with its own dimension lighting");
             var tex=(DynamicTexture)field(picture,"texture").get(null);
             tex.getPixels().writeToFile(path.resolveSibling(path.getFileName()+".texture.png"));
+            if(nightCandidate && !masked && !order.step().equals("wall-restored"))
+                NightRasterProof.check(scene,tex.getPixels(),path);
             var registry=blockTypes.stream().map(b->BuiltInRegistries.BLOCK.getKey(b).toString()).sorted().toList();
             Files.writeString(path.resolveSibling(path.getFileName()+".scene.json"),Orders.JSON.toJson(java.util.Map.of(
                     "visibleRays",visible,"rays",cells.length,"blocks",registry,"surfaces",surfaces.size(),"observations",scenes-startScenes,

@@ -7,7 +7,6 @@ import java.util.HashMap;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -27,37 +26,40 @@ final class CameraLocalTerrain {
     private record FaceMesh(BlockState state, RenderType layer, List<Part> parts) {}
     private record Part(boolean shade, FaceModel model) {}
 
-    static void draw(CameraPicture.SurfaceView view, PoseStack pose, MultiBufferSource.BufferSource batch) {
+    static void draw(CameraSectionTerrain terrain) {
         var mc = Minecraft.getInstance();
         var level = mc.level;
         if (level == null) return;
         var renderer = mc.getBlockRenderer().getModelRenderer();
         var cache = new HashMap<FaceKey, FaceMesh>();
+        var pose = new PoseStack();
         for (var layer : LAYERS) {
-            ShadedConsumer vertices = null;
-            for (var face : view.surfaces) {
-                var s = face.s;
-                var key = new FaceKey(s.stateId(), s.face(), face.localPlane);
-                var mesh = cache.computeIfAbsent(key, ignored -> mesh(face));
-                if (mesh.layer != layer || mesh.parts.isEmpty()) continue;
-                if (vertices == null) vertices = new ShadedConsumer(batch.getBuffer(layer));
-                int light = LightTexture.pack(s.blockLight(), s.skyLight());
-                float red = (s.tint() >> 16 & 255) / 255f;
-                float green = (s.tint() >> 8 & 255) / 255f;
-                float blue = (s.tint() & 255) / 255f;
-                pose.pushPose();
-                try {
-                    pose.translate(s.x(), s.y(), s.z());
-                    for (var part : mesh.parts) {
-                        // Directional shade is dimension metadata. No source blocks, neighbours or entities are read.
-                        vertices.shade = level.getShade(s.face(), part.shade);
-                        renderer.renderModel(pose.last(), vertices, mesh.state, part.model, red, green, blue,
-                                light, OverlayTexture.NO_OVERLAY, ModelData.EMPTY, layer);
+            terrain.drawLayer(layer, (section, buffer) -> {
+                var vertices = new ShadedConsumer(buffer);
+                var origin = section.pos();
+                for (var face : section.faces()) {
+                    var s = face.s;
+                    var key = new FaceKey(s.stateId(), s.face(), face.localPlane);
+                    var mesh = cache.computeIfAbsent(key, ignored -> mesh(face));
+                    if (mesh.layer != layer || mesh.parts.isEmpty()) continue;
+                    int light = LightTexture.pack(s.blockLight(), s.skyLight());
+                    float red = (s.tint() >> 16 & 255) / 255f;
+                    float green = (s.tint() >> 8 & 255) / 255f;
+                    float blue = (s.tint() & 255) / 255f;
+                    pose.pushPose();
+                    try {
+                        pose.translate(s.x() - origin.minBlockX(), s.y() - origin.minBlockY(), s.z() - origin.minBlockZ());
+                        for (var part : mesh.parts) {
+                            // Directional shade is dimension metadata. No source blocks, neighbours or entities are read.
+                            vertices.shade = level.getShade(s.face(), part.shade);
+                            renderer.renderModel(pose.last(), vertices, mesh.state, part.model, red, green, blue,
+                                    light, OverlayTexture.NO_OVERLAY, ModelData.EMPTY, layer);
+                        }
+                    } finally {
+                        pose.popPose();
                     }
-                } finally {
-                    pose.popPose();
                 }
-            }
+            });
         }
     }
 

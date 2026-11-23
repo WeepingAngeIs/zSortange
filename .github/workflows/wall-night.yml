@@ -4,10 +4,10 @@ on:
     branches: [experiment/wall-night]
 permissions: {contents: read, actions: read}
 env:
-  JAR: anya-storage-plus-0.3.0-beta.7-wallnight.1.jar
+  REUSE_CONTROLS: ${{ startsWith(github.event.head_commit.message, '[camera-pixel-proof]') || startsWith(github.event.head_commit.message, '[camera-terrain]') }}
 jobs:
   build:
-    if: github.event.repository.private == false
+    if: github.event.repository.private == false && !startsWith(github.event.head_commit.message, '[camera-pixel-proof]')
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:
@@ -18,6 +18,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
       - run: |
+          JAR="anya-storage-plus-$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r').jar"
           gradle --no-daemon --max-workers=2 --console=plain jar
           mkdir candidate
           cp "build/libs/$JAR" candidate/
@@ -27,25 +28,32 @@ jobs:
         with: {name: wall-night-candidate, path: candidate, retention-days: 14}
   observe:
     needs: build
+    if: always() && github.event.repository.private == false && (needs.build.result == 'success' || (needs.build.result == 'skipped' && startsWith(github.event.head_commit.message, '[camera-pixel-proof]')))
     runs-on: ubuntu-latest
     timeout-minutes: 24
     strategy:
       fail-fast: false
-      matrix: {trial: [installed, inherited, candidate]}
+      matrix:
+        trial: ${{ fromJSON((startsWith(github.event.head_commit.message, '[camera-pixel-proof]') || startsWith(github.event.head_commit.message, '[camera-terrain]')) && '["candidate"]' || '["installed","inherited","candidate"]') }}
     env:
       TRIAL: sharp-wall-night-${{ matrix.trial }}-solo
       LIBGL_ALWAYS_SOFTWARE: '1'
       ALSOFT_DRIVERS: 'null'
       LP_NUM_THREADS: '2'
+      REUSE: ${{ startsWith(github.event.head_commit.message, '[camera-pixel-proof]') }}
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
+        with: {persist-credentials: false, fetch-depth: 0}
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '21'}
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.14.3'}
       - uses: actions/download-artifact@v4
-        with: {name: wall-night-candidate, path: candidate}
+        with:
+          name: wall-night-candidate
+          path: candidate
+          run-id: ${{ startsWith(github.event.head_commit.message, '[camera-pixel-proof]') && '45092738819' || github.run_id }}
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
         if: matrix.trial == 'installed'
         with: {name: anya-storage-plus-sharpcam.3, run-id: 44991463192, github-token: "${{ github.token }}", path: control-jar}
@@ -55,8 +63,24 @@ jobs:
       - name: Mount, link, view, change the outdoor wall and revoke access in one integrated client
         run: |
           set -euo pipefail
+          JAR="anya-storage-plus-$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '\r').jar"
           (cd candidate && sha256sum -c SHA256SUMS.txt)
-          test "$(cat candidate/SOURCE_COMMIT.txt)" = "$GITHUB_SHA"
+          source="$GITHUB_SHA"
+          original=9c5492512cd4af82666e33390c895336e9e88cec
+          if [[ "$REUSE_CONTROLS" == true ]]; then
+            git merge-base --is-ancestor "$original" HEAD
+            # Same world generation, setup, camera poses, control interactions, and runtime.
+            # SharpChecks has exactly two extra lines guarded by nightCandidate.
+            test "$(git rev-parse HEAD:fixtures/camera-roles/java/probe/SharpChecks.java)" = d52c0e7095232ef59f71fca6bf4024950fb54922
+            git diff --exit-code "$original" HEAD -- build.gradle settings.gradle fixtures/camera-roles/fixture.gradle fixtures/camera-roles/run.py fixtures/camera-roles/resources fixtures/camera-roles/java ':!fixtures/camera-roles/java/probe/SharpChecks.java' ':!fixtures/camera-roles/java/probe/NightRasterProof.java'
+            diff <(git show "$original:gradle.properties" | tr -d '\r' | sed '/^mod_version=/d') <(tr -d '\r' < gradle.properties | sed '/^mod_version=/d')
+          fi
+          if [[ "$REUSE" == true ]]; then
+            source="$original"
+            git diff --exit-code "$source" HEAD -- . ':!fixtures/camera-roles/java/probe/NightRasterProof.java' ':!fixtures/camera-roles/java/probe/SharpChecks.java' ':!fixtures/camera-roles/wall_night_captures.py' ':!.github/workflows/wall-night.yml'
+            echo "5121a2ec871a3701d0321aa16db5399c58d4754d30348126a692c5baa21caceb  candidate/$JAR" | sha256sum -c -
+          fi
+          test "$(cat candidate/SOURCE_COMMIT.txt)" = "$source"
           api="$PWD/candidate/$JAR"
           jar="$api"
           case "$TRIAL" in
@@ -64,11 +88,13 @@ jobs:
               jar="$PWD/control-jar/anya-storage-plus-0.3.0-beta.7-sharpcam.3.jar"
               echo "8ef8d26343d30dc9ab2cda1fa7bdf93b71f7ec9ac1922ad89c16c908e87ae68a  $jar" | sha256sum -c - ;;
             *-inherited-solo)
-              jar="$PWD/control-jar/anya-storage-plus-0.3.0-beta.7-pocketdefault.1.jar" ;;
+              jar="$PWD/control-jar/anya-storage-plus-0.3.0-beta.7-pocketdefault.1.jar"
+              echo "4315c3ef581a47d6001321d3220763ec97e5a80335228caf1dded52aa9f22bf3  $jar" | sha256sum -c - ;;
           esac
           folder="build/role-check/$TRIAL/control"
           mkdir -p "$folder"
           sha256sum "$jar" > "$folder/runtime-jar.txt"
+          echo "$source" > "$folder/playable-source.txt"
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
           gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$jar" -ProleProbeApi="$api" prepareRoleTrial
           python3 -Bu fixtures/camera-roles/run.py "$TRIAL"
@@ -90,6 +116,7 @@ jobs:
           if-no-files-found: ignore
   compare:
     needs: observe
+    if: always() && needs.observe.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -97,6 +124,26 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/download-artifact@v4
         with: {pattern: wall-night-*-evidence, path: observations}
+      - uses: actions/download-artifact@v4
+        if: env.REUSE_CONTROLS == 'true'
+        with: {name: wall-night-installed-evidence, path: observations/wall-night-installed-evidence, run-id: 45092738819, github-token: "${{ github.token }}"}
+      - uses: actions/download-artifact@v4
+        if: env.REUSE_CONTROLS == 'true'
+        with: {name: wall-night-inherited-evidence, path: observations/wall-night-inherited-evidence, run-id: 45092738819, github-token: "${{ github.token }}"}
+      - name: Identify the original control captures and the newly observed candidate
+        if: env.REUSE_CONTROLS == 'true'
+        run: |
+          set -eu
+          for trial in installed inherited candidate; do test -s "observations/wall-night-$trial-evidence/PASS.txt"; done
+          test "$(cut -d' ' -f1 observations/wall-night-installed-evidence/runtime-jar.txt)" = 8ef8d26343d30dc9ab2cda1fa7bdf93b71f7ec9ac1922ad89c16c908e87ae68a
+          test "$(cut -d' ' -f1 observations/wall-night-inherited-evidence/runtime-jar.txt)" = 4315c3ef581a47d6001321d3220763ec97e5a80335228caf1dded52aa9f22bf3
+          mkdir -p comparison
+          {
+            echo "Both original reference captures: run 45092738819 at 9c5492512cd4af82666e33390c895336e9e88cec"
+            echo "Tested playable source: $(cat observations/wall-night-candidate-evidence/playable-source.txt)"
+            echo "Candidate-only observation and scored comparison: run $GITHUB_RUN_ID at $GITHUB_SHA"
+            cat observations/wall-night-candidate-evidence/runtime-jar.txt
+          } > comparison/SOURCES.txt
       - run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
           /usr/bin/python3 -B fixtures/camera-roles/wall_night_captures.py

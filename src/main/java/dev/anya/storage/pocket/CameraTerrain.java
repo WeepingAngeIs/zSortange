@@ -68,7 +68,11 @@ final class CameraTerrain {
             var pose = new PoseStack();
             pose.mulPose(lens.rotation().conjugate(new Quaternionf()));
             pose.translate(-scene.eye().x, -scene.eye().y, -scene.eye().z);
-            drawFaces(view, pose, scene.localLighting());
+            if (scene.localLighting()) {
+                CameraLocalTerrain.draw(new CameraSectionTerrain(view, storage, pose.last().pose(), lensProjection));
+            } else {
+                drawFaces(view, pose);
+            }
             target.bindWrite(false);
             depth.clear();
             GL11.glReadPixels(0, 0, size, size, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, depth);
@@ -77,6 +81,7 @@ final class CameraTerrain {
             composite(scene, view, lensProjection, frame, sceneDepth);
             return true;
         } catch (RuntimeException unavailable) {
+            CameraSectionTerrain.clear();
             failed = true;
             AnyaStorage.LOG.warn("Outdoor camera using its software renderer for this view", unavailable);
             return false;
@@ -93,13 +98,8 @@ final class CameraTerrain {
         }
     }
 
-    private static void drawFaces(CameraPicture.SurfaceView view, PoseStack pose, boolean localLighting) {
+    private static void drawFaces(CameraPicture.SurfaceView view, PoseStack pose) {
         var batch = MultiBufferSource.immediate(storage);
-        if (localLighting) {
-            CameraLocalTerrain.draw(view, pose, batch);
-            batch.endBatch();
-            return;
-        }
         // A camera in another dimension supplies its own light, independent of Skygrid's lightmap.
         var vertices = batch.getBuffer(RenderType.beaconBeam(InventoryMenu.BLOCK_ATLAS, false));
         for (var face : view.surfaces) {
@@ -201,6 +201,7 @@ final class CameraTerrain {
     }
 
     static void clear() {
+        CameraSectionTerrain.clear();
         if (target != null) { target.destroyBuffers(); target = null; }
         if (color != null) { color.close(); color = null; }
         if (storage != null) { storage.close(); storage = null; }

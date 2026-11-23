@@ -19,6 +19,7 @@ final class CameraSkyClearance {
     private final BlockPos lens;
     private final Vec3 eye;
     private final int claimLimit;
+    private final boolean checkPastEaves;
     private final Map<BlockPos,Boolean> access=new HashMap<>();
     private final Boolean[] clear=new Boolean[SECTORS*SECTORS];
     // These proofs live only for the current authorized capture. A column open from y
@@ -27,8 +28,9 @@ final class CameraSkyClearance {
     private Boolean overhead;
     private enum Sight { CLEAR, SOLID, DENIED, UNLOADED, CLIPPED, BUDGET }
 
-    CameraSkyClearance(ServerPlayer viewer,ServerLevel level,LoadedPocketBlocks blocks,BlockPos lens,Vec3 eye,boolean wall) {
+    CameraSkyClearance(ServerPlayer viewer,ServerLevel level,LoadedPocketBlocks blocks,BlockPos lens,Vec3 eye,boolean wall,boolean checkPastEaves) {
         this.claimLimit=wall?WALL_CLAIM_LIMIT:LEGACY_CLAIM_LIMIT;
+        this.checkPastEaves=checkPastEaves;
         this.viewer=viewer;this.level=level;this.blocks=blocks;this.lens=lens;this.eye=eye;
     }
 
@@ -51,12 +53,14 @@ final class CameraSkyClearance {
     int climate(Vec3 direction,SourceSky sky) {
         if(sky==null || direction.y<=0)return 0;
         if(overhead())return CameraScene.ATMOSPHERE;
-        // An eave above the physical lens can end before this particular ray reaches
-        // the street. All three points are on the ray whose near path already cleared.
+        if(!checkPastEaves)return 0;
+        // Start at the eave and follow the already-cleared ray to the street. Adjacent
+        // rays often cross the same first open column, even if three fixed sample
+        // distances would land on different columns. Reuse only actual vertical proofs.
         // Return only the ambient color, never a star, sun, moon or distant geometry.
-        for(int distance=2;distance<=8;distance*=2)
-            if(openColumn(BlockPos.containing(eye.add(direction.scale(distance)))))return CameraScene.ATMOSPHERE;
-        return 0;
+        return BlockGetter.traverseBlocks(eye,eye.add(direction.scale(12)),this,
+                (observer,pos)->observer.openColumn(pos)?CameraScene.ATMOSPHERE:null,
+                observer->0);
     }
 
     private boolean openColumn(BlockPos from){
