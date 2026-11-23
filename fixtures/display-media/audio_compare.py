@@ -30,7 +30,8 @@ def metrics(pcm,label):
         corr=np.correlate(a[start-2048:start+len(segment)+2048],segment,mode="valid")
         lag=int(np.argmax(corr)-2048); aligned=a[start+lag:start+lag+len(segment)]
         cc=float(np.dot(aligned,segment)/(np.linalg.norm(aligned)*np.linalg.norm(segment)))
-        print(f"{label} {endian}: median {np.median(shares):.5f}, best {max(shares):.5f}, ffmpeg correlation {cc:.5f}, periodic lag {lag} samples, RMS {np.sqrt(np.mean(a*a)):.1f}",flush=True)
+        peaks=np.abs(np.fft.rfft(a[w:w+w]*np.hanning(w)))
+        print(f"{label} {endian}: median {np.median(shares):.5f}, best {max(shares):.5f}, ffmpeg correlation {cc:.5f}, periodic lag {lag} samples, RMS {np.sqrt(np.mean(a*a)):.1f}, peaks Hz {4*np.argsort(peaks)[-5:][::-1]}, length {len(a)}, reference {len(r)}",flush=True)
 
 with tempfile.TemporaryDirectory() as directory:
     tmp=pathlib.Path(directory)

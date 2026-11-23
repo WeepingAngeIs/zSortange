@@ -21,7 +21,11 @@ public class SourceAac {
             buf.getMethod("setBigEndian",boolean.class).invoke(output,false);
             decode.invoke(decoder,frame,output);
             byte[] pcm=(byte[])buf.getMethod("getData").invoke(output);
-            out.write(pcm);
+            int channels=(int)buf.getMethod("getChannels").invoke(output), rate=(int)buf.getMethod("getSampleRate").invoke(output);
+            if(i==size)System.err.println(args[0]+" decoded channels="+channels+" rate="+rate+" bytes/first="+pcm.length);
+            if(channels>1){
+                for(int p=0;p<pcm.length;p+=channels*2)out.write(pcm,p,2);
+            }else out.write(pcm);
         }
         out.flush();
     }
