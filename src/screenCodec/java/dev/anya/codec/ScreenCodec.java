@@ -118,7 +118,8 @@ public final class ScreenCodec {
         return ByteBufferSeekableByteChannel.readFromByteBuffer(ByteBuffer.wrap(data));
     }
 
-    private void audio(AbstractMP4DemuxerTrack track, int duration, int movieTimescale) throws Exception {
+    private void audio(org.jcodec.common.DemuxerTrack source, int duration, int movieTimescale) throws Exception {
+        if (!(source instanceof AbstractMP4DemuxerTrack track)) throw new IOException("Unsupported MP4 audio track");
         var meta = track.getMeta();
         require(meta.getCodec() == Codec.AAC && meta.getCodecPrivate() != null);
         var config = meta.getCodecPrivate().duplicate();
