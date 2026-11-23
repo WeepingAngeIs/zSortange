@@ -320,6 +320,19 @@ final class CameraPicture {
         return .055f + .945f * value / (2f - value);
     }
 
+    static int localLightRgb(int sky, int block) {
+        var lightmap = Minecraft.getInstance().gameRenderer.lightTexture().lightPixels;
+        int abgr = lightmap.getPixelRGBA(block, sky);
+        return (abgr & 255) << 16 | (abgr & 0xff00) | (abgr >> 16 & 255);
+    }
+
+    private static int multiplyRgb(int a, int b) {
+        int red = (a >> 16 & 255) * (b >> 16 & 255) / 255;
+        int green = (a >> 8 & 255) * (b >> 8 & 255) / 255;
+        int blue = (a & 255) * (b & 255) / 255;
+        return red << 16 | green << 8 | blue;
+    }
+
     static int shade(int abgr, int tint, float light) {
         int r = (int)((abgr & 255) * ((tint >> 16) & 255) * light / 255);
         int g = (int)(((abgr >> 8) & 255) * ((tint >> 8) & 255) * light / 255);
@@ -365,8 +378,8 @@ final class CameraPicture {
                 }
                 float plane = points[0].plane;
                 if (Math.abs(points[1].plane - plane) > .002 || Math.abs(points[2].plane - plane) > .002 || Math.abs(points[3].plane - plane) > .002) continue;
-                facets.add(new Facet(points[0], points[1], points[2], sprite, quad.isTinted()));
-                facets.add(new Facet(points[0], points[2], points[3], sprite, quad.isTinted()));
+                facets.add(new Facet(points[0], points[1], points[2], sprite, quad.isTinted(), quad));
+                facets.add(new Facet(points[0], points[2], points[3], sprite, quad.isTinted(), null));
             }
         }
         return facets;
@@ -379,8 +392,11 @@ final class CameraPicture {
         final double inv;
         final TextureAtlasSprite sprite;
         final boolean tinted;
-        Facet(Vertex a, Vertex b, Vertex c, TextureAtlasSprite sprite, boolean tinted) {
+        // The first triangle retains the original resource-pack quad for the native block renderer.
+        final BakedQuad sourceQuad;
+        Facet(Vertex a, Vertex b, Vertex c, TextureAtlasSprite sprite, boolean tinted, BakedQuad sourceQuad) {
             this.a = a; this.b = b; this.c = c; this.sprite = sprite; this.tinted = tinted;
+            this.sourceQuad = sourceQuad;
             double det = (b.t - c.t) * (a.s - c.s) + (c.s - b.s) * (a.t - c.t);
             inv = Math.abs(det) < .000001 ? 0 : 1 / det;
         }
@@ -394,7 +410,7 @@ final class CameraPicture {
             int x = Math.clamp((int)((k * a.u + l * b.u + m * c.u) * w), 0, w - 1);
             int y = Math.clamp((int)((k * a.v + l * b.v + m * c.v) * h), 0, h - 1);
             int texel = sprite.getPixelRGBA(0, x, y);
-            return (texel >>> 24) < 32 ? 0 : shade(texel, tinted ? tint : 0xffffff, brightness);
+            return (texel >>> 24) < 32 ? 0 : shade(texel, tint, brightness);
         }
     }
 
@@ -404,12 +420,16 @@ final class CameraPicture {
         final int axis;
         final double planeFromEye, localPlane;
         final float brightness;
+        final int litColor,litTint;
         ProjectedSurface(CameraScene.Surface s, List<Facet> facets, CameraScene scene) {
             this.s = s; this.facets = facets;
             axis = switch (s.face().getAxis()) { case X -> 0; case Y -> 1; case Z -> 2; };
             planeFromEye = s.plane() - (axis == 0 ? scene.eye().x : axis == 1 ? scene.eye().y : scene.eye().z);
             localPlane = s.plane() - (axis == 0 ? s.x() : axis == 1 ? s.y() : s.z());
-            brightness = light(s.skyLight(), s.blockLight(), scene) * switch (s.face()) {
+            litColor = scene.localLighting()?localLightRgb(s.skyLight(),s.blockLight()):0xffffff;
+            litTint = multiplyRgb(litColor,s.tint());
+            brightness = scene.localLighting()?Minecraft.getInstance().level.getShade(s.face(),true)
+                : light(s.skyLight(), s.blockLight(), scene) * switch (s.face()) {
                 case UP -> 1f; case DOWN -> .5f; case NORTH, SOUTH -> .8f; default -> .6f;
             };
         }
@@ -424,7 +444,7 @@ final class CameraPicture {
             for (int i = facets.size() - 1; i >= 0; i--) {
                 var f = facets.get(i);
                 if (Math.abs(localPlane - f.a.plane) > .009) continue;
-                int color = f.sample(h, v, s.tint(), brightness);
+                int color = f.sample(h, v, f.tinted?litTint:litColor, brightness);
                 if (color != 0) return color;
             }
             return 0;

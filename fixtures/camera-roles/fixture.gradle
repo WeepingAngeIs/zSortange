@@ -6,7 +6,8 @@ gradle.beforeProject { p -> p.afterEvaluate {
     probe.resources.srcDir 'fixtures/camera-roles/resources'
     p.neoForge.addModdingDependenciesTo(probe)
     def playable = p.file(p.property('rolePlayable'))
-    p.dependencies.add(probe.compileOnlyConfigurationName,p.files(playable))
+    def probeApi = p.file(p.findProperty('roleProbeApi') ?: playable)
+    p.dependencies.add(probe.compileOnlyConfigurationName,p.files(probeApi))
     def fixture = p.tasks.register('roleProbeJar',Jar) {
         dependsOn probe.classesTaskName
         from probe.output

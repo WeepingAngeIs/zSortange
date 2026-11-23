@@ -17,7 +17,7 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sky, float rain, float thunder,
                           Vec3 eye, Vec3 forward, Vec3 right, Vec3 up,
                           List<Surface> surfaces, List<Actor> actors, int[] cells, int[] backdrop, int[] edgeBackdrop,
-                          int[] detail) implements CustomPacketPayload {
+                          int[] detail, boolean localLighting) implements CustomPacketPayload {
     public static final int SIDE = 32, ATMOSPHERE = Short.MAX_VALUE;
     static final int RANGE = 96;
     static final float FAR_CLIP = RANGE + 4;
@@ -56,12 +56,23 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
 
     static CameraScene empty(BlockPos monitor) {
         return new CameraScene(monitor, -1, 0, null, 0, 0, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO, Vec3.ZERO,
-                List.of(), List.of(), new int[0], new int[0], new int[0], new int[0]);
+                List.of(), List.of(), new int[0], new int[0], new int[0], new int[0], false);
     }
 
     static void register(RegisterPayloadHandlersEvent event) {
-        StreamCodec<RegistryFriendlyByteBuf, CameraScene> codec = StreamCodec.ofMember(CameraScene::write, CameraScene::read);
+        StreamCodec<RegistryFriendlyByteBuf, CameraScene> codec = StreamCodec.ofMember(CameraScene::write, in -> read(in, false));
+        StreamCodec<RegistryFriendlyByteBuf, Local> localCodec = StreamCodec.ofMember(Local::write, in -> new Local(read(in, true)));
+        event.registrar("camera-local-light1").optional().playToClient(Local.TYPE, localCodec,
+                (frame, ctx) -> receiver.accept(ctx.connection(), frame.scene()));
         event.registrar("sharpcamera5").optional().playToClient(TYPE, codec, (scene,ctx) -> receiver.accept(ctx.connection(),scene));
+    }
+
+    /** Raw source light levels are interpreted with this client's active dimension lightmap only
+     * when the server confirms the monitor and lens share that dimension. */
+    record Local(CameraScene scene) implements CustomPacketPayload {
+        static final Type<Local> TYPE = new Type<>(ExpansionPackets.id("camera_scene_local_light"));
+        @Override public Type<Local> type() { return TYPE; }
+        void write(RegistryFriendlyByteBuf out) { scene.write(out); }
     }
 
     private void write(RegistryFriendlyByteBuf out) {
@@ -122,7 +133,7 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
         return refs[i]!=0 || refs[i+1]!=0 || refs[i+2]!=0 || refs[i+3]!=0;
     }
 
-    private static CameraScene read(RegistryFriendlyByteBuf in) {
+    private static CameraScene read(RegistryFriendlyByteBuf in,boolean localLighting) {
         BlockPos monitor = in.readBlockPos(); long time = in.readLong();
         if (time < 0) return empty(monitor);
         int weatherTick=in.readUnsignedShort();
@@ -198,7 +209,7 @@ public record CameraScene(BlockPos pos, long time, int weatherTick, SourceSky sk
                 detail[cell*DETAIL_AREA+j]=ref;
             }
         }
-        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop,edge,detail);
+        return new CameraScene(monitor,time,weatherTick,sky,rain,thunder,eye,forward,right,up,List.copyOf(surfaces),List.copyOf(actors),cells,backdrop,edge,detail,localLighting);
     }
 
     private static int bounded(int value,int max) {

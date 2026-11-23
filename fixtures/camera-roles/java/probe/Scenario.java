@@ -135,6 +135,7 @@ public final class Scenario {
         }
         owner.getInventory().setItem(1,new ItemStack(Content.CUPID_TABLET.get()));
         frontUse("bind-tablet-to-hub",HUB,Content.CUPID_TABLET.get(),true);
+        if(FLAVOR.startsWith("sharp-wall-night-")){wallNightSteps();return;}
         frontUse("bind-room-cube",DOOR,Content.CUPID_TABLET.get(),true);
         if(SHARP){sharpSteps();return;}
         if(STUDIO)studioOutside();else if(!BASELINE)outsideCameraSteps();
@@ -264,6 +265,64 @@ public final class Scenario {
             order(BUILDER,name.startsWith("stock-wide-")?"sharp.reference-wide":"sharp.reference",SOURCE,feet,
                     HORIZON?feet.add(0,1.6,-100):feet.add(2,1.6,2),Items.AIR,false,null,0);
         },()->true);
+    }
+    private static void wallNightSteps(){
+        BlockPos backing=CAMERA.south(),panel=backing.south(),sign=CAMERA.north(12).above();
+        verify("same-wall-cherry-lane-at-2059",()->{
+            home.getGameRules().getRule(GameRules.RULE_DAYLIGHT).set(false,server);
+            home.getGameRules().getRule(GameRules.RULE_WEATHER_CYCLE).set(false,server);
+            home.setDayTime(14990);home.setWeatherParameters(24000,0,false,false);
+            for(int x=-16;x<=16;x++)for(int z=-30;z<=8;z++){
+                Block floor=Math.abs(x)<=3 || x>=-6 && x<=-3 && z<=-8 ? Blocks.SMOOTH_STONE : Blocks.GRASS_BLOCK;
+                home.setBlockAndUpdate(CAMERA.offset(x,-2,z),floor.defaultBlockState());
+            }
+            for(int x=-3;x<=3;x++)for(int y=-1;y<=3;y++)
+                home.setBlockAndUpdate(backing.offset(x,y,0),Blocks.CHERRY_PLANKS.defaultBlockState());
+            for(int x=-5;x<=5;x++)for(int z=-3;z<=3;z++)
+                home.setBlockAndUpdate(CAMERA.offset(x,3,z),Blocks.CHERRY_SLAB.defaultBlockState());
+            for(int x=-7;x<=7;x++)for(int y=-1;y<=5;y++){
+                if(x>=-4 && x<=-2 && y<=1)continue; // Open alley under the facade through to the 20-block pavement.
+                Block wall=Math.floorMod(x,4)==0?Blocks.STRIPPED_CHERRY_LOG:Blocks.CHERRY_PLANKS;
+                if(y==2 && Math.abs(x)==3)wall=Blocks.SEA_LANTERN;
+                home.setBlockAndUpdate(CAMERA.offset(x,y,-12),wall.defaultBlockState());
+            }
+            for(int x=-8;x<=8;x++)for(int tier=0;tier<3;tier++)
+                home.setBlockAndUpdate(CAMERA.offset(x,5+tier,-11-tier),Blocks.CHERRY_STAIRS.defaultBlockState());
+            for(int z=-22;z<=-4;z++)for(int y=-1;y<=3;y++){
+                home.setBlockAndUpdate(CAMERA.offset(-7,y,z),(z%4==0?Blocks.CHERRY_LOG:Blocks.CHERRY_PLANKS).defaultBlockState());
+                if(z<=-6)home.setBlockAndUpdate(CAMERA.offset(7,y,z),(y==3?Blocks.CHERRY_STAIRS:Blocks.CHERRY_PLANKS).defaultBlockState());
+            }
+            wallNightSign(sign,Blocks.GOLD_BLOCK);
+            home.setBlockAndUpdate(CAMERA.offset(2,0,-6),Blocks.LANTERN.defaultBlockState());
+        });
+        step("mount-outside-lens",()->northUse(backing,CameraDevices.CAMERA.get().asItem(),false),()->{
+            var d=StudioEvidence.device(home,CAMERA);return d!=null&&d.owned(player(OWNER));
+        });
+        step("select-lens-with-tablet",()->northUse(CAMERA,Content.CUPID_TABLET.get(),true),()->true);
+        frontUse("mount-indoor-monitor",backing,CameraDevices.WALL.get().asItem(),false);
+        frontUse("link-indoor-monitor",panel,Content.CUPID_TABLET.get(),true);
+        frontUse("open-monitor-size",panel,Items.AIR,false);
+        uiStep("expand-width-to-two","width");uiStep("expand-width-to-three","width");
+        uiStep("expand-height-to-two","height");uiStep("expand-height-to-three","height");uiStep("close-monitor-settings","close");
+        for(String state:List.of("gold","blue")){
+            if(state.equals("blue"))verify("change-outdoor-sign",()->wallNightSign(sign,Blocks.LAPIS_BLOCK));
+            wallNightView("wall-"+state,panel,panel,"sharp.wallnight."+state);
+            wallNightView("stock-"+state,panel,CAMERA,"sharp.reference");
+        }
+        verify("protect-air-in-front-of-the-sign",()->StudioEvidence.curtain=CAMERA.north(9));
+        wallNightView("private-sign",panel,panel,"sharp.wallnight.masked");
+        verify("claim-hides-lens",()->{StudioEvidence.curtain=null;StudioEvidence.denied=CAMERA;});
+        wallNightView("private-screen",panel,panel,"sharp.unavailable");
+        verify("restore-owner-view",()->StudioEvidence.denied=null);
+        wallNightView("wall-restored",panel,panel,"sharp.wallnight.blue");
+    }
+    private static void wallNightSign(BlockPos sign,Block block){
+        for(int x=-1;x<=1;x++)for(int y=-1;y<=0;y++)
+            home.setBlockAndUpdate(sign.offset(x,y,0),block.defaultBlockState());
+    }
+    private static void wallNightView(String label,BlockPos panel,BlockPos target,String action){
+        var feet=new Vec3(panel.getX()+.35,81,panel.getZ()+3.25);
+        step(label,()->order(OWNER,action,target,feet,Vec3.atCenterOf(panel),Items.AIR,false,null,0),()->true);
     }
     private static void sharpSteps(){
         verify("set-up-identical-outdoor-subject-and-blocks",Scenario::sharpStage);

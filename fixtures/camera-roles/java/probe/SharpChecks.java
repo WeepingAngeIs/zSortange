@@ -218,6 +218,30 @@ final class SharpChecks {
         if(action.equals("roof") && (rain>.01 || upper<2 || upper==atmosphere || upper-2>=surfaces.size()
                 || !net.minecraft.world.level.block.Block.stateById(((Number)prop(surfaces.get(upper-2),"stateId")).intValue()).is(Blocks.SPRUCE_PLANKS)))return null;
         if(visible<cells.length/12)return null;
+        if(action.startsWith("wallnight.")){
+            boolean masked=action.endsWith("masked"),blue=action.endsWith("blue");
+            if(masked){
+                if(blockTypes.contains(Blocks.LAPIS_BLOCK) || cells[16*32+16]!=0)return null;
+            }else if(!blockTypes.contains(blue?Blocks.LAPIS_BLOCK:Blocks.GOLD_BLOCK))return null;
+            if(!blockTypes.contains(Blocks.CHERRY_PLANKS))return null;
+            check(mc.hasSingleplayerServer() && mc.player.level()==target.getLevel() && Math.floorMod(((Number)prop(scene,"time")).longValue(),24000)==14990,
+                    "Expected one player indoors in the same nighttime dimension as the lens");
+            savePanel(mc,target,path);
+            var picture=Class.forName("dev.anya.storage.pocket.CameraPicture");
+            var method=picture.getDeclaredMethod("hardware");method.setAccessible(true);
+            boolean gpu=(boolean)method.invoke(null);
+            boolean nightCandidate=trial.equals("sharp-wall-night-candidate-solo");
+            boolean localLight=nightCandidate && (boolean)prop(scene,"localLighting");
+            if(nightCandidate)check(gpu && localLight,"Candidate must use the authorized surface mesh with its own dimension lighting");
+            var tex=(DynamicTexture)field(picture,"texture").get(null);
+            tex.getPixels().writeToFile(path.resolveSibling(path.getFileName()+".texture.png"));
+            var registry=blockTypes.stream().map(b->BuiltInRegistries.BLOCK.getKey(b).toString()).sorted().toList();
+            Files.writeString(path.resolveSibling(path.getFileName()+".scene.json"),Orders.JSON.toJson(java.util.Map.of(
+                    "visibleRays",visible,"rays",cells.length,"blocks",registry,"surfaces",surfaces.size(),"observations",scenes-startScenes,
+                    "gpuSurfacePass",gpu,"sameDimensionLighting",localLight)));
+            return masked ? "Authorized surrounding scene remains visible; protected sign absent from received geometry"
+                    : "Actual indoor monitor, source materials and physical outdoor sign verified at 20:59";
+        }
         if(action.equals("renderer-compare"))return compareRenderers(mc,target,scene);
         if(action.equals("reference-transfer")){
             if(!types.contains(person)||!types.contains(cow)||!blockTypes.contains(Blocks.STONE_BRICKS)||rain!=0)return null;

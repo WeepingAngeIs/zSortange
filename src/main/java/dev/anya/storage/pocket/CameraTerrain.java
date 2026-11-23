@@ -68,7 +68,7 @@ final class CameraTerrain {
             var pose = new PoseStack();
             pose.mulPose(lens.rotation().conjugate(new Quaternionf()));
             pose.translate(-scene.eye().x, -scene.eye().y, -scene.eye().z);
-            drawFaces(view, pose);
+            drawFaces(view, pose, scene.localLighting());
             target.bindWrite(false);
             depth.clear();
             GL11.glReadPixels(0, 0, size, size, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, depth);
@@ -93,16 +93,21 @@ final class CameraTerrain {
         }
     }
 
-    private static void drawFaces(CameraPicture.SurfaceView view, PoseStack pose) {
+    private static void drawFaces(CameraPicture.SurfaceView view, PoseStack pose, boolean localLighting) {
         var batch = MultiBufferSource.immediate(storage);
-        // The native atlas pass uses source lighting in vertex colors, independent of Skygrid's lightmap.
+        if (localLighting) {
+            CameraLocalTerrain.draw(view, pose, batch);
+            batch.endBatch();
+            return;
+        }
+        // A camera in another dimension supplies its own light, independent of Skygrid's lightmap.
         var vertices = batch.getBuffer(RenderType.beaconBeam(InventoryMenu.BLOCK_ATLAS, false));
         for (var face : view.surfaces) {
             var s = face.s;
             float brightness = face.brightness;
             for (var facet : face.facets) {
                 if (Math.abs(facet.a.plane() - face.localPlane) > .009) continue;
-                int rgb = facet.tinted ? s.tint() : 0xffffff;
+                int rgb = facet.tinted ? face.litTint : face.litColor;
                 int argb = 0xff000000 | (int)((rgb >> 16 & 255) * brightness) << 16
                         | (int)((rgb >> 8 & 255) * brightness) << 8 | (int)((rgb & 255) * brightness);
                 emit(pose.last(), vertices, s, facet.a, facet.sprite, argb);

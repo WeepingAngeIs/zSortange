@@ -118,11 +118,14 @@ final class CameraActors {
                 var texture = skin == null ? ResourceLocation.withDefaultNamespace("textures/entity/" + body.texture() + ".png") : skin.texture();
                 if (type == EntityType.PLAYER) setSkinParts(model, profile == null ? 127 : actor.skinParts());
                 var batch = MultiBufferSource.immediate(storage);
-                int shade = Math.clamp(Math.round(255 * CameraPicture.light(actor.skyLight(), actor.blockLight(), scene)), 0, 255);
+                int colorRgb;
+                if(scene.localLighting())colorRgb=CameraPicture.localLightRgb(actor.skyLight(),actor.blockLight());
+                else colorRgb=0x010101*Math.clamp(Math.round(255*CameraPicture.light(actor.skyLight(),actor.blockLight(),scene)),0,255);
+                int shade=((colorRgb>>16&255)+(colorRgb>>8&255)+(colorRgb&255))/3;
                 if (profile != null && net.neoforged.fml.ModList.get().isLoaded("figura"))
                     CameraFigura.draw(profile.getProfile().getId(), model, pose, batch, shade);
                 model.render(pose, batch.getBuffer(RenderType.entityCutoutNoCull(texture)), LightTexture.FULL_BRIGHT,
-                        OverlayTexture.NO_OVERLAY, 0xff000000 | shade * 0x010101);
+                        OverlayTexture.NO_OVERLAY, 0xff000000 | colorRgb);
                 batch.endBatch();
                 target.bindWrite(false);
                 depth.clear();

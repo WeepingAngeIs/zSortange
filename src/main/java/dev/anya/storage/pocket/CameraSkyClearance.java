@@ -21,6 +21,9 @@ final class CameraSkyClearance {
     private final int claimLimit;
     private final Map<BlockPos,Boolean> access=new HashMap<>();
     private final Boolean[] clear=new Boolean[SECTORS*SECTORS];
+    // These proofs live only for the current authorized capture. A column open from y
+    // to world sky is also open above y. A denied or solid block obstructs starts below it.
+    private final Map<Long,Integer> clearFrom=new HashMap<>(), obstructedAt=new HashMap<>();
     private Boolean overhead;
     private enum Sight { CLEAR, SOLID, DENIED, UNLOADED, CLIPPED, BUDGET }
 
@@ -46,7 +49,41 @@ final class CameraSkyClearance {
     // loaded, permitted open space. The color is sampled at the lens; it cannot distinguish
     // any material, actor, claim, lighting or celestial detail beyond that clipping plane.
     int climate(Vec3 direction,SourceSky sky) {
-        return sky!=null && direction.y>0 && overhead()?CameraScene.ATMOSPHERE:0;
+        if(sky==null || direction.y<=0)return 0;
+        if(overhead())return CameraScene.ATMOSPHERE;
+        // An eave above the physical lens can end before this particular ray reaches
+        // the street. All three points are on the ray whose near path already cleared.
+        // Return only the ambient color, never a star, sun, moon or distant geometry.
+        for(int distance=2;distance<=8;distance*=2)
+            if(openColumn(BlockPos.containing(eye.add(direction.scale(distance)))))return CameraScene.ATMOSPHERE;
+        return 0;
+    }
+
+    private boolean openColumn(BlockPos from){
+        int x=from.getX(),z=from.getZ(),y=from.getY(),top=level.getMaxBuildHeight();
+        if(y<level.getMinBuildHeight()||top-y>624)return false;
+        long column=net.minecraft.world.level.ChunkPos.asLong(x,z);
+        if(y<=obstructedAt.getOrDefault(column,Integer.MIN_VALUE))return false;
+        int previouslyClear=clearFrom.getOrDefault(column,top);
+        if(y>=previouslyClear)return true;
+        if(blocks.chunk(x>>4,z>>4)==null)return false;
+        var pos=new BlockPos.MutableBlockPos();
+        for(int h=y;h<previouslyClear;h++){
+            pos.set(x,h,z);
+            if(!allowed(pos)){
+                // A spent proof budget cannot grow again during this capture. Cache its
+                // failed height just like a denial to avoid retracing the same shaft.
+                obstructedAt.merge(column,h,Math::max);
+                return false;
+            }
+            var state=blocks.getBlockState(pos);
+            if(!state.isAir() || state.hasBlockEntity() || !state.getFluidState().isEmpty()){
+                obstructedAt.merge(column,h,Math::max);
+                return false;
+            }
+        }
+        clearFrom.put(column,y);
+        return true;
     }
 
     // A clear 96-block foreground can show actual celestial detail only when this particular

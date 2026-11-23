@@ -68,6 +68,7 @@ final class CameraSceneCapture {
     private final CameraSkyClearance skyClearance;
     private final BlockPos anchor;
     private final Long2ByteOpenHashMap access=new Long2ByteOpenHashMap(4096);
+    private final boolean localLighting;
     private LevelChunk lastChunk;
     private int lastChunkX,lastChunkZ;
     private final Map<BlockState,Integer> materials=new IdentityHashMap<>();
@@ -81,6 +82,7 @@ final class CameraSceneCapture {
 
     private CameraSceneCapture(ServerPlayer player,ServerLevel level,CameraDevices.Device camera) {
         this.viewer=player; this.level=level; this.camera=camera;
+        localLighting=player.serverLevel()==level && player.connection.hasChannel(CameraScene.Local.TYPE);
         blocks=new LoadedPocketBlocks(level);
         eye=CameraFeed.eye(camera); anchor=BlockPos.containing(eye); origin=Vec3.atLowerCornerOf(anchor);
         skyClearance=new CameraSkyClearance(viewer,level,blocks,camera.getBlockPos(),eye,true);
@@ -131,11 +133,21 @@ final class CameraSceneCapture {
             rays[i]=forward.add(right.scale((2.0*x+1)/side-1)).add(up.scale(1-(2.0*y+1)/side)).normalize();
             cells[i]=TRACE_CLEAR;
         }
-        // Give every direction its close foreground first. Previously the first two columns
-        // could exhaust the budget before most of the picture had even seen local open air.
+        // On a street, give the whole lens a chance to resolve the nearby porch, walls
+        // and road before any ray spends its budget far down the street. Both segments
+        // trace the original physical lens ray. A denial in the first segment stays masked.
+        final int close=8;
         for(int i:SAMPLE_ORDER){
-            Vec3 ray=rays[i], end=eye.add(ray.scale(NEAR_CLIP));
+            Vec3 ray=rays[i], end=eye.add(ray.scale(close));
             int result=trace(eye,ray,end,sky,nearestActor(ray,end,false),Pass.NEAR);
+            if(result==OUT_OF_CHECKS)nearBudget++;
+            countMask(result);
+            cells[i]=result==TRACE_CLEAR?TRACE_CLEAR:pictureCode(result);
+        }
+        for(int i:SAMPLE_ORDER){
+            if(cells[i]!=TRACE_CLEAR)continue;
+            Vec3 ray=rays[i],end=eye.add(ray.scale(NEAR_CLIP));
+            int result=trace(eye.add(ray.scale(close-.001)),ray,end,sky,nearestActor(ray,end,false),Pass.NEAR);
             if(result==OUT_OF_CHECKS)nearBudget++;
             countMask(result);
             cells[i]=result==TRACE_CLEAR?TRACE_CLEAR:pictureCode(result);
@@ -190,7 +202,7 @@ final class CameraSceneCapture {
         }
         return new CameraScene(monitor,level.getDayTime(),(int)(level.getGameTime()&0xffff),sky,wet?level.getRainLevel(1):0,
                 wet?level.getThunderLevel(1):0,eye.subtract(origin),forward,right,up,
-                palette,List.copyOf(actors),cells,backdrop,edge,detail);
+                palette,List.copyOf(actors),cells,backdrop,edge,detail,localLighting);
     }
 
     /** Refine only cells beside a visible actor and an already seen physical wall/floor corner.
@@ -276,14 +288,23 @@ final class CameraSceneCapture {
     // actual geometry by tracing independent rays from the lens, including every intervening
     // permission check. The renderer receives no material inferred from neighbouring blocks.
     private int[] distantSurfaces(int[] cells,Vec3 forward,Vec3 right,Vec3 up,SourceSky sky){
-        int size=CameraScene.DETAIL_SIDE, side=CameraScene.SIDE, tiles=0;
+        int size=CameraScene.DETAIL_SIDE, side=CameraScene.SIDE, tiles=0, closeTiles=0;
         int[] detail=new int[0];
         var coarse=List.copyOf(faces.keySet());
         Vec3 offset=eye.subtract(origin);
         for(int cell:SAMPLE_ORDER){
             if(cells[cell]<2 || cells[cell]==CameraScene.ATMOSPHERE)continue;
             var face=coarse.get(cells[cell]-2);
-            if(offset.distanceToSqr(face.x()+.5,face.y()+.5,face.z()+.5)<20*20)continue;
+            double dx=face.x()+.5-offset.x,dy=face.y()+.5-offset.y,dz=face.z()+.5-offset.z;
+            double distanceSquared=dx*dx+dy*dy+dz*dz;
+            if(distanceSquared<20*20){
+                // A nearby wall seen at a grazing angle can be as thin on the screen as
+                // a distant wall. Give these faces some of the existing fine-ray budget.
+                double normalDistance=Math.abs(face.face().getAxis().choose(dx,dy,dz));
+                if(closeTiles>=CameraScene.MAX_DETAIL_CELLS/4 || distanceSquared<7*7
+                        || distanceSquared < 18*normalDistance)continue;
+                closeTiles++;
+            }
             if(tiles==CameraScene.MAX_DETAIL_CELLS || spent() || faces.size()>=CameraScene.MAX_SURFACES)break;
             if(detail.length==0)detail=new int[cells.length*CameraScene.DETAIL_AREA];
             tiles++;
@@ -401,7 +422,8 @@ final class CameraSceneCapture {
     }
 
     private int skyLight(BlockPos pos) {
-        return Math.max(0,level.getBrightness(LightLayer.SKY,pos)-level.getSkyDarken());
+        int sky=level.getBrightness(LightLayer.SKY,pos);
+        return localLighting?sky:Math.max(0,sky-level.getSkyDarken());
     }
 
     private boolean allowed(BlockPos pos) {

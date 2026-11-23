@@ -1,0 +1,105 @@
+name: Night camera on opposite sides of one wall
+on:
+  push:
+    branches: [experiment/wall-night]
+permissions: {contents: read, actions: read}
+env:
+  JAR: anya-storage-plus-0.3.0-beta.7-wallnight.1.jar
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - run: |
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir candidate
+          cp "build/libs/$JAR" candidate/
+          git rev-parse HEAD > candidate/SOURCE_COMMIT.txt
+          (cd candidate && sha256sum "$JAR" > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with: {name: wall-night-candidate, path: candidate, retention-days: 14}
+  observe:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix: {trial: [installed, inherited, candidate]}
+    env:
+      TRIAL: sharp-wall-night-${{ matrix.trial }}-solo
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        with: {name: wall-night-candidate, path: candidate}
+      - uses: actions/download-artifact@v4
+        if: matrix.trial == 'installed'
+        with: {name: anya-storage-plus-sharpcam.3, run-id: 44991463192, github-token: "${{ github.token }}", path: control-jar}
+      - uses: actions/download-artifact@v4
+        if: matrix.trial == 'inherited'
+        with: {name: pocket-default-candidate, run-id: 45090975453, github-token: "${{ github.token }}", path: control-jar}
+      - name: Mount, link, view, change the outdoor wall and revoke access in one integrated client
+        run: |
+          set -euo pipefail
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          test "$(cat candidate/SOURCE_COMMIT.txt)" = "$GITHUB_SHA"
+          api="$PWD/candidate/$JAR"
+          jar="$api"
+          case "$TRIAL" in
+            *-installed-solo)
+              jar="$PWD/control-jar/anya-storage-plus-0.3.0-beta.7-sharpcam.3.jar"
+              echo "8ef8d26343d30dc9ab2cda1fa7bdf93b71f7ec9ac1922ad89c16c908e87ae68a  $jar" | sha256sum -c - ;;
+            *-inherited-solo)
+              jar="$PWD/control-jar/anya-storage-plus-0.3.0-beta.7-pocketdefault.1.jar" ;;
+          esac
+          folder="build/role-check/$TRIAL/control"
+          mkdir -p "$folder"
+          sha256sum "$jar" > "$folder/runtime-jar.txt"
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$jar" -ProleProbeApi="$api" prepareRoleTrial
+          python3 -Bu fixtures/camera-roles/run.py "$TRIAL"
+      - name: Preserve the last action and client diagnostics
+        if: always()
+        run: |
+          folder="build/role-check/$TRIAL"
+          if test -f "$folder/CamOwner/console.log"; then
+            tail -70 "$folder/CamOwner/console.log" | tee "$folder/control/client-log-tail.txt"
+          fi
+          shopt -s nullglob
+          for f in "$folder"/control/{step.txt,*status,FAIL-*}; do test ! -f "$f" || tail -8 "$f"; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wall-night-${{ matrix.trial }}-evidence
+          path: build/role-check/${{ env.TRIAL }}/control/
+          retention-days: 14
+          if-no-files-found: ignore
+  compare:
+    needs: observe
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with: {pattern: wall-night-*-evidence, path: observations}
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          /usr/bin/python3 -B fixtures/camera-roles/wall_night_captures.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: wall-night-comparison, path: comparison, retention-days: 14}

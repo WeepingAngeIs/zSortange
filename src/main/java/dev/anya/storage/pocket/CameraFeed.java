@@ -148,7 +148,8 @@ public final class CameraFeed {
                 if(sharpWall(p,d)) {
                     var scene=CameraSceneCapture.capture(p,d,level,cam,atmosphere,target);
                     if(scene.time()<0 || source(p,d,viewDirection(p))!=cam){send(p,d,-1,null,new int[0]);continue;}
-                    PacketDistributor.sendToPlayer(p,scene);
+                    if(scene.localLighting())PacketDistributor.sendToPlayer(p,new CameraScene.Local(scene));
+                    else PacketDistributor.sendToPlayer(p,scene);
                     if(p.connection.hasChannel(CameraConsole.Motion.TYPE))CameraConsole.signal(p,d,cam.tracking.mode==CameraTracking.Mode.MOTION?target:null);
                     continue;
                 }
