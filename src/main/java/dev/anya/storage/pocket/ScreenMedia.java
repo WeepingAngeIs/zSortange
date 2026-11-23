@@ -23,6 +23,7 @@ import net.minecraft.client.sounds.AudioStream;
 import net.minecraft.client.sounds.SoundBufferLibrary;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
@@ -30,7 +31,7 @@ import net.minecraft.world.phys.Vec3;
 /** One bounded decoder, texture and positional audio stream for a physical display. */
 public final class ScreenMedia {
     private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("anyastorage","dynamic/screen_media");
-    private static final ResourceLocation SOUND = ResourceLocation.fromNamespaceAndPath("anyastorage","screen_media");
+    private static final SoundEvent SOUND = SoundEvent.createVariableRangeEvent(ResourceLocation.fromNamespaceAndPath("anyastorage","screen_media"));
     private static final ThreadPoolExecutor WORK = new ThreadPoolExecutor(1,1,0,TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(1),Thread.ofPlatform().daemon().name("Storage screen media").factory(),
             new ThreadPoolExecutor.DiscardOldestPolicy());
