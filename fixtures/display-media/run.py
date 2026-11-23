@@ -3,10 +3,12 @@ from hashlib import sha256
 import os
 from pathlib import Path
 import signal
+import struct
 import subprocess
 import sys
 import time
 import wave
+import zipfile
 
 import numpy as np
 from PIL import Image
@@ -21,6 +23,44 @@ def stop(process):
     except subprocess.TimeoutExpired:
         os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=10)
+
+
+def diagnostic_tone(data, rate):
+    window = rate // 4
+    observations = []
+    for at in range(0, len(data)-window+1, window//2):
+        samples = np.array(data[at:at+window], dtype=np.float64)
+        samples -= samples.mean()
+        spectrum = np.abs(np.fft.rfft(samples * np.hanning(window)))**2
+        signal = spectrum[109:112].sum() / max(1., spectrum[4:].sum())
+        observations.append((round(float(signal),4), round(float(np.sqrt(np.mean(samples**2))),1),
+                             int(spectrum.argmax())*4))
+    return max(observations, default=(0,0,0))
+
+
+def check_decoder(jar, source, target):
+    helper=target/"decoder.jar"
+    with zipfile.ZipFile(jar) as frozen:
+        helper.write_bytes(frozen.read("META-INF/anya-media/screen-codec.jar"))
+    with source.open("rb") as sample:
+        binary=subprocess.run(["java","-Xmx160m","-Djava.awt.headless=true","-jar",str(helper)],
+                              stdin=sample,stdout=subprocess.PIPE,timeout=90,check=True).stdout
+    magic,w,h=struct.unpack_from(">iii",binary)
+    assert magic==0x41535031 and 0<w<=640 and 0<h<=640
+    i=12
+    while i<len(binary):
+        kind=binary[i];i+=1
+        if kind==0: break
+        if kind==1:
+            i+=4+4*w*h
+        else:
+            assert kind==2
+            rate,n=struct.unpack_from(">ii",binary,i);i+=8
+            pcm=np.frombuffer(binary,dtype="<i2",offset=i,count=n//2)
+            score,rms,hz=diagnostic_tone(pcm,rate)
+            print(f"Bundled AAC decoder: {rate} Hz PCM, peak {hz} Hz, spectral share {score}, RMS {rms}",flush=True)
+            return score>.75 and rms>=50
+    return False
 
 
 def capture_result(proof, raw, spans):
@@ -41,6 +81,12 @@ def capture_result(proof, raw, spans):
             if rms >= 50 and ratio >= .75 and (best is None or rms > best[0]):
                 best = (rms, at, ratio, spectrum.argmax()*4)
         if best is None:
+            print(f"{device} mixer samples {a}..{b}, available {len(data)}, "
+                  f"window (share, RMS, peak Hz) {diagnostic_tone(data[a:b],48000)}, "
+                  f"entire recording {diagnostic_tone(data,48000)}",flush=True)
+            with wave.open(str(proof/(device+"-synthetic-diagnostic.wav")),"wb") as wav:
+                wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(48000)
+                wav.writeframes(data[max(0,a-48000):min(b+48000,a+12*48000)].tobytes())
             raise RuntimeError(f"No sustained 440 Hz output during {device} movie playback")
         rms, at, ratio, freq = best
         with wave.open(str(proof / (device+"-synthetic-tone.wav")), "wb") as wav:
@@ -79,6 +125,7 @@ def main():
     for key, expected in {"cards.gif":"4963cf5d4649cf45ad53c9f12675536b3ea8d0371b61277fa1a63088cecf9693",
                           "color-tone.mp4":"2d416562be98876ef4ed51b139a75d377f100b886d6f4a5597c14c6268a6dc6f"}.items():
         assert sha256((inputs/key).read_bytes()).hexdigest()==expected
+    assert check_decoder(jar,inputs/"color-tone.mp4",target), "The packaged AAC decoder did not produce the generated 440 Hz tone"
     subprocess.run(["gradle","--no-daemon","--console=plain","--max-workers=2","-I","fixtures/display-media/fixture.gradle",
                     "-PmediaPlayable="+str(jar),"prepareDisplayServer","prepareDisplayClient"],cwd=root,check=True)
     (server/"eula.txt").write_text("eula=true\n")
@@ -89,10 +136,16 @@ def main():
             "guiScale:2\nfov:0.0\nmaxFps:40\nenableVsync:false\nsoundCategory_master:1.0\nsoundCategory_block:1.0\n"
             "soundCategory_music:0.0\nsoundCategory_record:0.0\nsoundCategory_ambient:0.0\nsoundCategory_player:0.0\n")
     subprocess.run(["pulseaudio","--start","--exit-idle-time=-1"],check=True)
-    subprocess.run(["pactl","load-module","module-null-sink","sink_name=anya_ci","rate=48000","channels=2"],check=True)
+    subprocess.run(["pactl","load-module","module-null-sink","sink_name=anya_ci",
+                    "sink_properties=device.description=AnyaHostedMixer","rate=48000","channels=2"],check=True)
     subprocess.run(["pactl","set-default-sink","anya_ci"],check=True)
+    subprocess.run(["pactl","set-sink-volume","anya_ci","100%"],check=True)
+    subprocess.run(["pactl","set-sink-mute","anya_ci","0"],check=True)
+    subprocess.run(["pactl","set-source-volume","anya_ci.monitor","100%"],check=True)
+    subprocess.run(["pactl","set-source-mute","anya_ci.monitor","0"],check=True)
     env = dict(os.environ, ANYA_MEDIA_INPUTS=str(inputs), LIBGL_ALWAYS_SOFTWARE="true",
-               ALSOFT_DRIVERS="pulse", PULSE_SINK="anya_ci")
+               ALSOFT_DRIVERS="pulse", PULSE_SINK="anya_ci",ALSOFT_LOGLEVEL="3",
+               ALSOFT_LOGFILE=str(target/"openal.log"))
     raw = target/"synthetic-mixer.s16le"
     processes = []
     log_files = []
@@ -102,9 +155,11 @@ def main():
                                    text=True,start_new_session=True)
         processes.append(process);return process
     try:
-        mixer = start(["ffmpeg","-nostdin","-hide_banner","-loglevel","warning","-f","pulse","-i","anya_ci.monitor",
-                       "-ac","1","-ar","48000","-c:a","pcm_s16le","-flush_packets","1","-f","s16le",str(raw)],
-                      "mixer",target)
+        with raw.open("xb",buffering=0) as recording:
+            mixer = subprocess.Popen(["parec","--raw","--device=anya_ci.monitor","--format=s16le","--rate=48000",
+                                      "--channels=1","--latency-msec=25"],stdin=subprocess.DEVNULL,stdout=recording,
+                                     cwd=target,env=env,start_new_session=True)
+            processes.append(mixer)
         srv = start(["bash",(server/"launch.txt").read_text().strip()], "server",server)
         for _ in range(200):
             if srv.poll() is not None: raise RuntimeError("Server failed to start")
@@ -122,7 +177,10 @@ def main():
             for device in ("tv","wall"):
                 for marker in ("start","end"):
                     key=device+"-movie-"+marker
-                    if key not in spans and (proof/key).is_file():spans[key] = raw.stat().st_size
+                    if key not in spans and (proof/key).is_file():
+                        spans[key] = raw.stat().st_size
+                        print(key,spans[key],"mixer bytes; PulseAudio inputs:",
+                              subprocess.check_output(["pactl","list","short","sink-inputs"],text=True).strip(),flush=True)
             time.sleep(.1)
         srv.stdin.write("stop\n");srv.stdin.flush()
         if srv.wait(timeout=100)!=0 or "All dimensions are saved" not in (target/"server.log").read_text(errors="replace"):

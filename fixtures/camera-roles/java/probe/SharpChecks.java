@@ -29,6 +29,9 @@ import org.joml.Vector4f;
 import static probe.Orders.check;
 
 final class SharpChecks {
+    private static int playerReferenceFrames, originalFov;
+    private static double originalFovEffects;
+    private static boolean originalHud;
     private static final String trial=System.getProperty("roomroles.trial","");
     static boolean sharp(){return trial.startsWith("sharp-");}
     static boolean single(){return trial.endsWith("-solo");}
@@ -154,6 +157,28 @@ final class SharpChecks {
         if(action.startsWith("native."))return HostedNativeLens.capture(order,action,path,blankScenes-startBlank+legacyBlankDelta);
         if(action.startsWith("range."))return RangeChecks.capture(mc,order,path,age,scenes-startScenes,blankScenes-startBlank,legacyBlankDelta);
         if(action.startsWith("horizon."))return HorizonChecks.capture(mc,order,path,age,scenes-startScenes,blankScenes-startBlank+legacyBlankDelta);
+        if(action.equals("player-reference")){
+            var eye=Vec3.atCenterOf(order.target()).add(0,0,-(3.5/16+.015625));
+            var camera=mc.gameRenderer.getMainCamera();
+            if(!mc.player.isSpectator() || mc.getCameraEntity()!=mc.player || !mc.options.getCameraType().isFirstPerson()
+                    || camera.getPosition().distanceToSqr(eye)>.0004
+                    || Math.abs(mc.player.getXRot())>.1 || Math.abs(Math.abs(mc.player.getYRot())-180)>.1)return null;
+            if(playerReferenceFrames++==0){
+                originalFov=mc.options.fov().get();originalFovEffects=mc.options.fovEffectScale().get();
+                originalHud=mc.options.hideGui;
+                mc.options.fov().set(90);mc.options.fovEffectScale().set(0d);mc.options.hideGui=true;
+            }
+            if(playerReferenceFrames<12)return null;
+            try {
+                screenshot(mc,path);
+                Files.writeString(path.resolveSibling(path.getFileName()+".eye.txt"),
+                        camera.getPosition()+" first-person main framebuffer, FOV 90, no HUD");
+            } finally {
+                mc.options.fov().set(originalFov);mc.options.fovEffectScale().set(originalFovEffects);
+                mc.options.hideGui=originalHud;playerReferenceFrames=0;
+            }
+            return "Primary player-eye screenshot from the mounted lens position";
+        }
         if(action.equals("reference")||action.equals("reference-wide")){
             referenceInProgress=true;
             try{
@@ -224,8 +249,9 @@ final class SharpChecks {
                 if(blockTypes.contains(Blocks.LAPIS_BLOCK) || cells[16*32+16]!=0)return null;
             }else if(!blockTypes.contains(blue?Blocks.LAPIS_BLOCK:Blocks.GOLD_BLOCK))return null;
             if(!blockTypes.contains(Blocks.CHERRY_PLANKS))return null;
-            check(mc.hasSingleplayerServer() && mc.player.level()==target.getLevel() && Math.floorMod(((Number)prop(scene,"time")).longValue(),24000)==14990,
-                    "Expected one player indoors in the same nighttime dimension as the lens");
+            long expectedTime=order.step().startsWith("day-")?6000:14990;
+            if(Math.floorMod(((Number)prop(scene,"time")).longValue(),24000)!=expectedTime)return null;
+            check(mc.hasSingleplayerServer() && mc.player.level()==target.getLevel(),"Expected one player in the same dimension as the lens");
             savePanel(mc,target,path);
             var picture=Class.forName("dev.anya.storage.pocket.CameraPicture");
             var method=picture.getDeclaredMethod("hardware");method.setAccessible(true);
@@ -242,7 +268,7 @@ final class SharpChecks {
                     "visibleRays",visible,"rays",cells.length,"blocks",registry,"surfaces",surfaces.size(),"observations",scenes-startScenes,
                     "gpuSurfacePass",gpu,"sameDimensionLighting",localLight)));
             return masked ? "Authorized surrounding scene remains visible; protected sign absent from received geometry"
-                    : "Actual indoor monitor, source materials and physical outdoor sign verified at 20:59";
+                    : "Actual indoor monitor, source materials and physical outdoor sign verified at "+expectedTime+" ticks";
         }
         if(action.equals("renderer-compare"))return compareRenderers(mc,target,scene);
         if(action.equals("reference-transfer")){

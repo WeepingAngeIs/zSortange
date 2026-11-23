@@ -115,6 +115,12 @@ final class CameraPicture {
             edges[q] = proof < 0 ? -1 : 0;
             if (backing < 2 || backing == CameraScene.ATMOSPHERE
                     || proof < 2 || proof == CameraScene.ATMOSPHERE || proof == backing) continue;
+            if (scene.localLighting() && scene.actors().isEmpty()) {
+                // This renderer received a direct unobstructed terrain ray in that quarter.
+                // The actual model and its 3D depth must still match at each painted pixel.
+                edges[q] = proof;
+                continue;
+            }
             var anchor = scene.surfaces().get(backing - 2);
             var adjoining = scene.surfaces().get(proof - 2);
             for (int i = 0; i < count; i++) {
@@ -180,6 +186,17 @@ final class CameraPicture {
                         if (other >= 2 && CameraScene.adjacentOnPlane(anchor,scene.surfaces().get(other-2)))
                             count = include(refs,count,other-2);
                     }
+                }
+                // At a grazing angle a single fine pixel can cross a block boundary. Include
+                // touching coplanar faces already approved for this very quadrant, provided this
+                // fine ray is itself positive. Both a denied coarse quadrant and a denied fine
+                // sample stay masked in at().
+                if (scene.localLighting() && scene.actors().isEmpty()) {
+                    int quarter = quadrant(sub%side,sub/side,side);
+                    int[] wider = coarse[4*cell + quarter];
+                    if (wider != null) for (int ref : wider)
+                        if (CameraScene.adjacentOnPlane(anchor,surfaces[ref].s))
+                            count = include(refs,count,ref);
                 }
                 fine[k] = java.util.Arrays.copyOf(refs,count);
             }

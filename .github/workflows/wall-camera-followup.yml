@@ -1,0 +1,92 @@
+name: Same-wall camera detail in daylight and at night
+on:
+  push:
+    branches: [experiment/wall-camera-followup]
+permissions: {contents: read, actions: read}
+jobs:
+  build:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - run: |
+          gradle --no-daemon --max-workers=2 --console=plain jar
+          mkdir candidate
+          cp build/libs/anya-storage-plus-0.3.0-beta.7-wallfaces.1.jar candidate/
+          git rev-parse HEAD > candidate/SOURCE_COMMIT.txt
+          (cd candidate && sha256sum *.jar > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with: {name: wallfaces-candidate, path: candidate, retention-days: 14}
+  observe:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix: {runtime: [baseline, candidate]}
+    env:
+      TRIAL: sharp-wall-night-candidate-solo
+      WALL_FOLLOWUP: 'true'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+      LP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        with: {name: wallfaces-candidate, path: candidate}
+      - uses: actions/download-artifact@v4
+        if: matrix.runtime == 'baseline'
+        with: {name: wall-night-candidate, run-id: 45093912101, github-token: "${{ github.token }}", path: baseline}
+      - name: Compare the indoor display and normal first-person camera at the outdoor lens
+        run: |
+          set -euo pipefail
+          (cd candidate && sha256sum -c SHA256SUMS.txt)
+          api="$PWD/candidate/anya-storage-plus-0.3.0-beta.7-wallfaces.1.jar"
+          jar="$api"; source="$GITHUB_SHA"
+          if [[ '${{ matrix.runtime }}' == baseline ]]; then
+            jar="$PWD/baseline/anya-storage-plus-0.3.0-beta.7-wallnight.2.jar"
+            echo "1cd9fa2c91060f24246075eeba6c1ac01801eef492f1572b8d1d518285571c15  $jar" | sha256sum -c -
+            source=1b83e62e14f5162020f8ebc07eadb11d500edf4a
+          fi
+          folder="build/role-check/$TRIAL/control"
+          mkdir -p "$folder"
+          sha256sum "$jar" > "$folder/runtime-jar.txt"
+          echo "$source" > "$folder/playable-source.txt"
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth libgl1-mesa-dri
+          gradle --no-daemon --max-workers=2 --console=plain -I fixtures/camera-roles/fixture.gradle -ProleTrial="$TRIAL" -ProlePlayable="$jar" -ProleProbeApi="$api" prepareRoleTrial
+          python3 -Bu fixtures/camera-roles/run.py "$TRIAL"
+      - name: Preserve startup and last fixture step
+        if: always()
+        run: |
+          folder="build/role-check/$TRIAL"
+          if [[ -f "$folder/CamOwner/console.log" ]]; then tail -85 "$folder/CamOwner/console.log" | tee "$folder/control/client-diagnostic.txt"; fi
+          if [[ -f "$folder/control/step.txt" ]]; then cat "$folder/control/step.txt"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: "wallfaces-${{ matrix.runtime }}-captures", path: "build/role-check/${{ env.TRIAL }}/control", retention-days: 14, if-no-files-found: ignore}
+  compare:
+    needs: observe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@v4
+        with: {pattern: wallfaces-*-captures, path: observations}
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          /usr/bin/python3 -B fixtures/camera-roles/wall_faces_captures.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: wallfaces-comparison, path: comparison, retention-days: 14}

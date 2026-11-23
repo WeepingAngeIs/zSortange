@@ -315,6 +315,28 @@ public final class Scenario {
         wallNightView("private-screen",panel,panel,"sharp.unavailable");
         verify("restore-owner-view",()->StudioEvidence.denied=null);
         wallNightView("wall-restored",panel,panel,"sharp.wallnight.blue");
+        if ("true".equals(System.getenv("WALL_FOLLOWUP"))) {
+            wallPlayerReference("night",panel);
+            verify("switch-lane-to-noon",()->home.setDayTime(6000));
+            wallNightView("day-wall-blue",panel,panel,"sharp.wallnight.blue");
+            wallNightView("day-stock-blue",panel,CAMERA,"sharp.reference");
+            wallPlayerReference("day",panel);
+        }
+    }
+    private static void wallPlayerReference(String period, BlockPos panel) {
+        step(period+"-player-view",()->{
+            var p=player(OWNER);
+            // Spectator fixes the physical eye at the lens even inside its collision shape.
+            // All operational monitor interactions are performed in Survival.
+            p.setGameMode(GameType.SPECTATOR);
+            var eye=Vec3.atCenterOf(CAMERA).add(0,0,-(3.5/16+.015625));
+            var feet=eye.subtract(0,p.getEyeHeight(net.minecraft.world.entity.Pose.STANDING),0);
+            order(OWNER,"sharp.player-reference",CAMERA,feet,eye.add(0,0,-1),Items.AIR,false,null,0);
+        },()->true);
+        verify(period+"-return-to-viewer",()->{
+            var p=player(OWNER);p.connection.teleport(panel.getX()+.35,81,panel.getZ()+3.25,180,0);
+            p.setGameMode(GameType.SURVIVAL);
+        });
     }
     private static void wallNightSign(BlockPos sign,Block block){
         for(int x=-1;x<=1;x++)for(int y=-1;y<=0;y++)

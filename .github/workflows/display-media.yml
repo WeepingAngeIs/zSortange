@@ -20,13 +20,16 @@ jobs:
         with: {gradle-version: '8.14.3'}
       - name: Prepare the hosted framebuffer and isolated audio sink
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg xvfb pulseaudio pulseaudio-utils libgl1-mesa-dri libopenal1
-          python3 -m pip install --disable-pip-version-check numpy Pillow
+          if ! command -v parec || ! command -v pulseaudio || ! command -v ffmpeg || ! command -v xvfb-run; then
+            sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=1 -o Acquire::http::Timeout=20 update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg xvfb pulseaudio pulseaudio-utils libgl1-mesa-dri libopenal1
+          fi
+          python3 -c 'import numpy,PIL' || python3 -m pip install --disable-pip-version-check numpy Pillow
       - name: Freeze the cumulative playable and verify its embedded codec
         run: |
           set -euo pipefail
           git merge-base --is-ancestor bed0e0848220785ef4f271ad22590a03ecdec356 HEAD
+          git merge-base --is-ancestor d3b25e71ab98e851777d6a7a00fbd91dc9ebc53b HEAD
           gradle --no-daemon --console=plain --max-workers=2 jar
           mkdir upload
           cp "build/libs/$PLAYABLE" upload/
@@ -48,6 +51,7 @@ jobs:
             build/display-media/*.log
             build/display-media/proof/FAILED
             build/display-media/proof/*.png
+            build/display-media/proof/*-synthetic-diagnostic.wav
             build/display-media/Server/crash-reports/*.txt
             build/display-media/Client/crash-reports/*.txt
           retention-days: 3
