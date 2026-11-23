@@ -1,0 +1,21 @@
+name: Compare exact synthetic AAC audio
+on:
+  push:
+    branches: [experiment/storage-audio-evidence]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install numpy==2.2.6 imageio-ffmpeg==0.6.0
+      - run: OPENBLAS_NUM_THREADS=1 python -u fixtures/display-media/audio_compare.py
