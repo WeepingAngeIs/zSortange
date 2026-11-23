@@ -1,4 +1,4 @@
-"""Native stock admission checkpoint. The dedicated server contains zero test helpers."""
+"""Native stock admission with the original full-pack helper on both ends of its required channel."""
 import gzip
 import hashlib
 import io
@@ -19,7 +19,7 @@ from rosecourt_pack import digest, stop_group, tail
 
 SEAL = "4fe43c038efc2211fdb0be84e25efd4f0c279e900c9afc21574dff4cf2f4a8cd"
 JAIL = "d7cd43db7d6c4ea88372a1a7e09faee843d51d566a03c398dc999505a8053243"
-STOCK_RUNTIME = "6a57201bb9f248241f27799a0ae14018714637a1eb5a264cde1250d335c8d4fb"
+STOCK_RUNTIME = "4ef154609c7d6fc407dd212ae702c87b6f55c4a9e7bfe565eeee860250d25248"
 OWNER = uuid.UUID(bytes=hashlib.md5(b"OfflinePlayer:Visitor").digest(), version=3)
 MARKER = "Stock custody checkpoint"
 
@@ -50,7 +50,9 @@ def verify_roster(root, mods, jail):
     exceptions = {"SimplyTooltips-neoforge-0.1.5.jar", "cobblemon_party_extras-neoforge-1.8.15.jar"}
     rows = {r["name"]: r["sha512"] for r in json.loads((profile/"profile.json").read_text())["mods"]
             if (r["side"] != "unsupported" or r["name"] in exceptions) and r["name"] not in excluded}
-    assert len(rows) == 296 and {p.name for p in mods.glob("*.jar")} == set(rows) | {jail.name}
+    helper = root/"dist/packaged-smoke/fullpack-stimulus.jar"
+    assert len(rows) == 296 and {p.name for p in mods.glob("*.jar")} == set(rows) | {jail.name, helper.name}
+    assert digest(mods/helper.name) == digest(helper)
     assert all(sha512(mods/name) == expected for name, expected in rows.items())
     assert digest(jail) == JAIL
     with zipfile.ZipFile(jail) as binary:
@@ -58,10 +60,10 @@ def verify_roster(root, mods, jail):
     first = (root/"stock-census-a/loaded-rows.txt").read_text().splitlines()
     assert first == (root/"stock-census-b/loaded-rows.txt").read_text().splitlines()
     assert first == sorted(set(first)) and sha("\n".join(first).encode()) == SEAL
-    kernel = ["minecraft=1.21.1", "neoforge=21.1.249",
+    kernel = ["disposable-harness", "minecraft=1.21.1", "neoforge=21.1.249",
               "minecraftjail-implementation=player-only-autorespawn-v1:" + sha512(jail)]
     expected_runtime = sha("\n".join(sorted(first + kernel)).encode())
-    assert expected_runtime == STOCK_RUNTIME, "The original no-helper runtime identity changed"
+    assert expected_runtime == STOCK_RUNTIME, "The native full-pack runtime identity with the original helper changed"
     return expected_runtime
 
 
@@ -142,7 +144,7 @@ def verify_saved(world, expected_runtime):
     return {"owner":str(OWNER),"native_cell":6,"native_transaction":str(tx),"marker_count":13,
             "native_item_sha256":digest_items,"native_origin_sha256":sha(origin),
             "native_index_sha256":digest(world/"custody-interface-v1/custody.v1"),"terrain_sha256":digest(terrain),
-            "native_runtime_without_server_fixture":expected_runtime,"sealed_mod_rows_sha256":SEAL}
+            "native_runtime_with_genuine_helper":expected_runtime,"sealed_mod_rows_sha256":SEAL}
 
 
 def await_signal(condition, processes, timeout, hint):
@@ -171,12 +173,14 @@ def main():
         dest=game/"mods"/jail.name
         assert not dest.exists()
         shutil.copy2(jail,dest)
-    # The vendor's publication-tested UI helper is client-only for this separate run.
+    # The original helper declares a required bidirectional NeoForge channel.
     helper=report/"fullpack-stimulus.jar"
     assert not (client/"mods"/helper.name).exists() and not (server/"mods"/helper.name).exists()
     shutil.copy2(helper,client/"mods"/helper.name)
+    shutil.copy2(helper,server/"mods"/helper.name)
+    assert digest(client/"mods"/helper.name) == digest(helper)
     runtime=verify_roster(root,server/"mods",server/"mods"/jail.name)
-    print("All 296 published dedicated JARs and the original jail binary match; original server has zero test helpers.",flush=True)
+    print("All 296 published dedicated JARs and the original Jail and helper match. Both sides have the required channel.",flush=True)
     assert len(list((client/"mods").glob("*.jar")))==367
     assert "eula=true" in (root/"dist/packaged-harness/run-server/eula.txt").read_text(encoding="utf-8-sig").replace(" ","")
     shutil.copy2(root/"dist/packaged-harness/run-server/eula.txt",server/"eula.txt")
@@ -193,7 +197,10 @@ def main():
     srv=cli=None
     with server_log.open("x") as slog,(output/"native-client.log").open("x") as clog:
         try:
+            # A single Visitor cannot start the original two-player certified lifecycle.
+            # The separate player-only escape test is opt-in and is not part of this run.
             srv=subprocess.Popen(["java","-Xms512m","-Xmx3G","-Dneoforge.readTimeout=180",
+                "-Duq.integratedJail=true","-Duq.certifiedJail=true",
                 "@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt","nogui"],cwd=server,env=env,
                 stdin=subprocess.PIPE,stdout=slog,stderr=subprocess.STDOUT,text=True,start_new_session=True)
             await_signal(lambda:"Done (" in tail(server_log),[srv],750,"Stock dedicated startup failed")
@@ -246,7 +253,7 @@ def main():
     assert digest(server/"config/neoorigins/admin.toml")==config
     result=verify_saved(world,runtime)
     result.update(harness_revision=os.environ["GITHUB_SHA"],jail_sha256=JAIL,
-                  origin_config=config,stock_server_file_count=297,server_test_helpers=0,
+                  origin_config=config,stock_server_file_count=298,server_test_helpers=1,helper_sha256=digest(helper),
                   admission_via_console=True,clean_stop=True,commands=checks)
     (output/"occupied.json").write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps(result,indent=2),flush=True)

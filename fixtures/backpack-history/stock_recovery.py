@@ -36,7 +36,8 @@ def main():
     stock_receipt = root / "dist/stock-admission/occupied.json"
     checkpoint = json.loads(stock_receipt.read_text())
     assert checkpoint["harness_revision"] == os.environ["GITHUB_SHA"] and checkpoint["jail_sha256"] == digest(jail)
-    assert checkpoint["clean_stop"] and checkpoint["admission_via_console"] and checkpoint["server_test_helpers"] == 0
+    assert checkpoint["clean_stop"] and checkpoint["admission_via_console"] and checkpoint["server_test_helpers"] == 1
+    assert checkpoint["stock_server_file_count"] == 298 and checkpoint["helper_sha256"] == digest(report/"fullpack-stimulus.jar")
     assert checkpoint["origin_config"] == digest(server / "config/neoorigins/admin.toml")
     runtime = verify_roster(root, server/"mods", jail)
     saved = verify_saved(world, runtime)
@@ -47,14 +48,11 @@ def main():
     assert list((world / "integrated-jail-v1").glob("*/items/escrow.v1"))
     assert len(list((client / "mods").glob("*.jar"))) == 367
     assert (server / "server.properties").read_text().find("server-ip=127.0.0.1") >= 0
-    # The stock admission used the genuine upstream onboarding helper only on the client.
+    # Both ends had the same original helper during admission. The second stage uses the Storage test helper.
     for game in (server, client):
         stimulus = game / "mods/fullpack-stimulus.jar"
-        if game == client:
-            assert digest(stimulus) == digest(report / stimulus.name)
-            stimulus.unlink()
-        else:
-            assert not stimulus.exists()
+        assert digest(stimulus) == checkpoint["helper_sha256"]
+        stimulus.unlink()
         for source in (jar, helper):
             dest = game / "mods" / source.name
             assert not dest.exists()
@@ -66,7 +64,7 @@ def main():
         "Hosted fixture revision " + os.environ["GITHUB_SHA"],
         "Pinned Jail source 411857009b8e05f606bb0b5b70648dcce8a9623b and binary SHA-256 " + digest(jail),
         "Original full-pack native Visitor admission in cell six, exact escrow marker, fingerprint and clean save "
-        "before adding Storage, with zero server test helpers (no escape timing check): " + digest(stock_receipt),
+        "before adding Storage, with the original jail helper on both endpoints: " + digest(stock_receipt),
         "Separate imported held Anya bag uses beta.3 journal writers and the normal native console bind. "
         "The changed mod list is outside the native new-admission certificate.",
     ]
