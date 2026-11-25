@@ -1,0 +1,38 @@
+gradle.beforeProject { p -> p.afterEvaluate {
+    def target = p.file(p.property('releaseTarget'))
+    def legacy = p.file(p.property('releaseLegacy'))
+    def probe = p.sourceSets.create('upgradeProbe')
+    probe.java.srcDir p.file('fixtures/release/java')
+    probe.resources.srcDir p.file('fixtures/release/resources')
+    p.neoForge.addModdingDependenciesTo(probe)
+    p.dependencies.add(probe.compileOnlyConfigurationName, p.files(legacy))
+    def helper = p.tasks.register('upgradeProbeJar', Jar) {
+        dependsOn probe.classesTaskName
+        from probe.output
+        archiveBaseName = 'disposable-storage-upgrade-check'
+        destinationDirectory = p.layout.buildDirectory.dir('release-check/tools')
+    }
+    def scripts = []
+    [Legacy: legacy, Target: target].each { suffix, playable ->
+        def runtime = p.sourceSets.create('upgrade' + suffix + 'Runtime')
+        p.neoForge.addModdingDependenciesTo(runtime)
+        p.dependencies.add(runtime.runtimeOnlyConfigurationName, p.files(playable, helper))
+        p.neoForge.runs.create('upgrade' + suffix) {
+            server()
+            programArgument '--nogui'
+            sourceSet = runtime
+            loadedMods = []
+            gameDirectory = p.file('build/release-check/game')
+            jvmArguments.addAll '-Xmx1700m', '-Xms256m', '-XX:ActiveProcessorCount=2'
+        }
+        scripts << p.tasks.named('createUpgrade' + suffix + 'LaunchScript')
+    }
+    p.tasks.register('prepareUpgradeProbe') {
+        dependsOn helper, scripts
+        doLast {
+            p.file('build/release-check/launch.txt').text = scripts.collect {
+                it.get().launchScript.get().asFile.absolutePath
+            }.join('\n') + '\n'
+        }
+    }
+}}

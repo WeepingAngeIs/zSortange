@@ -1,0 +1,50 @@
+name: Storage release qualification - saved Survival items
+on:
+  push:
+    branches: [qualify/storage-release-1]
+    paths:
+      - fixtures/release/upgrade.py
+      - fixtures/release/java/**
+      - fixtures/release/resources/**
+      - fixtures/release/fixture.gradle
+      - .github/workflows/storage-upgrade-qualification.yml
+permissions:
+  contents: read
+  actions: read
+jobs:
+  survival-upgrade:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: 14782008594
+          run-id: 45093912101
+          github-token: ${{ github.token }}
+          path: inputs/legacy
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: 14845592695
+          run-id: 45230324007
+          github-token: ${{ github.token }}
+          path: inputs/target
+      - name: Open, transfer and save using the frozen old and current JARs
+        run: |
+          set -euo pipefail
+          python3 -B fixtures/release/upgrade.py "$(find inputs/legacy -name 'anya-storage-plus-*-wallnight.2.jar')" "$(find inputs/target -name 'anya-storage-plus-*-roommedia.1.jar')"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: storage-release-upgrade-evidence
+          path: |
+            build/release-check/UPGRADE.txt
+            build/release-check/*.log
+            build/release-check/game/*.pass
+          retention-days: 14
