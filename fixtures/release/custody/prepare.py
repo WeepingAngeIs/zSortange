@@ -14,8 +14,12 @@ def main():
     text=script.read_text()
     marker='shutil.copy2(root/".github/native249/CombinedStorageProof.java", src)'
     assert text.count(marker)==1
-    text=text.replace(marker,marker+'\nshutil.copy2(root/".github/native249/IndependentLoss.java", src)')
-    (upstream/"IndependentLoss.java").write_bytes((own/"IndependentLoss.java").read_bytes())
+    observations=("IndependentLoss.java","OccupiedRestart.java")
+    additions=[]
+    for name in observations:
+        (upstream/name).write_bytes((own/name).read_bytes())
+        additions.append(f'shutil.copy2(root/".github/native249/{name}", src)')
+    text=text.replace(marker,"\n".join([marker,*additions]))
     script.write_text(text)
     full=upstream/"FullPackSession.java"
     text=full.read_text()
@@ -28,7 +32,10 @@ def main():
     text=observer.read_text()
     marker='return CertifiedJailSmoke.world.resolve("center-"'
     assert text.count(marker)==1
-    observer.write_text(text.replace(marker,'return results.resolve("center-"'))
+    text=text.replace(marker,'return results.resolve("center-"')
+    tick='            MinecraftServer server = event.getServer();'
+    assert text.count(tick)==1
+    observer.write_text(text.replace(tick,tick+'\n            if (OccupiedRestart.handle(server)) return;'))
     wallet=root/".github/packed-wallet/PackedWalletProof.java"
     text=wallet.read_text()
     marker='CertifiedJailSmoke.world.resolve("packed-wallet-expected.nbt")'

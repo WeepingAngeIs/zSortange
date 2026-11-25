@@ -1,4 +1,4 @@
-"""One real admission; the additional owner test finishes before the escape scenario starts."""
+"""Admit on the certified pair, upgrade only Storage offline, and recover an independent bag."""
 import hashlib
 import os
 import shutil
@@ -25,6 +25,40 @@ def stop(proc):
             os.killpg(proc.pid,signal.SIGKILL)
             proc.wait(timeout=15)
 
+def server_command():
+    return ["java","-Xms512m","-Xmx3G","-Dneoforge.readTimeout=180",
+            "@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt","nogui"]
+
+def resume(server,res,env,phase):
+    receipt=server/("independent-"+phase+".txt")
+    assert not receipt.exists()
+    upstream=Path("/tmp/uq-player-only-result")
+    assert not upstream.exists(),"Unexpected outcome before "+phase
+    output=res/(phase+"-server.log")
+    with output.open("w") as log:
+        proc=subprocess.Popen(server_command(),cwd=server,env=dict(env,INDEPENDENT_PHASE=phase),
+                stdin=subprocess.PIPE,stdout=log,stderr=subprocess.STDOUT,start_new_session=True,text=True)
+        try:
+            deadline=time.monotonic()+520
+            while not receipt.is_file() and time.monotonic()<deadline:
+                if upstream.is_file(): raise RuntimeError(phase+": "+upstream.read_text()[:550])
+                if proc.poll() is not None: raise RuntimeError(phase+": dedicated server exited early")
+                time.sleep(2)
+            assert receipt.is_file(),"Missing result for "+phase
+            proc.stdin.write("stop\n")
+            proc.stdin.flush()
+            assert proc.wait(timeout=100)==0 and "All dimensions are saved" in output.read_text(errors="replace")
+        finally:
+            if proc.poll() is None:
+                try:
+                    proc.stdin.write("stop\n")
+                    proc.stdin.flush()
+                    proc.wait(timeout=60)
+                except (OSError,subprocess.TimeoutExpired): stop(proc)
+    shutil.copy2(receipt,res/receipt.name)
+    print(receipt.read_text(),flush=True)
+    return receipt.read_text()
+
 def main():
     assert os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_ACTIONS")=="true"
     root=Path.cwd()
@@ -35,9 +69,12 @@ def main():
     res.mkdir()
     jail=Path(os.environ["CUSTODY_JAR"]).resolve(strict=True)
     storage=Path(os.environ["COMBINED_STORAGE_JAR"]).resolve(strict=True)
+    release=Path(os.environ["FROZEN_RELEASE_JAR"]).resolve(strict=True)
+    final_sha=os.environ["FROZEN_RELEASE_SHA"]
     stimulus=root/"dist/packaged-smoke/fullpack-stimulus.jar"
     assert sha(jail)=="6907d0bd9c2dd4b678cb9f6a241a3a58e1a23b6df35a0b9f0afac2defd80c47f"
     assert sha(storage)==os.environ["STORAGE_SHA"]
+    assert sha(release)==final_sha and final_sha!=sha(storage)
     for game in (server,client):
         assert sha(game/"mods/Unyielding-1.2.0.jar")=="ec3ae2c48399e40ffa615ddec85408bc29b2479c5a35eb7236c3e036ebdf762c"
         for src in (jail,storage,stimulus):
@@ -52,7 +89,7 @@ def main():
     shutil.copy2(accepted,server/"eula.txt")
     (server/"server.properties").write_text('online-mode=false\nserver-ip=127.0.0.1\nserver-port=25565\nlevel-name=jail_certified_smoke\nlevel-type=minecraft:flat\ngenerator-settings={"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}\nspawn-protection=0\ndifficulty=peaceful\nspawn-monsters=false\nmax-players=2\nview-distance=2\nsimulation-distance=2\ngenerate-structures=false\nenable-rcon=false\nmax-tick-time=-1\n')
     (client/"options.txt").write_text("guiScale:2\nrenderDistance:2\nsimulationDistance:2\nmaxFps:30\nenableVsync:false\nonboardAccessibility:false\nsoundCategory_master:0.0\ntutorialStep:none\n")
-    env=dict(os.environ,UQ_PACKAGED_JAIL_SMOKE="1",UQ_TEST_JOIN_FROM_TITLE="1",UQ_JAIL_JAR=str(server/"mods"/jail.name),
+    env=dict(os.environ,INDEPENDENT_PHASE="seed",UQ_PACKAGED_JAIL_SMOKE="1",UQ_TEST_JOIN_FROM_TITLE="1",UQ_JAIL_JAR=str(server/"mods"/jail.name),
              UQ_BUNDLE_JAR=str(server/"mods/Unyielding-1.2.0.jar"),UQ_JAIL_SHA256=sha(jail),
              UQ_BUNDLE_SHA256=sha(server/"mods/Unyielding-1.2.0.jar"),LIBGL_ALWAYS_SOFTWARE="true",ALSOFT_DRIVERS="null",
              JAVA_TOOL_OPTIONS="-Duq.integratedJail=true -Duq.certifiedJail=true -Duq.playerOnly=true -Duq.playerOnlyPhase=1 -Duq.certifiedPhase=1")
@@ -60,7 +97,7 @@ def main():
     done=server/"independent-loss.txt"
     with (res/"server.log").open("w") as so,(res/"client.log").open("w") as co:
         try:
-            srv=subprocess.Popen(["java","-Xms512m","-Xmx3G","-Dneoforge.readTimeout=180","@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt","nogui"],cwd=server,env=env,stdin=subprocess.PIPE,stdout=so,stderr=subprocess.STDOUT,start_new_session=True,text=True)
+            srv=subprocess.Popen(server_command(),cwd=server,env=env,stdin=subprocess.PIPE,stdout=so,stderr=subprocess.STDOUT,start_new_session=True,text=True)
             deadline=time.monotonic()+840
             while time.monotonic()<deadline and "Done (" not in tail(res/"server.log"):
                 if srv.poll() is not None: raise RuntimeError("Server exited at startup")
@@ -87,7 +124,7 @@ def main():
             srv.stdin.write("stop\n")
             srv.stdin.flush()
             assert srv.wait(timeout=100)==0 and "All dimensions are saved" in (res/"server.log").read_text(errors="replace")
-            shutil.copyfile(done,res/"CUSTODY.txt")
+            shutil.copyfile(done,res/"SEED.txt")
             print(done.read_text(),flush=True)
         finally:
             stop(cli)
@@ -100,6 +137,21 @@ def main():
             for kind,game in (("client",client),("server",server)):
                 log=game/"logs/latest.log"
                 if log.is_file(): shutil.copy2(log,res/(kind+"-latest.log"))
+    for game in (server,client):
+        old=game/"mods"/storage.name
+        new=game/"mods"/release.name
+        assert sha(old)==sha(storage) and not new.exists()
+        shutil.copy2(release,new)
+        assert sha(new)==final_sha
+        old.unlink()
+    env["STORAGE_SHA"]=final_sha
+    receipts=[resume(server,res,env,phase) for phase in ("restore","replay")]
+    (res/"CUSTODY.txt").write_text(
+        f"Certified admission Storage SHA256 {sha(storage)}\n"
+        f"Occupied-world recovery and replay Storage SHA256 {final_sha}\n"
+        f"Unchanged Jail SHA256 {sha(jail)}\n"
+        f"Unchanged companion SHA256 {env['UQ_BUNDLE_SHA256']}\n"
+        +done.read_text()+"".join(receipts))
 
 if __name__=="__main__":
     main()

@@ -26,6 +26,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -39,7 +40,7 @@ final class IndependentLoss {
     static boolean complete;
     static final Path result = Path.of("independent-loss.txt");
 
-    private static void note(String line) throws java.io.IOException {
+    static void note(String line) throws java.io.IOException {
         Files.writeString(PlayerOnlySmoke.results.resolve("independent-progress.txt"), line + "\n",
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         System.out.println("[Independent backpack check] " + line);
@@ -74,16 +75,7 @@ final class IndependentLoss {
         var level=server.overworld();
         var profile=new GameProfile(UUID.fromString("16347c63-c7bb-4c31-bdbe-81c6d706d578"),"OtherBagOwner");
         var messages=new ArrayList<String>();
-        var connection=new Connection(PacketFlow.SERVERBOUND) {
-            @Override public boolean isMemoryConnection() { return true; }
-            @Override public void send(Packet<?> packet,PacketSendListener listener,boolean flush) {
-                if(packet instanceof ClientboundSystemChatPacket chat) messages.add(chat.content().getString());
-            }
-        };
-        var second=new ServerPlayer(server,level,profile,ClientInformation.createDefault());
-        new EmbeddedChannel(connection);
-        NetworkRegistry.configureMockConnection(connection);
-        server.getPlayerList().placeNewPlayer(connection,second,CommonListenerCookie.createInitial(profile,false));
+        var second=connect(server,profile,messages);
         second.setGameMode(GameType.SURVIVAL);
         require(!second.hasPermissions(2),"Second player unexpectedly has operator permission");
         require(dev.unyielding.jail.JailIntegrated.activeTransaction(server,second.getUUID())==null,"Other owner is in custody");
@@ -125,6 +117,10 @@ final class IndependentLoss {
         note("Second owner exact copies while first is held: "+heldCount);
         require(heldCount<=1 && count(visitor,id,exact)==0,"Wrong owner or duplicate during custody");
         CombinedStorageProof.held(visitor);
+        if (OccupiedRestart.seed(visitor,second,exact,restore,heldCount)) {
+            complete=true;
+            return;
+        }
         require(PlayerOnlySmoke.cmd("unjail Visitor")==1,"Normal release of original owner failed");
         CombinedStorageProof.returned(visitor);
         note("The first owner's original returned unchanged to slot 12 once.");
@@ -146,11 +142,25 @@ final class IndependentLoss {
         complete=true;
     }
 
-    private static boolean sameId(ItemStack item,UUID id) {
+    static ServerPlayer connect(MinecraftServer server,GameProfile profile,List<String> messages) {
+        var connection=new Connection(PacketFlow.SERVERBOUND) {
+            @Override public boolean isMemoryConnection() { return true; }
+            @Override public void send(Packet<?> packet,PacketSendListener listener,boolean flush) {
+                if(packet instanceof ClientboundSystemChatPacket chat) messages.add(chat.content().getString());
+            }
+        };
+        var player=new ServerPlayer(server,server.overworld(),profile,ClientInformation.createDefault());
+        new EmbeddedChannel(connection);
+        NetworkRegistry.configureMockConnection(connection);
+        server.getPlayerList().placeNewPlayer(connection,player,CommonListenerCookie.createInitial(profile,false));
+        return player;
+    }
+
+    static boolean sameId(ItemStack item,UUID id) {
         var data=BagInventory.data(item);
         return data.hasUUID("BagId") && id.equals(data.getUUID("BagId"));
     }
-    private static int count(ServerPlayer player,UUID id,ItemStack exact) {
+    static int count(ServerPlayer player,UUID id,ItemStack exact) {
         int n=0;
         for(var src:BackpackAccess.all(player)) if(sameId(src.stack(),id)) {
             require(ItemStack.matches(src.stack(),exact),"Bag with matching identity changed");
