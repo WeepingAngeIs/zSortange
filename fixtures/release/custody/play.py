@@ -1,5 +1,6 @@
 """Admit on the certified pair, upgrade only Storage offline, and recover an independent bag."""
 import hashlib
+import json
 import os
 import shutil
 import signal
@@ -81,6 +82,28 @@ def describe_fixture_files(world,res):
                 fields=sorted(shape(tomllib.load(content)))
             (res/("claim-schema-"+path.stem+".txt")).write_text("\n".join(fields)+"\n")
     (res/"generated-storage-filenames.txt").write_text("\n".join(sorted(folders))+"\n")
+    types={}
+    for base in ("curanks","cobbledollarsplayerdata"):
+        for path in (world/base).glob("*.json"):
+            for entry in shape(json.loads(path.read_text())):
+                key=entry.split(".",1)[-1] if base=="curanks" else entry
+                types.setdefault(base,set()).add(key)
+    for path in (world/"cobblemonraiddens").glob("bosses.bin.*"):
+        if path.stat().st_size>16<<20: continue
+        decoder=json.JSONDecoder()
+        text=path.read_text()
+        index=0
+        forms=set()
+        count=0
+        while index<len(text) and count<16384:
+            if text[index].isspace():
+                index+=1
+                continue
+            boss,index=decoder.raw_decode(text,index)
+            forms.add(",".join(sorted(boss)))
+            count+=1
+        types[path.name+" root options ("+str(count)+" templates)"]=forms
+    (res/"generated-metadata-shapes.json").write_text(json.dumps({k:sorted(v) for k,v in types.items()},indent=2))
 
 def main():
     assert os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_ACTIONS")=="true"

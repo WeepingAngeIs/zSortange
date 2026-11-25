@@ -69,7 +69,10 @@ final class OccupiedRestart {
         String cmd=ids.get(2);
         server.getPlayerList().op(other.getGameProfile());
         try {
-            if (!replay) rejectUnknownClaimOption(server, id, exact, cmd);
+            if (!replay) {
+                rejectUnknownClaimOption(server, id, exact, cmd);
+                rejectInactiveRaidCache(server, id, exact, cmd);
+            }
             messages.clear();
             require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Restore command unavailable");
             IndependentLoss.note(phase+" operator response "+messages);
@@ -119,5 +122,19 @@ final class OccupiedRestart {
         } finally {
             Files.delete(control);
         }
+    }
+
+    private static void rejectInactiveRaidCache(MinecraftServer server,UUID id,ItemStack exact,String cmd) throws Exception {
+        var folder=server.getWorldPath(LevelResource.ROOT).resolve("cobblemonraiddens");
+        var control=folder.resolve("bosses.bin.987654321");
+        Files.writeString(control,"{\"pokemon\":\"pikachu\"}",java.nio.file.StandardOpenOption.CREATE_NEW);
+        try {
+            messages.clear();
+            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Could not exercise the inactive cache");
+            require(IndependentLoss.count(other,id,exact)==0,"An unowned raid file cleared the lost bag");
+            require(messages.stream().anyMatch(message->message.toLowerCase(java.util.Locale.ROOT).contains("raid")),
+                    "Inactive cache did not report a refusal: "+messages);
+            IndependentLoss.note("An inactive raid generation paused the return without consuming it.");
+        } finally { Files.delete(control); }
     }
 }

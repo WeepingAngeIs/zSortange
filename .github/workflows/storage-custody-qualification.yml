@@ -20,7 +20,7 @@ jobs:
       STORAGE_SHA: afd62612c2f09c6bf156831b0e798da58ef0fd1632297dc936ea69e11b66e91e
       COMBINED_STORAGE_JAR: ${{ github.workspace }}/storage-input/anya-storage-plus-0.3.0-beta.7-roommedia.1.jar
       FROZEN_RELEASE_JAR: ${{ github.workspace }}/release-input/anya-storage-plus-0.3.0-beta.8.jar
-      FROZEN_RELEASE_SHA: f9d7cbdf331602ef8c8d9bbd66f0186f9d10f0d85f913bee5f2a1bc4ab183c8e
+      FROZEN_RELEASE_SHA: 11e9ecd10fb4efcf1ba31d35942ffde05c09103ae7ddf110dc7894dee74fcfe9
       CUSTODY_JAR: ${{ github.workspace }}/jail-input/candidate/dist/migration-build/Minecraft-Jail-1.3.0-beta.4-test.1.jar
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with: {name: anya-storage-plus-roommedia.1, run-id: 45230324007, github-token: '${{ github.token }}', path: storage-input}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with: {name: anya-storage-plus-beta8-candidate, run-id: 45536259592, github-token: '${{ github.token }}', path: release-input}
+        with: {name: anya-storage-plus-beta8-candidate, run-id: 45540037770, github-token: '${{ github.token }}', path: release-input}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: combined-pack-evidence-6cdcc0c64aeefdd1a00ecbd44311413759c5cf3f
@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           printf '%s  %s\n' "$STORAGE_SHA" "$COMBINED_STORAGE_JAR" | sha256sum -c -
           printf '%s  %s\n' "$FROZEN_RELEASE_SHA" "$FROZEN_RELEASE_JAR" | sha256sum -c -
-          test "$(cat release-input/SOURCE_COMMIT.txt)" = "ce69763f7a04e3c7b0705099b3fb9c1ccfe5df15"
+          test "$(cat release-input/SOURCE_COMMIT.txt)" = "f4a3a17e0bbfff845df699354d9bc4983b80eee6"
           printf '%s  %s\n' 6907d0bd9c2dd4b678cb9f6a241a3a58e1a23b6df35a0b9f0afac2defd80c47f "$CUSTODY_JAR" | sha256sum -c -
           printf '%s  %s\n' 61f6add6c68364b1c9dda4486948faf8d104c45ca2db2c40199de64a04ea38f7 baseline/dist/production-candidate/Unyielding-1.2.0.jar | sha256sum -c -
           mkdir -p dist/120-release minecraft-jail/build/libs
