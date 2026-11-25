@@ -107,7 +107,8 @@ def audit(before, target):
         assert classes and all(nested[n]==vendor[n] for n in classes)
         origins.append(dict(source=url,sha256=digest,identical_classes=len(classes)))
     assert b'Main-Class: dev.anya.codec.ScreenCodec' in nested['META-INF/MANIFEST.MF']
-    assert b'The Guava Authors' in nested['META-INF/ScreenDecoder-NOTICES.txt']
+    notice = b' '.join(nested['META-INF/ScreenDecoder-NOTICES.txt'].split())
+    assert b'copyright (C) 2007 The Guava Authors' in notice
     assert b'Apache License' in nested['META-INF/JAAD-APACHE-2.0.txt'] and b'JCodecProject' in nested['META-INF/JCodec-LICENSE.txt']
     return dict(raw_sha256=sha(target), bytes=len(target),outer_entries=len(top),
         outer_types=dict(sorted(outer_types.items())),changed_outer_members=changes,
