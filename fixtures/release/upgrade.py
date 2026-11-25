@@ -10,8 +10,9 @@ NEW = "afd62612c2f09c6bf156831b0e798da58ef0fd1632297dc936ea69e11b66e91e"
 
 def main():
     assert os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted"
-    old, target = [Path(arg).resolve(strict=True) for arg in sys.argv[1:]]
-    assert [hashlib.sha256(p.read_bytes()).hexdigest() for p in (old, target)] == [OLD, NEW]
+    old, target = [Path(arg).resolve(strict=True) for arg in sys.argv[1:3]]
+    frozen = NEW if len(sys.argv) == 3 else sys.argv[3]
+    assert len(frozen)==64 and [hashlib.sha256(p.read_bytes()).hexdigest() for p in (old, target)] == [OLD, frozen]
     root = Path(__file__).resolve().parents[2]
     base = root / "build/release-check"
     game = base / "game"
@@ -25,7 +26,7 @@ def main():
     legacy, current = (base / "launch.txt").read_text().splitlines()
     receipts = []
     pids = set()
-    for phase, script, sha in (("seed",legacy,OLD),("upgrade",current,NEW),("restart",current,NEW)):
+    for phase, script, sha in (("seed",legacy,OLD),("upgrade",current,frozen),("restart",current,frozen)):
         log = base / (phase + ".log")
         with log.open("x") as writer:
             run = subprocess.run(["bash",script],cwd=game,env=dict(os.environ,STORAGE_UPGRADE_PHASE=phase,

@@ -13,7 +13,7 @@ permissions:
   actions: read
 jobs:
   survival-upgrade:
-    if: github.event.repository.private == false
+    if: github.event.repository.private == false && !contains(github.event.head_commit.message, '[beta8-qualify]')
     runs-on: ubuntu-24.04
     timeout-minutes: 32
     steps:

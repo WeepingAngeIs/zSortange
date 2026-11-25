@@ -1,0 +1,97 @@
+name: Anya Storage Plus beta 8 package and gameplay qualification
+on:
+  push:
+    branches: [qualify/storage-release-1]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    if: github.event.repository.private == false && contains(github.event.head_commit.message, '[beta8-qualify]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: anya-storage-plus-roommedia.1
+          run-id: 45230324007
+          github-token: ${{ github.token }}
+          path: before
+      - name: Package once and audit every member against the frozen predecessor
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --console=plain --max-workers=2 jar
+          mkdir frozen
+          cp build/libs/anya-storage-plus-0.3.0-beta.8.jar frozen/
+          python3 fixtures/release/audit.py before/anya-storage-plus-0.3.0-beta.7-roommedia.1.jar frozen/*.jar frozen/PACKAGE.json
+          git rev-parse HEAD > frozen/SOURCE_COMMIT.txt
+          (cd frozen && sha256sum *.jar >SHA256SUMS.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: anya-storage-plus-beta8-candidate
+          if-no-files-found: error
+          path: frozen/
+          retention-days: 14
+  gameplay:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        trial: [upgrade-and-history, display, shared-display]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: anya-storage-plus-beta8-candidate, path: upload}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: matrix.trial == 'upgrade-and-history'
+        with:
+          name: wall-night-candidate
+          run-id: 45093912101
+          github-token: ${{ github.token }}
+          path: legacy
+      - name: Run the selected fixture with the frozen release binary
+        env:
+          TRIAL: ${{ matrix.trial }}
+        run: |
+          set -euo pipefail
+          (cd upload && sha256sum -c SHA256SUMS.txt)
+          jar="$PWD/upload/anya-storage-plus-0.3.0-beta.8.jar"
+          if [[ $TRIAL == upgrade-and-history ]]; then
+            python3 -Bu fixtures/release/upgrade.py "$(find legacy -name 'anya-storage-plus-*-wallnight.2.jar')" "$jar" "$(cut -d' ' -f1 upload/SHA256SUMS.txt)"
+            python3 -Bu fixtures/backpack-history/run.py "$jar"
+          else
+            if ! command -v parec || ! command -v pulseaudio || ! command -v xvfb-run; then
+              sudo apt-get -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/ubuntu.sources -o Dir::Etc::sourceparts=- -o Acquire::Retries=1 update -qq
+              sudo apt-get install -y --no-install-recommends xvfb pulseaudio pulseaudio-utils libgl1-mesa-dri libopenal1
+            fi
+            python3 -c 'import numpy,PIL' || python3 -m pip install --disable-pip-version-check numpy Pillow
+            if [[ $TRIAL == display ]]; then python3 -Bu fixtures/display-media/run.py "$jar"; else python3 -Bu fixtures/display-media/run_room.py "$jar"; fi
+          fi
+          (cd upload && sha256sum -c SHA256SUMS.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: beta8-${{ matrix.trial }}-evidence
+          retention-days: 14
+          path: |
+            build/release-check/UPGRADE.txt
+            build/release-check/*.log
+            build/bag-history/CHECKS.txt
+            build/bag-history/*.console.log
+            build/display-media/proof/
+            build/display-media/*.log
+            build/display-room/proof/
+            build/display-room/*.log

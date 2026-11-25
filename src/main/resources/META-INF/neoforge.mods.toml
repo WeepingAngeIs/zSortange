@@ -8,9 +8,9 @@ config="anyastorage.history.mixins.json"
 [[mods]]
 modId="anyastorage"
 version="${mod_version}"
-displayName="anya's strorage plus"
+displayName="Anya Storage Plus"
 authors="anya"
-description='''Experimental configurable backpacks, physical storage networks and QuickStack. Back up worlds before beta testing.'''
+description='''Carry an upgradeable backpack, connect nearby chests to a tablet, or build a private Skygrid storage room. Includes per-player sharing controls and operator backpack recovery.'''
 [[dependencies.anyastorage]]
 modId="neoforge"
 type="required"

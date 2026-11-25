@@ -27,10 +27,11 @@ def screenCodecJar = tasks.register('screenCodecJar', Jar) {
     manifest { attributes('Main-Class': 'dev.anya.codec.ScreenCodec') }
     from sourceSets.screenCodec.output
     from({ pinnedScreenDecoder(configurations.screenCodecRuntimeClasspath,'890329dad124e8b739c1d6602a59a53c8a474daddff265c2561e21c498496c81') }) {
-        exclude 'net/sourceforge/jaad/**'
+        exclude 'net/sourceforge/jaad/**', 'org/jcodec/testing/**'
     }
     from({ pinnedScreenDecoder(configurations.screenAudioDecoder,'22f9fba52e328bdda2bb01935c5c32fa0625d31fd557b909b5d138b188c8afca') }) {
-        include 'net/sourceforge/jaad/**'
+        // JCodec handles the MP4 container. Package only the separate AAC decoder and its utilities.
+        include 'net/sourceforge/jaad/SampleBuffer.class', 'net/sourceforge/jaad/aac/**', 'net/sourceforge/jaad/util/**'
     }
     exclude 'META-INF/MANIFEST.MF'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
