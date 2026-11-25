@@ -502,6 +502,14 @@ public final class HistoryReview {
             exact(owner, "voidfall", 0);
             require(row("voidfall") != null, "Unknown recipe-book contents consumed the recovery claim");
             net.minecraft.nbt.NbtIo.writeCompressed(book,backup);
+            var claims = Files.createDirectories(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .resolve("data/openpartiesandclaims/player-configs")).resolve(owner.player.getUUID()+".toml");
+            Files.writeString(claims,"[playerConfig]\nversion = 18\n");
+            command(op, restoreCommand("voidfall", oracle.getUUID("voidfall-loss")));
+            exact(owner, "voidfall", 0);
+            require(row("voidfall") != null, "Claim settings with no installed provider consumed the recovery");
+            Files.delete(claims);
+            evidence.add("PASS Per-player claim settings with no authoritative options provider paused recovery and preserved the loss.");
             RosecourtReview.visibilityControls(owner.player,original("damage"));
             command(op, restoreCommand("voidfall", oracle.getUUID("voidfall-loss")));
             exact(owner, "voidfall", 1);

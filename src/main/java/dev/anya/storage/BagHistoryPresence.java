@@ -42,6 +42,8 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     private static final Path POCKET_INDEX = Path.of("anya_storage", "pockets.v1.dat");
     private final Set<Path> externalFiles = new HashSet<>(), referenced = new HashSet<>();
     private final Path root;
+    private final MinecraftServer server;
+    private ClaimsPlayerSettings claimsSettings;
     private final UUID bag;
     private final long started = System.nanoTime();
     private final RosecourtCustody custody;
@@ -55,6 +57,7 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     private BagHistoryPresence(MinecraftServer server, Path root, UUID bag) {
         this.root = root;
         this.bag = bag;
+        this.server = server;
         custody = new RosecourtCustody(server, root, bag, started + TimeUnit.SECONDS.toNanos(5));
     }
 
@@ -186,6 +189,10 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
             return FileVisitResult.CONTINUE;
         if (custody.collect(rel, attrs)) {
             chargePacked(attrs.size());
+        } else if (ClaimsPlayerSettings.recognizes(rel)) {
+            chargePacked(attrs.size());
+            if (claimsSettings == null) claimsSettings = new ClaimsPlayerSettings(server);
+            claimsSettings.verify(path, attrs.size());
         } else if (CobblemonPlayerData.recognizes(rel)) {
             chargePacked(attrs.size());
             CobblemonPlayerData.verify(path, rel, started + TimeUnit.SECONDS.toNanos(5));
