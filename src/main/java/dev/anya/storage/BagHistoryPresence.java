@@ -179,6 +179,7 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
         String name = path.getFileName().toString();
         boolean cobblemonBackup = CobblemonPlayerData.nbtFallback(rel);
         boolean recipeBook = rel.getNameCount() == 2 && rel.startsWith("recipe_books") && RECIPE_BOOK.matcher(name).matches();
+        var packMetadata = PackWorldMetadata.kind(rel);
         if (rel.equals(POCKET_INDEX) || rel.equals(Path.of("level.dat_old"))
                 || rel.getNameCount() == 2 && rel.startsWith("playerdata") && name.endsWith(".dat_old")
                 || rel.equals(Path.of("session.lock")) || rel.equals(Path.of("serverconfig", "readme.txt"))
@@ -193,6 +194,9 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
             chargePacked(attrs.size());
             if (claimsSettings == null) claimsSettings = new ClaimsPlayerSettings(server);
             claimsSettings.verify(path, attrs.size());
+        } else if (packMetadata != null) {
+            chargePacked(attrs.size());
+            PackWorldMetadata.verify(packMetadata, path, attrs.size(), started + TimeUnit.SECONDS.toNanos(5));
         } else if (CobblemonPlayerData.recognizes(rel)) {
             chargePacked(attrs.size());
             CobblemonPlayerData.verify(path, rel, started + TimeUnit.SECONDS.toNanos(5));

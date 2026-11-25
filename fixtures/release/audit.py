@@ -58,8 +58,11 @@ def audit(before, target):
                 "dev/anya/storage/RosecourtInventory.class"]
     auxiliary = {"dev/anya/storage/BagHistoryPresence$" + name + ".class"
                  for name in ("1", "LiveStacks", "Present")}
-    added = {"dev/anya/storage/ClaimsPlayerSettings.class"}
-    assert top.keys() - old.keys() == added and not (old.keys() - top.keys())
+    added = {"dev/anya/storage/" + name + ".class" for name in
+             ("ClaimsPlayerSettings", "PackWorldMetadata", "PackWorldMetadata$Kind", "RaidDefinitionCache")}
+    synthetic = {"dev/anya/storage/PackWorldMetadata$1.class", "dev/anya/storage/RaidDefinitionCache$1.class"}
+    assert added <= top.keys() - old.keys() <= added | synthetic and not (old.keys() - top.keys())
+    auxiliary |= synthetic
     assert set(expected) | added <= set(changes) <= set(expected) | added | auxiliary, (
         "unreviewed outer changes", changes[:35])
     outer_types=collections.Counter()
