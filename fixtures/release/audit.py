@@ -54,7 +54,12 @@ def audit(before, target):
     old=jar(before); top=jar(target)
     assert sha(before)=="afd62612c2f09c6bf156831b0e798da58ef0fd1632297dc936ea69e11b66e91e"
     changes=sorted(k for k in set(old)|set(top) if old.get(k)!=top.get(k))
-    assert changes==sorted([META,DECODER]),("unreviewed outer changes",changes[:35])
+    expected = [META, DECODER, "dev/anya/storage/BagHistoryPresence.class",
+                "dev/anya/storage/RosecourtInventory.class"]
+    auxiliary = {"dev/anya/storage/BagHistoryPresence$" + name + ".class"
+                 for name in ("1", "LiveStacks", "Present")}
+    assert old.keys() == top.keys() and set(expected) <= set(changes) <= set(expected) | auxiliary, (
+        "unreviewed outer changes", changes[:35])
     outer_types=collections.Counter()
     for name,data in top.items():
         suffix=PurePosixPath(name).suffix

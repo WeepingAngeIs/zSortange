@@ -15,6 +15,7 @@ import net.minecraft.nbt.CollectionTag;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.chunk.storage.RegionFileVersion;
@@ -35,6 +36,8 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     private static final long MAX_REGION = 512L << 20;
     private static final int MAX_PATHS = 65_536;
     private static final Pattern REGION = Pattern.compile("r\\.(-?[0-9]+)\\.(-?[0-9]+)\\.mca");
+    private static final Pattern RECIPE_BOOK = Pattern.compile(
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.dat(?:_old)?");
     private static final Path JOURNAL = Path.of("anya_storage", "backpack_history");
     private static final Path POCKET_INDEX = Path.of("anya_storage", "pockets.v1.dat");
     private final Set<Path> externalFiles = new HashSet<>(), referenced = new HashSet<>();
@@ -172,6 +175,7 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
         Path rel = root.relativize(path);
         String name = path.getFileName().toString();
         boolean cobblemonBackup = CobblemonPlayerData.nbtFallback(rel);
+        boolean recipeBook = rel.getNameCount() == 2 && rel.startsWith("recipe_books") && RECIPE_BOOK.matcher(name).matches();
         if (rel.equals(POCKET_INDEX) || rel.equals(Path.of("level.dat_old"))
                 || rel.getNameCount() == 2 && rel.startsWith("playerdata") && name.endsWith(".dat_old")
                 || rel.equals(Path.of("session.lock")) || rel.equals(Path.of("serverconfig", "readme.txt"))
@@ -189,14 +193,17 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
             region(path);
         } else if (name.endsWith(".mcc")) {
             externalFiles.add(path);
-        } else if (name.endsWith(".dat") || name.endsWith(".nbt") || cobblemonBackup) {
+        } else if (name.endsWith(".dat") || name.endsWith(".nbt") || cobblemonBackup || recipeBook) {
             chargePacked(attrs.size());
             readingJailSettings = rel.equals(Path.of("data", "unyielding_jail.dat"));
             try (var input = new BufferedInputStream(Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS))) {
                 input.mark(2);
                 int a = input.read(), b = input.read();
                 input.reset();
-                if (a == 0x1f && b == 0x8b) inspect(new GZIPInputStream(input));
+                if (recipeBook) {
+                    if (a != 0x1f || b != 0x8b) throw invalidRecipeBook();
+                    inspect(new GZIPInputStream(input), true);
+                } else if (a == 0x1f && b == 0x8b) inspect(new GZIPInputStream(input));
                 else if ((a & 15) == 8 && b >= 0 && ((a << 8) + b) % 31 == 0) inspect(new InflaterInputStream(input));
                 else inspect(input);
             } catch (Present present) {
@@ -288,6 +295,10 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
     }
 
     private void inspect(InputStream decoded) throws IOException {
+        inspect(decoded, false);
+    }
+
+    private void inspect(InputStream decoded, boolean recipeBook) throws IOException {
         // Charge skipped arrays as well as visited bytes. This bounds highly compressed chunks.
         try (var in = new DataInputStream(new BufferedInputStream(new FilterInputStream(decoded) {
             int recordBytes;
@@ -304,9 +315,38 @@ final class BagHistoryPresence extends SimpleFileVisitor<Path> {
         }))) {
             if (in.readUnsignedByte() != 10) throw new IOException("Unsupported saved NBT root.");
             in.readUTF();
-            value(in, 10, 0);
+            if (recipeBook) readRecipeBook(in);
+            else value(in, 10, 0);
             if (in.read() != -1) throw new IOException("Extra data after a saved NBT record.");
         }
+    }
+
+    /** ORB saves ServerRecipeBook.toNbt() and can fall back to the previous file. Both must be readable. */
+    private void readRecipeBook(DataInputStream in) throws IOException {
+        var keys = new HashSet<String>();
+        for (int type; (type = in.readUnsignedByte()) != 0;) {
+            String key = in.readUTF();
+            if (key.length() > 128 || !keys.add(key) || keys.size() > 128) throw invalidRecipeBook();
+            if (key.equals("recipes") || key.equals("toBeDisplayed")) {
+                if (type != Tag.TAG_LIST) throw invalidRecipeBook();
+                int member = in.readUnsignedByte(), size = length(in);
+                if (size > 131072 || member != Tag.TAG_STRING && !(size == 0 && member == Tag.TAG_END))
+                    throw invalidRecipeBook();
+                for (int i = 0; i < size; i++) {
+                    if ((i & 255) == 0) checkTime();
+                    String recipe = in.readUTF();
+                    if (recipe.length() > 512 || recipe.indexOf(':') <= 0 || ResourceLocation.tryParse(recipe) == null)
+                        throw invalidRecipeBook();
+                }
+            } else {
+                if (type != Tag.TAG_BYTE || !key.startsWith("is") || in.readUnsignedByte() > 1) throw invalidRecipeBook();
+            }
+        }
+        if (!keys.contains("recipes") || !keys.contains("toBeDisplayed")) throw invalidRecipeBook();
+    }
+
+    private static IOException invalidRecipeBook() {
+        return new IOException("Unrecognized recipe-book storage. Backpack recovery is paused.");
     }
 
     private static int length(DataInputStream in) throws IOException {

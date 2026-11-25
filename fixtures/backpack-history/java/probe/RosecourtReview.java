@@ -59,6 +59,53 @@ final class RosecourtReview {
         NbtIo.write(nbt, new DataOutputStream(out));
         return out.toByteArray();
     }
+    static void visibilityControls(ServerPlayer player, ItemStack bag) throws Exception {
+        var group = new CompoundTag();
+        group.putByteArray("render_options", new byte[]{0,1});
+        var items = new ListTag();
+        group.put("items",items);
+        group.put("cosmetics",new ListTag());
+        var groups = new CompoundTag();
+        groups.put("hand",group);
+        var holder = new CompoundTag();
+        holder.put("accessories_containers",groups);
+        var vanilla = new CompoundTag();
+        vanilla.putInt("version",1);
+        vanilla.putInt("vanillaSlots",41);
+        vanilla.put("items",new ListTag());
+        var record = new CompoundTag();
+        record.putInt("version",2);
+        record.putString("dependencies",PROVIDERS);
+        record.putString("policy","native-default-equipment-v1");
+        record.putString("runtime","0".repeat(64));
+        record.putInt("selected",0);
+        record.putByteArray("vanilla",encode(vanilla));
+        record.put("holder",holder);
+        var inspect = Class.forName("dev.anya.storage.RosecourtInventory")
+                .getDeclaredMethod("contains",UUID.class,byte[].class,long.class);
+        inspect.setAccessible(true);
+        UUID id=dev.anya.storage.BagInventory.data(bag).getUUID("BagId");
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        check(Boolean.FALSE.equals(inspect.invoke(null,id,encode(record),deadline)), "Visibility flags blocked an empty holder");
+        var stack=(CompoundTag)bag.save(player.registryAccess());
+        stack.putInt("Slot",0);
+        items.add(stack);
+        check(Boolean.TRUE.equals(inspect.invoke(null,id,encode(record),deadline)), "Bag hidden by slot visibility flag");
+        group.putByteArray("render_options",new byte[]{0,2});
+        rejectOpaque(inspect,id,record,deadline);
+        group.putByteArray("render_options",new byte[]{0,1});
+        stack.getCompound("components").putByteArray("render_options",new byte[]{0,1});
+        rejectOpaque(inspect,id,record,deadline);
+    }
+
+    private static void rejectOpaque(java.lang.reflect.Method inspect, UUID id, CompoundTag record, long deadline) throws Exception {
+        try {
+            inspect.invoke(null,id,encode(record),deadline);
+            throw new IllegalStateException("Unverified accessory data was accepted");
+        } catch (java.lang.reflect.InvocationTargetException error) {
+            if (!(error.getCause() instanceof IOException)) throw error;
+        }
+    }
     private static CompoundTag decode(byte[] nbt) throws IOException {
         return NbtIo.read(new DataInputStream(new ByteArrayInputStream(nbt)), NbtAccounter.create(8L << 20));
     }

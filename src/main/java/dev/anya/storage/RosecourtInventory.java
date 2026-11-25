@@ -86,6 +86,24 @@ final class RosecourtInventory {
             var group = groups.getCompound(name);
             rows(group, "items", false);
             rows(group, "cosmetics", false);
+            var display = group.get("render_options");
+            if (display instanceof ByteArrayTag flags) {
+                // Accessories stores one visibility switch per slot on the container itself.
+                require(flags.size() <= 2048);
+                for (byte flag : flags.getAsByteArray()) require(flag == 0 || flag == 1);
+                visitCompound(group, 1, "render_options");
+            } else {
+                if (display != null) {
+                    require(display instanceof ListTag);
+                    var switches = (ListTag) display;
+                    require(switches.size() <= 2048 && (switches.isEmpty() || switches.getElementType() == Tag.TAG_BYTE));
+                    for (Tag value : switches) {
+                        byte flag = ((net.minecraft.nbt.ByteTag) value).getAsByte();
+                        require(flag == 0 || flag == 1);
+                    }
+                }
+                visit(group, 1);
+            }
         }
         if (root.contains("backpack_records")) {
             require(root.contains("backpack_records", Tag.TAG_COMPOUND));
@@ -101,7 +119,7 @@ final class RosecourtInventory {
         }
         // Includes native provider contents and accessory stacks, even below a vanilla container component.
         for (String key : root.getAllKeys()) {
-            if (!key.equals("vanilla")) visit(root.get(key), 0); // already decoded and inspected above
+            if (!key.equals("vanilla") && !key.equals("holder")) visit(root.get(key), 0);
         }
     }
 
@@ -125,16 +143,22 @@ final class RosecourtInventory {
         if (depth > 256 || ++nodes > 1_000_000) throw invalid();
         if ((nodes & 255) == 0) time();
         if (tag instanceof CompoundTag compound) {
-            if (compound.contains("BagId")) {
-                require(compound.hasUUID("BagId"));
-                if (bag.equals(compound.getUUID("BagId"))) found = true;
-            }
-            for (String key : compound.getAllKeys()) visit(compound.get(key), depth + 1);
+            visitCompound(compound, depth, null);
         } else if (tag instanceof ListTag list) {
             for (Tag member : list) visit(member, depth + 1);
         } else if (tag instanceof ByteArrayTag bytes && bytes.size() > 0) {
             // Other packed data can conceal a provider inventory; its absence cannot be established.
             throw new IOException("Rosecourt holds an item with unrecognized packed data. Recovery is paused.");
+        }
+    }
+
+    private void visitCompound(CompoundTag compound, int depth, String verifiedKey) throws IOException {
+        if (compound.contains("BagId")) {
+            require(compound.hasUUID("BagId"));
+            if (bag.equals(compound.getUUID("BagId"))) found = true;
+        }
+        for (String key : compound.getAllKeys()) {
+            if (!key.equals(verifiedKey)) visit(compound.get(key), depth + 1);
         }
     }
 

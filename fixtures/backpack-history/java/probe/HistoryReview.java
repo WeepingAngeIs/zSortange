@@ -492,8 +492,20 @@ public final class HistoryReview {
             require(op.chat.stream().anyMatch(c -> containsLink(c, restoreCommand("damage", oracle.getUUID("damage-loss")))),
                     "Operator chat omitted the clickable recovery action");
             require(owner.chat.stream().noneMatch(c -> c.getString().contains("Fixture damage")), "Private history was broadcast");
+            var backup = Files.createDirectories(server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .resolve("recipe_books")).resolve(owner.player.getUUID()+".dat_old");
+            var book = owner.player.getRecipeBook().toNbt();
+            var extra = book.copy();
+            extra.putByteArray("unexpected_inventory", new byte[]{1,2,3});
+            net.minecraft.nbt.NbtIo.writeCompressed(extra,backup);
+            command(op, restoreCommand("voidfall", oracle.getUUID("voidfall-loss")));
+            exact(owner, "voidfall", 0);
+            require(row("voidfall") != null, "Unknown recipe-book contents consumed the recovery claim");
+            net.minecraft.nbt.NbtIo.writeCompressed(book,backup);
+            RosecourtReview.visibilityControls(owner.player,original("damage"));
             command(op, restoreCommand("voidfall", oracle.getUUID("voidfall-loss")));
             exact(owner, "voidfall", 1);
+            evidence.add("PASS Ordinary operator recovery read a native recipe-book backup. An added opaque field paused the return. Accessory slot switches did not hide a held bag, and opaque bytes in an item or an invalid switch still refused clearance.");
             var conflict = row("conflict");
             require(conflict != null && conflict.restorable(), "Live-presence check needs a real listed loss first");
             // Simulate a player's original reappearing after the operator already received a valid link.
