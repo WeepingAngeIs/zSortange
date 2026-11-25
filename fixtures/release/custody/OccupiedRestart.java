@@ -69,6 +69,7 @@ final class OccupiedRestart {
         String cmd=ids.get(2);
         server.getPlayerList().op(other.getGameProfile());
         try {
+            if (!replay) rejectUnknownClaimOption(server, id, exact, cmd);
             messages.clear();
             require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Restore command unavailable");
             IndependentLoss.note(phase+" operator response "+messages);
@@ -99,5 +100,24 @@ final class OccupiedRestart {
         IndependentLoss.note(receipt.strip());
         done=true;
         return true;
+    }
+
+    private static void rejectUnknownClaimOption(MinecraftServer server,UUID id,ItemStack exact,String cmd) throws Exception {
+        var folder=server.getWorldPath(LevelResource.ROOT).resolve("data/openpartiesandclaims/player-configs");
+        var fromProvider=folder.resolve(other.getUUID()+".toml");
+        require(Files.isRegularFile(fromProvider),"The installed claims mod did not save its player settings");
+        var control=folder.resolve("00000000-0000-4000-8000-000000000069.toml");
+        Files.writeString(control,Files.readString(fromProvider)+"\n[unreviewed]\nunknown_items = [\"private-test-marker\"]\n",
+                java.nio.file.StandardOpenOption.CREATE_NEW);
+        try {
+            messages.clear();
+            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Negative control could not reach recovery");
+            require(IndependentLoss.count(other,id,exact)==0,"Unknown claim options permitted a return");
+            require(messages.stream().anyMatch(message->message.contains("claim settings") || message.contains("Claims player settings")),
+                    "Unknown option did not produce a claim settings error: "+messages);
+            IndependentLoss.note("Unknown claim settings prevented a return and preserved the authentic loss record.");
+        } finally {
+            Files.delete(control);
+        }
     }
 }

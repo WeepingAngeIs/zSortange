@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import time
+import tomllib
 from pathlib import Path
 
 def sha(path):
@@ -58,6 +59,28 @@ def resume(server,res,env,phase):
     shutil.copy2(receipt,res/receipt.name)
     print(receipt.read_text(),flush=True)
     return receipt.read_text()
+
+def describe_fixture_files(world,res):
+    # This world was generated in this runner. Preserve names and TOML field types only.
+    assert world.name=="jail_certified_smoke" and not world.is_symlink()
+    def shape(table,prefix=""):
+        for key,value in table.items():
+            path=prefix+key
+            if isinstance(value,dict):
+                yield from shape(value,path+".")
+            else:
+                yield f"{path}: {type(value).__name__}"
+    folders=set()
+    for path in world.rglob("*"):
+        if not path.is_file(): continue
+        relative=path.relative_to(world)
+        if path.suffix in {".mca",".mcc"} or relative.parts[0] in {"stats","advancements","datapacks"}: continue
+        folders.add(str(relative))
+        if relative.parent==Path("data/openpartiesandclaims/player-configs") and path.suffix==".toml" and path.stat().st_size<=262144:
+            with path.open("rb") as content:
+                fields=sorted(shape(tomllib.load(content)))
+            (res/("claim-schema-"+path.stem+".txt")).write_text("\n".join(fields)+"\n")
+    (res/"generated-storage-filenames.txt").write_text("\n".join(sorted(folders))+"\n")
 
 def main():
     assert os.environ.get("RUNNER_ENVIRONMENT")=="github-hosted" and os.environ.get("GITHUB_ACTIONS")=="true"
@@ -145,7 +168,10 @@ def main():
         assert sha(new)==final_sha
         old.unlink()
     env["STORAGE_SHA"]=final_sha
-    receipts=[resume(server,res,env,phase) for phase in ("restore","replay")]
+    try:
+        receipts=[resume(server,res,env,phase) for phase in ("restore","replay")]
+    finally:
+        describe_fixture_files(server/"jail_certified_smoke",res)
     (res/"CUSTODY.txt").write_text(
         f"Certified admission Storage SHA256 {sha(storage)}\n"
         f"Occupied-world recovery and replay Storage SHA256 {final_sha}\n"
