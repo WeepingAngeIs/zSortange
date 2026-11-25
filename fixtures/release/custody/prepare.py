@@ -22,6 +22,24 @@ def main():
     marker='        snapshot(player,"held");'
     assert text.count(marker)==1
     full.write_text(text.replace(marker,marker+'\n        IndependentLoss.run(player);\n        if (IndependentLoss.complete) return;'))
+    # Comparison copies written by the test observer are not live world stores.
+    # Keep them in the observer's own output directory without changing the mod's scanner.
+    observer=root/".github/detention/PlayerOnlySmoke.java"
+    text=observer.read_text()
+    marker='return CertifiedJailSmoke.world.resolve("center-"'
+    assert text.count(marker)==1
+    observer.write_text(text.replace(marker,'return results.resolve("center-"'))
+    wallet=root/".github/packed-wallet/PackedWalletProof.java"
+    text=wallet.read_text()
+    marker='CertifiedJailSmoke.world.resolve("packed-wallet-expected.nbt")'
+    assert text.count(marker)==2
+    wallet.write_text(text.replace(marker,'PlayerOnlySmoke.results.resolve("packed-wallet-expected.nbt")'))
+    # Retain the same kernel memory limits and independent runner supervisor as the
+    # proven full-pack rehearsal. Substitute only the dedicated observation driver.
+    scope=(upstream/"game-scope.sh").read_text()
+    marker='driver=.github/native249/combined_run.py'
+    assert scope.count(marker)==1
+    (upstream/"independent-scope.sh").write_text(scope.replace(marker,'driver=storage-check/fixtures/release/custody/play.py'))
     assert hashlib.sha256(Path(os.environ["COMBINED_STORAGE_JAR"]).read_bytes()).hexdigest()==os.environ["STORAGE_SHA"]
 
 if __name__=="__main__":

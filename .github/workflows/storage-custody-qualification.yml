@@ -9,7 +9,8 @@ permissions:
   contents: read
   actions: read
 jobs:
-  real-admission:
+  pack-custody:
+    name: Published-pack admission and two distinct bag owners
     if: github.event.repository.private == false
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -57,7 +58,7 @@ jobs:
           python3 .github/scripts/fetch-build-dependencies.py
           python3 storage-check/fixtures/release/custody/prepare.py
           python3 .github/native249/combined_prepare.py
-      - name: Provision the pinned public pack and start the independent recovery check
+      - name: Prepare the full-pack runner memory and display
         run: |
           set -euo pipefail
           if ! command -v xvfb-run; then
@@ -66,13 +67,25 @@ jobs:
           fi
           python3 -m pip install --disable-pip-version-check minecraft-launcher-lib==8.0
           bash .github/client249/memory.sh
-          PACK249_INSTALL_ONLY=1 bash .github/pack249/server.sh
+      - name: Provision the published dedicated pack
+        timeout-minutes: 18
+        run: PACK249_INSTALL_ONLY=1 bash .github/pack249/server.sh
+      - name: Provision the published client
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
           python3 .github/pack249/provision.py --side client --dest "$RUNNER_TEMP/pack249-client-native"
           python3 .github/client249/launch.py "$RUNNER_TEMP/pack249-client-native" --install-only
-          python3 -u storage-check/fixtures/release/custody/play.py
+      - name: Run admission and independent recovery in the established capped game process
+        timeout-minutes: 30
+        run: bash .github/native249/independent-scope.sh 1 "$CUSTODY_JAR"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: storage-independent-custody-evidence
-          path: independent-evidence/
+          path: |
+            independent-evidence/
+            dist/packaged-smoke/full249-scope-logs/
+            dist/packaged-smoke/independent-progress.txt
+            dist/packaged-smoke/client249-phase1-status.txt
           retention-days: 14

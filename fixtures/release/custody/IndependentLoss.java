@@ -9,6 +9,7 @@ import dev.anya.storage.Content;
 import io.netty.channel.embedded.EmbeddedChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +20,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+import net.minecraft.nbt.ByteArrayTag;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ClientInformation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
@@ -34,8 +39,38 @@ final class IndependentLoss {
     static boolean complete;
     static final Path result = Path.of("independent-loss.txt");
 
+    private static void note(String line) throws java.io.IOException {
+        Files.writeString(PlayerOnlySmoke.results.resolve("independent-progress.txt"), line + "\n",
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        System.out.println("[Independent backpack check] " + line);
+    }
+
+    // Report only the key paths and shapes of this disposable observer's own synthetic gear.
+    private static void describeArrays(Tag tag, String prefix, int depth) throws java.io.IOException {
+        if (depth > 32) throw new java.io.IOException("Unexpected synthetic inventory depth");
+        if (tag instanceof ByteArrayTag bytes && bytes.size() > 0) {
+            boolean flags = true;
+            for (byte value : bytes.getAsByteArray()) flags &= value==0 || value==1;
+            note(prefix + " byte count=" + bytes.size() + " all flags=" + flags);
+        } else if (tag instanceof CompoundTag compound) {
+            for (String key : compound.getAllKeys())
+                describeArrays(compound.get(key),prefix+"/"+key,depth+1);
+        } else if (tag instanceof ListTag list) {
+            for (int i=0;i<list.size();i++) describeArrays(list.get(i),prefix+"["+i+"]",depth+1);
+        }
+    }
+
     static void run(ServerPlayer visitor) throws Exception {
         var server=visitor.server;
+        note("Real admission passed. The first owner's exact backpack is held.");
+        var tx=dev.unyielding.jail.JailIntegrated.activeTransaction(server,visitor.getUUID());
+        var items=CertifiedJailSmoke.world.resolve("integrated-jail-v1").resolve(tx.toString()).resolve("items");
+        try (var journal=new dev.unyielding.jail.JailEscrowJournal(items)) {
+            var body=OriginCustodyPort.decode(journal.read(tx).snapshot());
+            describeArrays(OriginCustodyPort.decode(body.getByteArray("vanilla")),"vanilla",0);
+            describeArrays(body.getCompound("holder"),"holder",0);
+            describeArrays(body.getCompound("backpack_records"),"backpack_records",0);
+        }
         var level=server.overworld();
         var profile=new GameProfile(UUID.fromString("16347c63-c7bb-4c31-bdbe-81c6d706d578"),"OtherBagOwner");
         var messages=new ArrayList<String>();
@@ -72,6 +107,7 @@ final class IndependentLoss {
         var drop=matches.getFirst();
         drop.setNeverPickUp();
         require(drop.hurt(drop.damageSources().cactus(),100) && drop.isRemoved(),"Witnessed loss failed");
+        note("Second owner suffered a witnessed loss. All eleven marked emeralds were in that backpack.");
         require(BackpackHistory.page(second,0).isEmpty(),"History disclosed to an ordinary player");
         server.getPlayerList().op(visitor.getGameProfile());
         String restore;
@@ -86,14 +122,17 @@ final class IndependentLoss {
             require(server.getCommands().getDispatcher().execute(restore,visitor.createCommandSourceStack())==1,"Operator command did not execute");
         } finally { server.getPlayerList().deop(visitor.getGameProfile()); }
         int heldCount=count(second,id,exact);
+        note("Second owner exact copies while first is held: "+heldCount);
         require(heldCount<=1 && count(visitor,id,exact)==0,"Wrong owner or duplicate during custody");
         CombinedStorageProof.held(visitor);
         require(PlayerOnlySmoke.cmd("unjail Visitor")==1,"Normal release of original owner failed");
         CombinedStorageProof.returned(visitor);
+        note("The first owner's original returned unchanged to slot 12 once.");
         server.getPlayerList().op(second.getGameProfile());
         try {
             messages.clear();
             require(server.getCommands().getDispatcher().execute(restore,second.createCommandSourceStack())==1,"Post-release recovery unavailable");
+            note("Second owner's post-release operator response: "+messages);
             require(count(second,id,exact)==1,"Second genuine loss did not return after release: "+messages);
             require(server.getCommands().getDispatcher().execute(restore,second.createCommandSourceStack())==1,"Could not replay old recovery link");
             require(count(second,id,exact)==1 && count(visitor,id,exact)==0,"Replay duplicated or misdirected second bag");

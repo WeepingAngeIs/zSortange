@@ -11,6 +11,12 @@ from pathlib import Path
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
+def tail(path):
+    if not path.is_file(): return ""
+    with path.open("rb") as data:
+        data.seek(max(0,path.stat().st_size-65536))
+        return data.read().decode(errors="replace")
+
 def stop(proc):
     if proc and proc.poll() is None:
         os.killpg(proc.pid,signal.SIGTERM)
@@ -56,16 +62,26 @@ def main():
         try:
             srv=subprocess.Popen(["java","-Xms512m","-Xmx3G","-Dneoforge.readTimeout=180","@libraries/net/neoforged/neoforge/21.1.249/unix_args.txt","nogui"],cwd=server,env=env,stdin=subprocess.PIPE,stdout=so,stderr=subprocess.STDOUT,start_new_session=True,text=True)
             deadline=time.monotonic()+840
-            while time.monotonic()<deadline and "Done (" not in (res/"server.log").read_text(errors="replace"):
+            while time.monotonic()<deadline and "Done (" not in tail(res/"server.log"):
                 if srv.poll() is not None: raise RuntimeError("Server exited at startup")
                 time.sleep(2)
-            assert "Done (" in (res/"server.log").read_text(errors="replace")
+            assert "Done (" in tail(res/"server.log")
+            print("Dedicated published pack started. Connecting the hosted Visitor client.",flush=True)
             cli=subprocess.Popen(["xvfb-run","-a","-s","-screen 0 800x600x24",sys.executable,str(root/".github/client249/launch.py"),str(client),"--join","127.0.0.1:25565","--name","Visitor"],cwd=root,env=env,stdout=co,stderr=subprocess.STDOUT,start_new_session=True)
             deadline=time.monotonic()+900
+            last=None
             while time.monotonic()<deadline and not done.exists():
                 if srv.poll() is not None or cli.poll() is not None: raise RuntimeError("Game fixture exited before verification")
                 marker=Path("/tmp/uq-player-only-result")
                 if marker.exists() and not done.exists(): raise RuntimeError("Upstream fixture ended first: "+marker.read_text()[:300])
+                view=tail(root/"dist/packaged-smoke/client249-phase1-status.txt").strip()
+                if view and last!=view:
+                    print("Hosted client:",view[:230],flush=True)
+                    last=view
+                if "DisconnectedScreen" in view or "QuickPlayErrorScreen" in view or "Visitor lost connection:" in tail(res/"server.log"):
+                    raise RuntimeError("Full-pack client disconnected before completing the checks")
+                if "OutOfMemoryError" in tail(res/"client.log") or "OutOfMemoryError" in tail(res/"server.log"):
+                    raise RuntimeError("Full-pack process exhausted its hosted memory allowance")
                 time.sleep(2)
             assert done.is_file(),"No custody outcome received"
             srv.stdin.write("stop\n")
