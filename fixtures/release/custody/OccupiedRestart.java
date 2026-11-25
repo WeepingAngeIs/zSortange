@@ -1,6 +1,7 @@
 package dev.unyielding.bundlesmoke;
 
 import com.mojang.authlib.GameProfile;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import dev.anya.storage.BackpackHistory;
 import dev.anya.storage.BagInventory;
 import java.nio.file.Files;
@@ -30,11 +31,11 @@ final class OccupiedRestart {
 
     static boolean seed(ServerPlayer first,ServerPlayer second,ItemStack exact,String restore,int copies) throws Exception {
         if (!"seed".equals(System.getenv("INDEPENDENT_PHASE"))) return false;
-        require(copies==0,"Existing loss must be pending before the Storage upgrade");
+        require(copies==0,"Unapproved loss must still be missing before the Storage upgrade");
         Files.write(expectedFile,OriginCustodyPort.encode((CompoundTag)exact.save(second.registryAccess())));
         Files.writeString(owners,first.getUUID()+"\n"+second.getUUID()+"\n"+restore+"\n");
         require(first.server.saveEverything(false,true,true),"Occupied baseline world did not save");
-        Files.writeString(IndependentLoss.result,"Certified original was admitted and held once; second owner has a witnessed pending loss.\n");
+        Files.writeString(IndependentLoss.result,"Certified original was admitted and held once; second owner has a witnessed loss with no operator approval yet.\n");
         return true;
     }
 
@@ -52,8 +53,8 @@ final class OccupiedRestart {
             require(actual.equals(System.getenv("FROZEN_RELEASE_SHA")),"Unexpected installed Storage binary");
             require(dev.unyielding.jail.JailIntegrated.activeTransaction(server,UUID.fromString(ids.get(0)))!=null,
                     "Native custody was not active on restart");
-            visitor=IndependentLoss.connect(server,new GameProfile(UUID.fromString(ids.get(0)),"Visitor"),new ArrayList<>());
-            other=IndependentLoss.connect(server,new GameProfile(UUID.fromString(ids.get(1)),"OtherBagOwner"),messages);
+            visitor=IndependentLoss.connect(server,new GameProfile(UUID.fromString(ids.get(0)),"Visitor"),messages);
+            other=IndependentLoss.connect(server,new GameProfile(UUID.fromString(ids.get(1)),"OtherBagOwner"),new ArrayList<>());
             joined=server.getTickCount();
             IndependentLoss.note(phase+" opened the occupied published pack with "+actual);
             return true;
@@ -63,24 +64,32 @@ final class OccupiedRestart {
         var id=BagInventory.data(exact).getUUID("BagId");
         boolean replay=phase.equals("replay");
         CombinedStorageProof.held(visitor);
-        require(IndependentLoss.count(other,id,exact)==(replay?1:0),"Wrong number of second bags on restart");
+        int before=IndependentLoss.count(other,id,exact);
+        IndependentLoss.note(phase+" observed "+before+" exact second-owner bags before the command");
+        require(before==(replay?1:0),"Wrong number of second bags on "+phase+": "+before);
         require(!other.hasPermissions(2) && BackpackHistory.page(other,0).isEmpty(),"Non-operator got private history");
-        CombinedStorageProof.attemptRecovery(visitor,false);
         String cmd=ids.get(2);
-        server.getPlayerList().op(other.getGameProfile());
+        try {
+            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==0,"A non-operator could restore the bag");
+        } catch (CommandSyntaxException denied) { /* Brigadier hides the operator command from ordinary players. */ }
+        require(IndependentLoss.count(other,id,exact)==before,"The denied command changed the owner's inventory");
+        CombinedStorageProof.attemptRecovery(visitor,false);
+        server.getPlayerList().op(visitor.getGameProfile());
         try {
             if (!replay) {
+                var row=BackpackHistory.page(visitor,0).stream().filter(entry->entry.id().equals(id)).findFirst().orElseThrow();
+                require(row.restorable() && other.getUUID().equals(row.owner()),"Upgraded history did not list the real owner");
                 rejectUnknownClaimOption(server, id, exact, cmd);
                 rejectInactiveRaidCache(server, id, exact, cmd);
             }
             messages.clear();
-            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Restore command unavailable");
+            require(server.getCommands().getDispatcher().execute(cmd,visitor.createCommandSourceStack())==1,"Restore command unavailable");
             IndependentLoss.note(phase+" operator response "+messages);
             require(IndependentLoss.count(other,id,exact)==1 && IndependentLoss.count(visitor,id,exact)==0,
                     "Independent loss did not return to the correct owner exactly once: "+messages);
-            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Could not replay same link");
+            require(server.getCommands().getDispatcher().execute(cmd,visitor.createCommandSourceStack())==1,"Could not replay same link");
             require(IndependentLoss.count(other,id,exact)==1,"Repeat created another bag");
-        } finally { server.getPlayerList().deop(other.getGameProfile()); }
+        } finally { server.getPlayerList().deop(visitor.getGameProfile()); }
         for(var world:server.getAllLevels()) for(var entity:world.getAllEntities()) {
             if(entity instanceof ItemEntity drop) require(!IndependentLoss.sameId(drop.getItem(),id),"Second bag also exists on the ground");
         }
@@ -114,7 +123,7 @@ final class OccupiedRestart {
                 java.nio.file.StandardOpenOption.CREATE_NEW);
         try {
             messages.clear();
-            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Negative control could not reach recovery");
+            require(server.getCommands().getDispatcher().execute(cmd,visitor.createCommandSourceStack())==1,"Negative control could not reach recovery");
             require(IndependentLoss.count(other,id,exact)==0,"Unknown claim options permitted a return");
             require(messages.stream().anyMatch(message->message.contains("claim settings") || message.contains("Claims player settings")),
                     "Unknown option did not produce a claim settings error: "+messages);
@@ -130,7 +139,7 @@ final class OccupiedRestart {
         Files.writeString(control,"{\"pokemon\":\"pikachu\"}",java.nio.file.StandardOpenOption.CREATE_NEW);
         try {
             messages.clear();
-            require(server.getCommands().getDispatcher().execute(cmd,other.createCommandSourceStack())==1,"Could not exercise the inactive cache");
+            require(server.getCommands().getDispatcher().execute(cmd,visitor.createCommandSourceStack())==1,"Could not exercise the inactive cache");
             require(IndependentLoss.count(other,id,exact)==0,"An unowned raid file cleared the lost bag");
             require(messages.stream().anyMatch(message->message.toLowerCase(java.util.Locale.ROOT).contains("raid")),
                     "Inactive cache did not report a refusal: "+messages);

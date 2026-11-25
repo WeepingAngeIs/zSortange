@@ -111,7 +111,11 @@ final class IndependentLoss {
                 require(server.getCommands().getDispatcher().execute(restore,second.createCommandSourceStack())==0,"Ordinary player restored a bag");
             } catch(CommandSyntaxException expected) { /* The real command is hidden from non-operators. */ }
             require(count(second,id,exact)==0 && count(visitor,id,exact)==0,"Denied recovery delivered a copy");
-            require(server.getCommands().getDispatcher().execute(restore,visitor.createCommandSourceStack())==1,"Operator command did not execute");
+            // An approved return can correctly resume as soon as the owner logs in on the upgraded server.
+            // Leave this loss listed so the first approval and its safety controls actually run on the candidate.
+            if (!"seed".equals(System.getenv("INDEPENDENT_PHASE"))) {
+                require(server.getCommands().getDispatcher().execute(restore,visitor.createCommandSourceStack())==1,"Operator command did not execute");
+            }
         } finally { server.getPlayerList().deop(visitor.getGameProfile()); }
         int heldCount=count(second,id,exact);
         note("Second owner exact copies while first is held: "+heldCount);
