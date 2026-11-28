@@ -23,7 +23,8 @@ with zipfile.ZipFile(old) as before, zipfile.ZipFile(new) as after:
         assert not data.startswith((b"MZ", b"\x7fELF", b"#!")), name
     assert changes <= {"META-INF/neoforge.mods.toml", "assets/anyastorage/lang/en_us.json",
                        *("dev/anya/storage/pocket/"+s+".class" for s in
-                         ["CameraControlsScreen","WallMonitorBlock","ScreenMedia","ScreenMedia$Session","ScreenMedia$MediaSound"])}
+                         ["CameraControlsScreen","WallMonitorBlock","ScreenMedia","ScreenMedia$Session","ScreenMedia$MediaSound",
+                          "ScreenMedia$MediaSound$1","CameraControlsScreen$Kind"])}, sorted(changes)
     assert {"dev/anya/storage/pocket/ScreenMedia$MediaSound.class","dev/anya/storage/pocket/CameraControlsScreen.class"} <= changes
     embedded = after.read(decoder)
     assert hashlib.sha256(embedded).hexdigest() == "dc6c5ffb2f5f808e8b760663b8111b5fc6992cfcbcf808f59652a5d4185eb95c"
