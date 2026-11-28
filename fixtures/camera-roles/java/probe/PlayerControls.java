@@ -219,6 +219,12 @@ public final class PlayerControls {
             if(!action.equals("ceiling")&&!action.equals("cosmetics"))return;
             screen.mouseClicked(layout.left()+x*layout.scale(),layout.top()+y*layout.scale(),0);clicked=true;return;
         }
+        if(screen.getClass().getSimpleName().equals("DisplaySourceScreen")){
+            for(var widget:screen.children())if(widget instanceof net.minecraft.client.gui.components.Button b
+                    && b.getMessage().getString().equals("Device settings")){
+                screen.mouseClicked(b.getX()+4,b.getY()+4,0);return;
+            }
+        }
         if(!screen.getClass().getSimpleName().equals("CameraControlsScreen"))return;
         if((boolean)field(screen.getClass(),"waiting").get(screen))return;
         if(clicked){
@@ -227,6 +233,22 @@ public final class PlayerControls {
                 check(m.invoke(view).toString().contains("Clear the space"),"No blocked-wall explanation: "+m.invoke(view));
             }
             acknowledge("Server acknowledged settings button "+action);return;
+        }
+        if(action.startsWith("type-")||action.equals("minus-height")||action.equals("plus-width-twice")){
+            boolean horizontal=action.contains("width");
+            var box=(net.minecraft.client.gui.components.EditBox)field(screen.getClass(),horizontal?"widthBox":"heightBox").get(screen);
+            if(action.startsWith("type-")){
+                screen.mouseClicked(box.getX()+2,box.getY()+3,0);
+                box.setValue(action.substring(action.lastIndexOf('-')+1));
+                screen.keyPressed(257,0,0);
+            }else{
+                String symbol=horizontal?"+":"−";
+                var button=screen.children().stream().filter(c->c instanceof net.minecraft.client.gui.components.Button)
+                        .map(c->(net.minecraft.client.gui.components.Button)c)
+                        .filter(b->b.getMessage().getString().equals(symbol)&&b.getY()==box.getY()).findFirst().orElseThrow();
+                for(int i=0;i<(horizontal?2:1);i++)screen.mouseClicked(button.getX()+3,button.getY()+3,0);
+            }
+            clicked=true;return;
         }
         String prefix=switch(action){
             case "width","blocked"->"Width:";case "height"->"Height:";case "group"->"Targets:";case "watch"->"Watch";

@@ -24,7 +24,23 @@ import net.neoforged.neoforge.client.event.sound.PlayStreamingSourceEvent;
 @EventBusSubscriber(modid="anyadisplayprobe",value=Dist.CLIENT)
 public final class MediaClient {
     private static final String PREFIX="screen.anyastorage.media.";
-    private static final Set<BlockPos> streamed=ConcurrentHashMap.newKeySet();
+    private static volatile net.minecraft.client.resources.sounds.SoundInstance stream;
+    private static net.minecraft.client.resources.sounds.SoundInstance beforeResize;
+    private static boolean soundAt(double x,double y,double z){
+        var sound=stream;
+        return sound!=null && Math.abs(sound.getX()-x)<0.0001 && Math.abs(sound.getY()-y)<0.0001 && Math.abs(sound.getZ()-z)<0.0001;
+    }
+    private static EditBox sizeField(Minecraft mc,int axis){
+        return mc.screen.children().stream().filter(EditBox.class::isInstance).map(EditBox.class::cast).toList().get(axis);
+    }
+    private static void enterSize(Minecraft mc,int axis,String value){
+        var field=sizeField(mc,axis);mc.screen.mouseClicked(field.getX()+3,field.getY()+3,0);
+        field.setValue(value);mc.screen.keyPressed(257,0,0);
+    }
+    private static boolean panelIs(Minecraft mc,int w,int h){
+        var panel=mc.level.getBlockEntity(pos()).getUpdateTag(mc.level.registryAccess()).getCompound("Panel");
+        return panel.getInt("W")==w && panel.getInt("H")==h;
+    }
     private static final Set<String> pictures=ConcurrentHashMap.newKeySet();
     private static int step, ticks, initialTicks;
     private static boolean wall;
@@ -99,21 +115,21 @@ public final class MediaClient {
                 case 2 -> {
                     if(wall){
                         if(mc.screen==null||!mc.screen.getClass().getSimpleName().equals("CameraControlsScreen"))return;
-                        click(mc,"Width: 1 ");next();
+                        click(mc,"+");next();
                     }else if(status().contains("Discord message")){open(mc);next();}
                 }
                 case 3 -> {
-                    if(wall){if(button(mc,"Width:").getMessage().getString().startsWith("Width: 2 ")){click(mc,"Width: 2 ");next();}}
+                    if(wall){if(panelIs(mc,2,1)){click(mc,"+");next();}}
                     else if(source(mc)){play(mc,"https://www.youtube.com/watch?v=synthetic-fixture");next();}
                 }
                 case 4 -> {
                     if(wall){
-                        if(button(mc,"Width:").getMessage().getString().startsWith("Width: 3 ")){click(mc,"Height: 1 ");next();}
+                        if(panelIs(mc,3,1)){enterSize(mc,1,"2");next();}
                     }else if(status().contains("YouTube")){open(mc);next();}
                 }
                 case 5 -> {
                     if(wall){
-                        if(button(mc,"Height:").getMessage().getString().startsWith("Height: 2 ")){mc.screen.onClose();next();}
+                        if(panelIs(mc,3,2)){mc.screen.onClose();next();}
                     }else if(source(mc)){play(mc,"file:///synthetic-test.gif");next();}
                 }
                 case 6 -> {
@@ -135,7 +151,15 @@ public final class MediaClient {
                     if(source(mc)){Files.writeString(path(prefix()+"-movie-start"),"explicit Play");play(mc,clip());expect="movie";next();}
                 }
                 case 12 -> {
-                    if(ticks>=65&&pictures.contains(prefix()+"-movie-red")&&pictures.contains(prefix()+"-movie-green")&&streamed.contains(pos())){
+                    var at=pos();
+                    // Both test screens face south. Check absolute world coordinates independently of renderer code.
+                    if(wall && beforeResize==null && soundAt(at.getX()+.5,at.getY()+1.,at.getZ()+.0655)){
+                        beforeResize=stream;Files.writeString(path("fit-during-movie"),"Observed the 3 x 2 face center");
+                    }
+                    boolean centered=wall ? beforeResize!=null && beforeResize==stream && panelIs(mc,5,4)
+                            && soundAt(at.getX()+1.5,at.getY()+1.,at.getZ()+.0655)
+                            : soundAt(at.getX()+.5,at.getY()+.5625,at.getZ()+.5655);
+                    if(ticks>=65&&pictures.contains(prefix()+"-movie-red")&&pictures.contains(prefix()+"-movie-green")&&centered){
                         Files.writeString(path(prefix()+"-movie-end"),"observed both pictures and streaming sound");
                         endMedia();open(mc);next();
                     }
@@ -159,7 +183,7 @@ public final class MediaClient {
                             Files.writeString(path("next-wall"),"move the disposable player to the wall");
                             wall=true;step=0;ticks=0;
                         }else{
-                            Files.writeString(path("PASS"),"Both displays: normal right-click, camera selected by tablet, linked feed, direct public HTTPS movie via Play, actual red and green rendered frames, streaming sound at the correct block, deliberate dropped GIF with blue and yellow frames, then live camera again. Resized wall remained 3 x 2. Local MP4, file URL, Discord message and YouTube page did not start playback.\n");
+                            Files.writeString(path("PASS"),"Both displays: normal right-click, camera selected by tablet, linked feed, direct public HTTPS movie via Play, actual red and green rendered frames, streaming sound at the measured face center, deliberate dropped GIF with blue and yellow frames, then live camera again. The original playing sound moved from the 3 x 2 center to the offset 5 x 4 center without restarting. Local MP4, file URL, Discord message and YouTube page did not start playback.\n");
                         }
                     }
                 }
@@ -170,7 +194,7 @@ public final class MediaClient {
     @SubscribeEvent public static void sound(PlayStreamingSourceEvent e){
         var sound=e.getSound();
         if(sound.getLocation().toString().equals("anyastorage:screen_media")&&sound.getSource()==SoundSource.BLOCKS&&e.getChannel()!=null)
-            streamed.add(BlockPos.containing(sound.getX(),sound.getY(),sound.getZ()));
+            stream=sound;
     }
     @SubscribeEvent public static void draw(RenderGuiEvent.Post e)throws Exception {
         var mc=Minecraft.getInstance();

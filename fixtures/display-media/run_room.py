@@ -86,7 +86,7 @@ def main():
     proof.mkdir(parents=True)
     jar = Path(sys.argv[1]).resolve(strict=True)
     assert jar.parent == root / "upload" and jar.name in (
-        "anya-storage-plus-0.3.0-beta.7-roommedia.1.jar", "anya-storage-plus-0.3.0-beta.8.jar")
+        "anya-storage-plus-0.3.0-beta.7-roommedia.1.jar", "anya-storage-plus-0.3.0-beta.8.jar", "anya-storage-plus-0.3.0-beta.9-media.jar")
     frozen = sha256(jar.read_bytes()).hexdigest()
     video = Path(__file__).parent / "inputs/room-color-tone.mp4"
     assert sha256(video.read_bytes()).hexdigest() == "0d3325307dddf50ef755e368fa6f3181aacb5ed9dc6d8e8770c3ada1a978cc76"

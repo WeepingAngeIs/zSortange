@@ -48,7 +48,7 @@ public final class MediaServer {
             place(p,cam,CameraDevices.CAMERA.get(),Direction.NORTH);
             l.setBlockAndUpdate(MediaTrial.TV.below(),Blocks.QUARTZ_BLOCK.defaultBlockState());
             place(p,MediaTrial.TV,CameraDevices.TV.get(),Direction.SOUTH);
-            for (int x=-3;x<=3;x++) for (int y=-2;y<=2;y++)
+            for (int x=-1;x<=3;x++) for (int y=-1;y<=2;y++)
                 l.setBlockAndUpdate(MediaTrial.WALL.north().offset(x,y,0),Blocks.SMOOTH_STONE.defaultBlockState());
             place(p,MediaTrial.WALL,CameraDevices.WIDE.get(),Direction.SOUTH);
             p.teleportTo(l,cam.getX()+1.5,cam.getY()-1,cam.getZ()+.5,90,0);
@@ -62,6 +62,14 @@ public final class MediaServer {
         } else if(stage==1 && Files.exists(MediaTrial.proof.resolve("next-wall"))) {
             position(p,MediaTrial.WALL);
             stage++; Files.writeString(MediaTrial.proof.resolve("stage-wall"),"wide");
+        } else if(stage==2 && Files.exists(MediaTrial.proof.resolve("fit-during-movie"))){
+            var block=l.getBlockEntity(MediaTrial.WALL);
+            var resize=Class.forName("dev.anya.storage.pocket.WallMonitorBlock").getDeclaredMethod("resize",ServerPlayer.class,
+                    CameraDevices.Device.class,int.class,int.class,boolean.class);
+            resize.setAccessible(true);
+            String message=(String)resize.invoke(null,p,block,3,2,true);
+            if(!message.isEmpty())throw new IllegalStateException(message);
+            stage++;
         }
     }
 }

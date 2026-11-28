@@ -30,7 +30,7 @@ public final class Scenario {
     private static final boolean HORIZON=FLAVOR.startsWith("sharp-horizon-"), HORIZON_OLD=FLAVOR.equals("sharp-horizon-old");
     private static final boolean OLD_PICTURE=FLAVOR.equals("sharp-old");
     private static final String OWNER="CamOwner", BUILDER="RoomBuilder", GUEST="RoomVisitor";
-    private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial"));
+    private static final boolean STUDIO="studio".equals(System.getProperty("roomroles.trial")) || "cinema".equals(System.getProperty("roomroles.trial"));
     private static final boolean BASELINE="baseline".equals(System.getProperty("roomroles.trial"));
     private static final BlockPos HUB=new BlockPos(7,81,-5), DOOR=HUB.east(2);
     private static final BlockPos CAMERA=new BlockPos(0,82,0), WALL=new BlockPos(6,82,5), UP=new BlockPos(-6,81,0);
@@ -136,6 +136,7 @@ public final class Scenario {
         owner.getInventory().setItem(1,new ItemStack(Content.CUPID_TABLET.get()));
         frontUse("bind-tablet-to-hub",HUB,Content.CUPID_TABLET.get(),true);
         if(FLAVOR.startsWith("sharp-wall-night-")){wallNightSteps();return;}
+        if(FLAVOR.equals("cinema")){cinemaSteps();return;}
         frontUse("bind-room-cube",DOOR,Content.CUPID_TABLET.get(),true);
         if(SHARP){sharpSteps();return;}
         if(STUDIO)studioOutside();else if(!BASELINE)outsideCameraSteps();
@@ -816,6 +817,28 @@ public final class Scenario {
         }
     }
 
+    private static void cinemaSteps(){
+        verify("prepare-clear-32-block-wall",()->{
+            for(int x=-15;x<=16;x++)for(int y=-1;y<31;y++)
+                home.setBlockAndUpdate(WALL.south().offset(x,y,0),Blocks.STONE.defaultBlockState());
+        });
+        step("place-cinema-in-survival",()->northUse(WALL.south(),CameraDevices.CINEMA.get().asItem(),false),()->home.getBlockState(WALL).is(CameraDevices.CINEMA.get()));
+        step("right-click-cinema",()->northUse(WALL,Items.AIR,false),()->true);
+        uiStep("fit-the-whole-wall","fit");cinemaSize(32,32);
+        uiStep("decrease-height-one-block","minus-height");cinemaSize(32,31);
+        uiStep("type-width-two","type-width-2");cinemaSize(2,31);
+        uiStep("type-height-four","type-height-4");cinemaSize(2,4);
+        uiStep("two-rapid-width-clicks","plus-width-twice");cinemaSize(4,4);
+        uiStep("reject-height-33","type-height-33");cinemaSize(4,4);
+        uiStep("save-picture-of-controls","photo");
+        uiStep("close-cinema","close");
+        step("reopen-cinema",()->northUse(WALL,Items.AIR,false),()->true);
+        uiStep("type-width-one","type-width-1");cinemaSize(1,4);
+    }
+    private static void cinemaSize(int w,int h){
+        verify("server-confirmed-"+w+"x"+h,()->check(StudioEvidence.property(home,WALL,"width")==w
+                &&StudioEvidence.property(home,WALL,"height")==h,"Saved dimensions differ from "+w+"x"+h));
+    }
     private static void studioOutside(){
         verify("slim-camera-six-attachments-selection-collision-and-source",()->{
             equip(player(OWNER),Items.AIR);MountProbe.sixFaces(player(OWNER));

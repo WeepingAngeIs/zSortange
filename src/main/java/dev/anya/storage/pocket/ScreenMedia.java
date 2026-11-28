@@ -25,7 +25,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
 /** One bounded decoder, texture and positional audio stream for a physical display. */
@@ -75,8 +74,7 @@ public final class ScreenMedia {
         clear();
         Minecraft mc=Minecraft.getInstance();
         if (mc.level==null || mc.player==null || !mc.level.hasChunkAt(pos)) return;
-        var block=mc.level.getBlockEntity(pos);
-        if (block==null || !(block.getBlockState().getBlock() instanceof WallMonitorBlock)
+        if (!(mc.level.getBlockEntity(pos) instanceof CameraDevices.Device block) || !(block.getBlockState().getBlock() instanceof WallMonitorBlock)
                 || (room==null && mc.player.distanceToSqr(Vec3.atCenterOf(pos)) > 32*32)) return;
         var session=new Session(mc.level,pos.immutable(),block,room);
         current=session;
@@ -195,7 +193,7 @@ public final class ScreenMedia {
         if(s.sound==null && audible && !finished && offset<s.clip.audio().length && !mc.isPaused()) {
             s.soundAtMillis=position;
             s.soundAtNanos=s.elapsed;
-            s.sound=new MediaSound(s.pos,s.clip,offset,s.room!=null);
+            s.sound=new MediaSound(s.block,s.clip,offset,s.room!=null);
             mc.getSoundManager().play(s.sound);
         }
     }
@@ -220,7 +218,7 @@ public final class ScreenMedia {
     private static final class Session {
         final ClientLevel level;
         final BlockPos pos;
-        final BlockEntity block;
+        final CameraDevices.Device block;
         final UUID room;
         long roomStart=-1;
         final AtomicReference<Process> process=new AtomicReference<>();
@@ -232,7 +230,7 @@ public final class ScreenMedia {
         int frame=-1;
         boolean wasPaused;
         long elapsed,lastNanos,soundAtNanos,soundAtMillis;
-        Session(ClientLevel level,BlockPos pos,BlockEntity block,UUID room) {
+        Session(ClientLevel level,BlockPos pos,CameraDevices.Device block,UUID room) {
             this.level=level; this.pos=pos; this.block=block; this.room=room;
         }
     }
@@ -240,13 +238,19 @@ public final class ScreenMedia {
     private static final class MediaSound extends AbstractTickableSoundInstance {
         private final ScreenClip clip;
         private final int offset;
-        MediaSound(BlockPos pos,ScreenClip clip,int offset,boolean room) {
+        private final CameraDevices.Device display;
+        MediaSound(CameraDevices.Device display,ScreenClip clip,int offset,boolean room) {
             super(SOUND, SoundSource.BLOCKS, SoundInstance.createUnseededRandom());
-            this.clip=clip; this.offset=offset; this.volume=ScreenMedia.volume();
+            this.display=display; this.clip=clip; this.offset=offset;
             if(room) attenuation=SoundInstance.Attenuation.NONE;
-            x=pos.getX()+.5; y=pos.getY()+.5; z=pos.getZ()+.5;
+            updateSource();
         }
-        @Override public void tick() { this.volume=ScreenMedia.volume(); }
+        private void updateSource() {
+            Vec3 center=CameraFeed.screenCenter(display);
+            x=center.x; y=center.y; z=center.z;
+            volume=ScreenMedia.volume();
+        }
+        @Override public void tick() { updateSource(); }
         @Override public CompletableFuture<AudioStream> getStream(SoundBufferLibrary buffers,Sound sound,boolean looping) {
             return CompletableFuture.completedFuture(new AudioStream() {
                 private int offset=MediaSound.this.offset;

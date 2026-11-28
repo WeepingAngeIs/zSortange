@@ -32,6 +32,11 @@ class WallMonitorBlock extends CameraDevices.DeviceBlock {
             case DOWN -> Block.box(0,15,0,16,16,16);
         };
     }
+    // Shrinking stays inside the existing rectangle, even after Fit wall put the anchor at an edge.
+    private static int resizeOffset(int oldSize,int oldOffset,int size){
+        int delta=size-oldSize;
+        return Math.clamp((size-1)/2,Math.max(0,oldOffset+Math.min(0,delta)),Math.min(size-1,oldOffset+Math.max(0,delta)));
+    }
     static boolean shellFace(PocketLedger.Pocket room,BlockPos pos,Direction f){
         int x=pos.getX()-room.x(),z=pos.getZ()-room.z();
         return pos.getY()>=65&&pos.getY()<=96&&x>=0&&x<32&&z>=0&&z<32&&!(x>=14&&x<=18&&z>=19&&pos.getY()<=72)
@@ -89,7 +94,8 @@ class WallMonitorBlock extends CameraDevices.DeviceBlock {
             }
             size=new WallPanel(l+right+1,b+t+1,l,b);
         }else{
-            int l=w==d.panel.width()?d.panel.left():(w-1)/2,b=h==d.panel.height()?d.panel.below():(h-1)/2;
+            int l=resizeOffset(d.panel.width(),d.panel.left(),w);
+            int b=resizeOffset(d.panel.height(),d.panel.below(),h);
             size=new WallPanel(w,h,l,b);
             for(int x=-l;x<w-l;x++)for(int y=-b;y<h-b;y++){
                 var deny=problem.apply(x,y);if(!deny.isEmpty())return deny;

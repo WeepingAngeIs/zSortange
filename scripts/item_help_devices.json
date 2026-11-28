@@ -11,7 +11,7 @@
   "tooltip.anyastorage.wide_wall_monitor.2": "Right-click to fit the wall, change size or choose tracking targets.",
   "tooltip.anyastorage.wide_wall_monitor.3": "Play a link for your Skygrid room, or drop a GIF to view it yourself.",
   "tooltip.anyastorage.cinema_wall_monitor.1": "Fits up to 32 × 32 blocks, including an entire clear Skygrid wall.",
-  "tooltip.anyastorage.cinema_wall_monitor.2": "Place on a wall, link with a tablet, then right-click and choose Fit wall.",
+  "tooltip.anyastorage.cinema_wall_monitor.2": "Right-click, open Device settings, then click + or - or type a size and press Enter. Fit wall uses the available space.",
   "tooltip.anyastorage.cinema_wall_monitor.3": "Right-click to choose a source. In Skygrid, any visitor can play a link for the room.",
   "tooltip.anyastorage.sky_camera.1": "Place outdoors on a solid surface. Its lens always looks straight up.",
   "tooltip.anyastorage.sky_camera.2": "Inside Skygrid open the tablet, then Cosmetics and Live ceiling. Sneak-use your tablet on a different Sky Camera to choose it.",
