@@ -45,7 +45,7 @@ public final class CameraFeed {
     }
     static BiConsumer<Connection,Frame> receiver=(c,f)->{};
     public static void register(RegisterPayloadHandlersEvent e){
-        CameraConsole.register(e);SkyCeiling.register(e);CameraScene.register(e);RoomMediaNet.register(e);
+        CameraConsole.register(e);SkyCeiling.register(e);CameraScene.register(e);
         e.registrar("cameraperspective1").optional().playToServer(Perspective.TYPE,
                 StreamCodec.ofMember((msg,buf)->buf.writeBoolean(msg.mirrored()),buf->new Perspective(buf.readBoolean())),
                 (msg,ctx)->{

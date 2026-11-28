@@ -391,18 +391,6 @@ public final class PocketService {
         }
     }
 
-    /** A completed in-person arrival in a loaded room; callers separately recheck the current access policy. */
-    static PocketLedger.Pocket admittedVisit(ServerPlayer p) {
-        UUID id=p.getUUID();
-        if(!inPocket(p.level()) || !present(p) || PENDING.containsKey(id) || RECOVERY.containsKey(id)) return null;
-        var visit=lease(id);
-        if(visit==null || visit.kind()!=PocketLeases.Kind.VISIT) return null;
-        var room=loadedPocket(p.getServer(),visit.pocket());
-        if(room==null || room.stage()!=PocketLedger.Stage.READY || room.epoch()!=visit.epoch()
-                || !room.contains(p.getBlockX(),p.getBlockY(),p.getBlockZ())) return null;
-        var back=ledger.returning(id);
-        return back!=null && back.pocket().equals(room.id()) ? room : null;
-    }
     public static boolean visitingOwner(ServerPlayer p,UUID roomId){
         var lease=lease(p.getUUID());
         if(!inPocket(p.level())||lease==null||lease.kind()!=PocketLeases.Kind.VISIT||!lease.pocket().equals(roomId))return false;

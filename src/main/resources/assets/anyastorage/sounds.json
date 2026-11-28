@@ -1,7 +1,4 @@
 {
-  "screen_media": {
-    "sounds": [{"name":"anyastorage:tablet/warning","stream":true}]
-  },
   "chest_open": {
     "subtitle": "subtitles.anyastorage.chest_open",
     "sounds": ["anyastorage:chest/open"]

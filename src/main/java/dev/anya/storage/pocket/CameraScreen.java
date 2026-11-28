@@ -23,15 +23,6 @@ public final class CameraScreen {
     private static net.minecraft.client.CameraType perspective;
     private static String motion="";
     static {
-        CameraConsole.displayReceiver=(connection,view)->{
-            var mc=Minecraft.getInstance();
-            if(mc.getConnection()!=null&&mc.getConnection().getConnection()==connection)DisplaySourceScreen.receive(view,false,true);
-        };
-        CameraConsole.roomDisplayReceiver=(connection,view)->{
-            var mc=Minecraft.getInstance();
-            if(mc.getConnection()!=null&&mc.getConnection().getConnection()==connection)
-                DisplaySourceScreen.receive(view.display(),true,view.manageCamera());
-        };
         CameraConsole.receiver=(connection,view)->{
             var mc=Minecraft.getInstance();
             if(mc.getConnection()!=null&&mc.getConnection().getConnection()==connection)CameraControlsScreen.receive(view);
@@ -104,12 +95,10 @@ public final class CameraScreen {
         }
         return null;
     }
-    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;scene=null;perspectivePlayer=null;perspective=null;motion="";SkyglassPixels.clear();CameraPicture.clear();RoomMediaClient.disconnect();ScreenMedia.clear();}
+    @SubscribeEvent public static void logout(ClientPlayerNetworkEvent.LoggingOut event){target=null;current=null;scene=null;perspectivePlayer=null;perspective=null;motion="";SkyglassPixels.clear();CameraPicture.clear();}
     @SubscribeEvent public static void update(ClientTickEvent.Post event){
         tick++;
         var mc=Minecraft.getInstance();
-        RoomMediaClient.tick();
-        ScreenMedia.tick();
         var mode=mc.options.getCameraType();
         if(perspectivePlayer!=mc.player || perspective!=mode){
             perspectivePlayer=mc.player;perspective=mode;
@@ -125,41 +114,25 @@ public final class CameraScreen {
         if(target!=d){motion="";current=null;scene=null;target=d;request=0;}
         if(tick>expiry){current=null;scene=null;}
         if(scene==null && CameraPicture.rendered()!=null)CameraPicture.clear();
-        if(d!=null && !ScreenMedia.active(d.getBlockPos()) && tick>=request && mc.getConnection()!=null && mc.getConnection().hasChannel(CameraFeed.Watch.TYPE)){
+        if(d!=null && tick>=request && mc.getConnection()!=null && mc.getConnection().hasChannel(CameraFeed.Watch.TYPE)){
             PacketDistributor.sendToServer(new CameraFeed.Watch(d.getBlockPos()));request=tick+8;
         }
     }
     @SubscribeEvent public static void draw(RenderLevelStageEvent event){
         var mc=Minecraft.getInstance();
-        if(event.getStage()!=RenderLevelStageEvent.Stage.AFTER_LEVEL || mc.level==null || mc.player==null || mc.screen!=null
-                || mc.getCameraEntity()!=mc.player || event.getCamera()!=mc.gameRenderer.getMainCamera()
+        if(event.getStage()!=RenderLevelStageEvent.Stage.AFTER_LEVEL || target==null || target.isRemoved() || mc.screen!=null
+                || mc.level!=target.getLevel() || mc.getCameraEntity()!=mc.player || event.getCamera()!=mc.gameRenderer.getMainCamera()
                 || event.getLevelRenderer()!=mc.levelRenderer || GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getMainRenderTarget().frameBufferId)return;
-        // The media display stays visible in peripheral vision, independent of camera-feed selection.
-        var active=ScreenMedia.activePosition();
-        CameraDevices.Device media=null;
-        if(active!=null && mc.level.hasChunkAt(active) && mc.level.getBlockEntity(active) instanceof CameraDevices.Device d
-                && !d.isRemoved() && d.getBlockState().getBlock() instanceof WallMonitorBlock){
-            media=d;
-            drawDevice(event,mc,d,true);
-        }
-        if(target!=null && target!=media && !target.isRemoved() && target.getLevel()==mc.level)
-            drawDevice(event,mc,target,false);
-    }
-    private static void drawDevice(RenderLevelStageEvent event,Minecraft mc,CameraDevices.Device display,boolean media){
         var p=event.getPoseStack();p.pushPose();
         try{
-            var pos=CameraFeed.screenCenter(display).subtract(event.getCamera().getPosition());
+            var pos=CameraFeed.screenCenter(target).subtract(event.getCamera().getPosition());
             p.mulPose(event.getModelViewMatrix());p.translate(pos.x,pos.y,pos.z);
-            var state=display.getBlockState();var face=state.getValue(BlockStateProperties.FACING);
+            var state=target.getBlockState();var face=state.getValue(BlockStateProperties.FACING);
             boolean wall=state.getBlock() instanceof WallMonitorBlock;
             if(!wall)p.mulPose(face.getRotation());
-            float w=wall?display.panel.innerWidth():4;
-            float h=wall?display.panel.innerHeight(display):4;
+            float w=wall?target.panel.innerWidth():4;
+            float h=wall?target.panel.innerHeight(target):4;
             var right=wall?WallPanel.right(face):null;
-            if(media){
-                drawMedia(mc,p,display,right,w,h);
-                return;
-            }
             if(wall && scene!=null){
                 var image=CameraPicture.surface(scene);
                 if(image!=null){
@@ -201,24 +174,6 @@ public final class CameraScreen {
             buffers.endBatch(type);
         }finally{p.popPose();}
     }
-    private static void drawMedia(Minecraft mc,com.mojang.blaze3d.vertex.PoseStack p,CameraDevices.Device display,net.minecraft.core.Direction right,float w,float h){
-        var buffers=mc.renderBuffers().bufferSource();var black=RenderType.debugQuads();var background=buffers.getBuffer(black);
-        float x=right.getStepX()*w*.5f,z=right.getStepZ()*w*.5f;
-        background.addVertex(p.last(),-x,h*.5f,-z).setColor(0xff101018);
-        background.addVertex(p.last(),-x,-h*.5f,-z).setColor(0xff101018);
-        background.addVertex(p.last(),x,-h*.5f,z).setColor(0xff101018);
-        background.addVertex(p.last(),x,h*.5f,z).setColor(0xff101018);
-        buffers.endBatch(black);
-        var pos=display.getBlockPos();var image=ScreenMedia.texture(pos);
-        if(image==null)return;
-        var normal=WallPanel.face(display);p.translate(normal.getStepX()*.001,0,normal.getStepZ()*.001);
-        float aspect=ScreenMedia.aspectRatio(pos);
-        float hw=Math.min(w,h*aspect)*.5f,hh=Math.min(h,w/aspect)*.5f;
-        var layer=RenderType.beaconBeam(image,false);var v=buffers.getBuffer(layer);
-        point(p,v,right,-hw,hh,0,0);point(p,v,right,-hw,-hh,0,1);
-        point(p,v,right,hw,-hh,1,1);point(p,v,right,hw,hh,1,0);
-        buffers.endBatch(layer);
-    }
     private static void point(com.mojang.blaze3d.vertex.PoseStack p,com.mojang.blaze3d.vertex.VertexConsumer v,
                               net.minecraft.core.Direction right,float x,float y,float u,float t){
         v.addVertex(p.last(),right.getStepX()*x,y,right.getStepZ()*x).setColor(0xffffffff).setUv(u,t)
@@ -228,9 +183,7 @@ public final class CameraScreen {
     @SubscribeEvent public static void status(RenderGuiEvent.Post event){
         var mc=Minecraft.getInstance();if(target==null || target.isRemoved() || mc.screen!=null || mc.level!=target.getLevel())return;
         String line;
-        if(ScreenMedia.active(target.getBlockPos()))line=ScreenMedia.status(target.getBlockPos());
-        else if(current==null && scene==null)line=target.getBlockState().getBlock() instanceof FlatScreenTvBlock
-                ?net.minecraft.network.chat.Component.translatable("screen.anyastorage.media.idle").getString():"Camera unavailable";
+        if(current==null && scene==null)line="Camera unavailable";
         else{
             long time=scene==null?current.time():scene.time();
             long hour=Math.floorMod(time/1000+6,24);

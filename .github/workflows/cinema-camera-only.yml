@@ -1,0 +1,54 @@
+name: Camera-only cinema controls and package inspection
+on:
+  push:
+    branches: [variant/camera-only-beta9]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      PLAYABLE: anya-storage-plus-0.3.0-beta.9-camera.jar
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      ALSOFT_DRIVERS: 'null'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21'}
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.14.3'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: anya-storage-plus-beta8-candidate
+          run-id: 45540037770
+          github-token: ${{ github.token }}
+          path: baseline
+      - name: Build and inspect the playable JAR
+        run: |
+          set -eu
+          mkdir upload
+          gradle --no-daemon --max-workers=2 jar
+          cp "build/libs/$PLAYABLE" upload/
+          python3 fixtures/release/audit_camera_only.py "upload/$PLAYABLE" "$(find baseline -name '*.jar')" | tee upload/PACKAGE.txt
+          git rev-parse HEAD > upload/SOURCE_COMMIT.txt
+          (cd upload && sha256sum "$PLAYABLE" > SHA256SUMS.txt)
+      - name: Test actual cinema controls in Minecraft
+        run: |
+          gradle --no-daemon --max-workers=2 -I fixtures/camera-roles/fixture.gradle -ProleTrial=cinema -ProlePlayable="$PWD/upload/$PLAYABLE" prepareRoleTrial
+          python3 -u fixtures/camera-roles/run.py cinema | tee upload/CHECKS.txt
+          cp build/role-check/cinema/control/*.png upload/
+      - if: failure()
+        run: |
+          for f in build/role-check/cinema/control/{FAIL-*,step.txt,*status} build/role-check/cinema/*/console.log; do if test -f "$f"; then tail -35 "$f"; fi; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: anya-storage-plus-camera-only
+          path: upload
+          retention-days: 14
+defaults:
+  run:
+    shell: bash

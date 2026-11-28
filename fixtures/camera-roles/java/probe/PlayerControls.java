@@ -228,6 +228,22 @@ public final class PlayerControls {
             }
             acknowledge("Server acknowledged settings button "+action);return;
         }
+        if(action.startsWith("type-")||action.equals("minus-height")||action.equals("plus-width-twice")){
+            boolean horizontal=action.contains("width");
+            var box=(net.minecraft.client.gui.components.EditBox)field(screen.getClass(),horizontal?"widthBox":"heightBox").get(screen);
+            if(action.startsWith("type-")){
+                screen.mouseClicked(box.getX()+2,box.getY()+3,0);
+                box.setValue(action.substring(action.lastIndexOf('-')+1));
+                screen.keyPressed(257,0,0);
+            }else{
+                String symbol=horizontal?"+":"−";
+                var button=screen.children().stream().filter(c->c instanceof net.minecraft.client.gui.components.Button)
+                        .map(c->(net.minecraft.client.gui.components.Button)c)
+                        .filter(b->b.getMessage().getString().equals(symbol)&&b.getY()==box.getY()).findFirst().orElseThrow();
+                for(int i=0;i<(horizontal?2:1);i++)screen.mouseClicked(button.getX()+3,button.getY()+3,0);
+            }
+            clicked=true;return;
+        }
         String prefix=switch(action){
             case "width","blocked"->"Width:";case "height"->"Height:";case "group"->"Targets:";case "watch"->"Watch";
             case "ignore"->"Ignore";case "fit"->"Fit wall";case "lens-wide"->"Standard lens";case "lens-standard"->"Wide lens";default->throw new AssertionError(action);

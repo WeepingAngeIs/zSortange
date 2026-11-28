@@ -7,38 +7,6 @@ group = 'dev.anya.storage'
 base { archivesName = 'anya-storage-plus' }
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 java.withSourcesJar()
-sourceSets { screenCodec }
-configurations { screenAudioDecoder }
-dependencies {
-    screenCodecImplementation 'org.jcodec:jcodec:0.2.5'
-    screenAudioDecoder 'com.tianscar.javasound:jaad:0.9.4'
-}
-// Compile against the independent AAC library rather than JCodec's older in-tree fork.
-sourceSets.screenCodec.compileClasspath = configurations.screenAudioDecoder + sourceSets.screenCodec.compileClasspath
-def pinnedScreenDecoder = { configuration, expected ->
-    def decoder = configuration.singleFile
-    def digest = java.security.MessageDigest.getInstance('SHA-256').digest(decoder.bytes).encodeHex().toString()
-    if (digest != expected) throw new GradleException('Unexpected screen decoder dependency digest')
-    zipTree(decoder)
-}
-def screenCodecJar = tasks.register('screenCodecJar', Jar) {
-    archiveFileName = 'screen-codec.jar'
-    destinationDirectory = layout.buildDirectory.dir('screen-codec')
-    manifest { attributes('Main-Class': 'dev.anya.codec.ScreenCodec') }
-    from sourceSets.screenCodec.output
-    from({ pinnedScreenDecoder(configurations.screenCodecRuntimeClasspath,'890329dad124e8b739c1d6602a59a53c8a474daddff265c2561e21c498496c81') }) {
-        exclude 'net/sourceforge/jaad/**', 'org/jcodec/testing/**'
-    }
-    from({ pinnedScreenDecoder(configurations.screenAudioDecoder,'22f9fba52e328bdda2bb01935c5c32fa0625d31fd557b909b5d138b188c8afca') }) {
-        // JCodec handles the MP4 container. Package only the separate AAC decoder and its utilities.
-        include 'net/sourceforge/jaad/SampleBuffer.class', 'net/sourceforge/jaad/aac/**', 'net/sourceforge/jaad/util/**'
-    }
-    exclude 'META-INF/MANIFEST.MF'
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-}
-tasks.named('processResources') {
-    from(screenCodecJar) { into 'META-INF/anya-media' }
-}
 neoForge {
     version = project.neo_version
     runs {
